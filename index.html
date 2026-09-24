@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover, interactive-widget=resizes-content" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="theme-color" content="#0b1018" />
@@ -44,13 +44,17 @@
       <div class="title-foot">Prototipo 3D · Campaña de 4 misiones: inundación, incendio, terremoto y tormenta de hielo</div>
     </section>
 
-    <!-- Selección de misión -->
-    <section id="missions" class="screen">
+    <!-- Selección de nivel -->
+    <section id="missions" class="screen scroll">
       <div class="missions-wrap">
         <div class="sel-kicker">CAMPAÑA</div>
-        <h2>Elige una misión</h2>
+        <h2>Elige un nivel</h2>
+        <div id="progress-line" class="progress-line"></div>
         <div id="mission-cards" class="mission-cards"></div>
-        <button id="btn-back-m" class="btn">← Volver</button>
+        <div class="row">
+          <button id="btn-back-m" class="btn">← Volver</button>
+          <button id="btn-inv-m" class="btn">🎒 Inventario</button>
+        </div>
       </div>
     </section>
 
@@ -117,6 +121,7 @@
         <div id="carry-row" class="carry-row"></div>
       </div>
 
+      <div id="skillbar" class="skillbar"></div>
       <div id="prompt" class="prompt"></div>
       <div id="banner" class="banner"></div>
       <div id="alert" class="alert"></div>
@@ -137,7 +142,6 @@
       <div class="tbtn t-sprint" data-act="sprint">»</div>
       <div class="tbtn t-pause" data-act="pause">⏸</div>
     </div>
-    <div id="rotate"><div><div class="rot-ico">📱↻</div><p>Gira el móvil en horizontal para jugar</p></div></div>
 
     <!-- Pausa -->
     <section id="pause" class="screen">
@@ -178,30 +182,76 @@
       </div>
     </section>
 
-    <!-- Fin de misión -->
-    <section id="end" class="screen">
+    <!-- Recompensa (cinemática) -->
+    <section id="reveal" class="screen">
+      <div class="reveal-box">
+        <div class="reveal-rays"></div>
+        <div class="reveal-kicker">¡NUEVA RECOMPENSA!</div>
+        <div id="reveal-icon" class="reveal-icon">🪓</div>
+        <h2 id="reveal-name">Hacha de rescate</h2>
+        <p id="reveal-func"></p>
+        <div id="reveal-unlock" class="reveal-unlock"></div>
+        <button id="btn-reveal" class="btn primary">CONTINUAR</button>
+      </div>
+    </section>
+
+    <!-- Resultados de la misión (con scroll) -->
+    <section id="end" class="screen scroll">
       <div class="modal panel wide end">
         <div id="end-mission" class="end-mission"></div>
         <div id="end-kicker" class="end-kicker">MISIÓN COMPLETADA</div>
         <h2 id="end-title">¡Buen trabajo, héroe!</h2>
         <div id="end-stars" class="end-stars"></div>
         <div class="end-stats">
-          <div><span>Rescatados</span><b id="end-rescued">0/10</b></div>
-          <div><span>Puntuación</span><b id="end-score">0</b></div>
-          <div><span>Tiempo</span><b id="end-time">0:00</b></div>
-          <div><span>Consejos</span><b id="end-tips">0</b></div>
+          <div><span>❤️ Personas</span><b id="end-people">0</b></div>
+          <div><span>🐾 Animales</span><b id="end-animals">0</b></div>
+          <div><span>⭐ Puntuación</span><b id="end-score">0</b></div>
+          <div><span>🌱 Eco</span><b id="end-eco">0</b></div>
         </div>
+        <div class="end-sub"><span id="end-rescued">0/0</span> rescatados · <span id="end-time">0:00</span> · <span id="end-tips">0</span> consejos</div>
+        <div id="end-reward" class="end-reward"></div>
+        <div id="end-unlock" class="end-unlock"></div>
+        <div id="end-badges" class="end-badges"></div>
         <div class="end-learn">
           <div class="learn-title">💡 LO QUE HAS APRENDIDO</div>
           <ul id="end-learn"></ul>
         </div>
         <div class="end-actions">
-          <button id="btn-next" class="btn primary">Siguiente misión ▶</button>
-          <button id="btn-again" class="btn">↻ Jugar de nuevo</button>
-          <button id="btn-missions2" class="btn">Misiones</button>
+          <button id="btn-next" class="btn primary">SIGUIENTE NIVEL ▶</button>
+          <button id="btn-again" class="btn">↻ REPETIR MISIÓN</button>
+          <button id="btn-inv-end" class="btn">🎒 INVENTARIO</button>
+          <button id="btn-missions2" class="btn">Niveles</button>
           <button id="btn-change2" class="btn">Cambiar de héroe</button>
           <button id="btn-menu2" class="btn">Menú</button>
         </div>
+      </div>
+    </section>
+
+    <!-- Inventario -->
+    <section id="inventory" class="screen scroll">
+      <div class="modal panel wide inv">
+        <h2>🎒 Inventario</h2>
+        <div id="inv-totals" class="inv-totals"></div>
+        <div id="inv-grid" class="inv-grid"></div>
+        <div class="learn-title">INSIGNIAS</div>
+        <div id="inv-badges" class="end-badges"></div>
+        <button id="btn-inv-close" class="btn primary">Cerrar</button>
+      </div>
+    </section>
+
+    <!-- Introducción cinematográfica de nivel -->
+    <section id="levelintro" class="screen">
+      <div class="li-bg" id="li-bg"></div>
+      <div class="li-box">
+        <div id="li-kicker" class="li-kicker">NIVEL 2</div>
+        <div id="li-icon" class="li-icon">🔥</div>
+        <h1 id="li-name">Incendio en el Bosque Ámbar</h1>
+        <div id="li-place" class="li-place"></div>
+        <p id="li-desc" class="li-desc"></p>
+        <div id="li-mech" class="li-mech"></div>
+        <div id="li-diff" class="li-diff"></div>
+        <div class="li-bar"><i id="li-progress"></i></div>
+        <div id="li-msg" class="li-msg">Cargando el escenario 3D…</div>
       </div>
     </section>
   </div>

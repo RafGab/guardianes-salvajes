@@ -54,6 +54,13 @@ export class Player {
     this.env = { slip: 1, wind: { x: 0, z: 0 }, speedMul: 1 };
     this.boostT = 0;
     this.grip = false;
+    this.scripted = false;
+    this.climbT = 0;
+    this.shieldT = 0;
+    this.torchT = 0;
+    this.swingT = 0;
+    this.capBonus = 0;
+    this.cdMul = 1;
   }
 
   setHero(def, model) {
@@ -83,11 +90,20 @@ export class Player {
     this.powerAnim = 0;
     this.boostT = 0;
     this.grip = false;
+    this.scripted = false;
+    this.climbT = 0;
+    this.shieldT = 0;
+    this.torchT = 0;
+    this.swingT = 0;
     this.env = { slip: 1, wind: { x: 0, z: 0 }, speedMul: 1 };
   }
 
   get capacity() {
-    return this.stats ? this.stats.carry : 2;
+    return (this.stats ? this.stats.carry : 2) + this.capBonus;
+  }
+
+  get cdMaxEff() {
+    return this.cdMax * this.cdMul;
   }
 
   /* ------------------------ poderes ------------------------ */
@@ -132,7 +148,7 @@ export class Player {
       }
       this.surfT = type === 'surf' && this.hero.id === 'coral' ? 6.5 : 6;
     }
-    this.cd = this.cdMax;
+    this.cd = this.cdMax * this.cdMul;
     this.powerAnim = 1;
     this.events.push({ type: 'power', power: type });
     return true;
@@ -158,11 +174,24 @@ export class Player {
     this.glideT = Math.max(0, this.glideT - dt);
     this.surfT = Math.max(0, this.surfT - dt);
     this.boostT = Math.max(0, this.boostT - dt);
+    this.climbT = Math.max(0, this.climbT - dt);
+    this.shieldT = Math.max(0, this.shieldT - dt);
+    this.torchT = Math.max(0, this.torchT - dt);
+    this.swingT = Math.max(0, this.swingT - dt);
     if (this.boostT <= 0) this.grip = false;
     this.powerAnim = Math.max(0, this.powerAnim - dt * 1.6);
     this.coyote -= dt;
     this.jumpBuf -= dt;
 
+    // movimiento guiado (cuerda): solo se anima el modelo
+    if (this.scripted) {
+      if (this.model) {
+        this.model.root.position.copy(pos);
+        this.model.root.rotation.y = this.facing;
+        this.model.update(dt, { speed: 0, grounded: false, vy: 4, power: 0.6, carrying: this.carrying.length });
+      }
+      return;
+    }
     // plataformas móviles
     if (this.support && this.support.dyn) {
       pos.x += this.support.dx;
@@ -210,10 +239,11 @@ export class Player {
     if (surfing) maxSpeed = st.speed * (this.hero.id === 'nerea' ? 1.8 : 1.55);
     if (this.carrying.length) maxSpeed *= 1 - Math.min(0.08 * this.carrying.length, 0.2);
     maxSpeed *= this.env.speedMul * (this.boostT > 0 ? 1.5 : 1);
+    if (w.slowAt && this.grounded) maxSpeed *= w.slowAt(pos.x, pos.z);
     if (this.dashT > 0) maxSpeed = 20;
     if (this.gliding) maxSpeed = st.speed * 1.6;
     const tvx = dx * maxSpeed, tvz = dz * maxSpeed;
-    const slip = this.grip ? 1 : this.env.slip;
+    const slip = this.grip || this.climbT > 0 ? 1 : this.env.slip;
     const accel = this.dashT > 0 ? 0 : this.grounded ? 16 * slip : this.swimming ? 5 : 4.5;
     if (this.dashT <= 0) {
       this.vx = damp(this.vx, tvx, accel, dt);
@@ -306,7 +336,7 @@ export class Player {
         surfing: this.surfing,
         carrying: this.carrying.length,
         rescue: this.rescueT,
-        power: this.powerAnim,
+        power: Math.max(this.powerAnim, this.swingT > 0 ? 0.5 : 0),
         celebrate: this.celebrate,
       });
     }
@@ -344,7 +374,7 @@ export class Player {
     if (blocked) {
       const rise = blocked.y1 - pos.y;
       const wantsIn = Math.hypot(this.dirX, this.dirZ) > 0.1 || this.dashT > 0;
-      if (wantsIn && rise > STEP && rise <= MANTLE && this.mantleCd <= 0 && blocked.tag !== 'tree' && this.rescueT <= 0) {
+      if (wantsIn && rise > STEP && rise <= (this.climbT > 0 ? 6.5 : MANTLE) && this.mantleCd <= 0 && blocked.tag !== 'tree' && this.rescueT <= 0) {
         const clearance = this.headClear(blocked, nx, nz);
         if (clearance) {
           this.vy = Math.max(this.vy, Math.sqrt(2 * G * (rise + 0.45)));

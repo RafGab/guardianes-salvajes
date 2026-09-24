@@ -49,8 +49,11 @@ export class Input {
         case 'KeyM': this.emit('mute'); break;
         case 'KeyR': this.emit('respawn'); break;
         case 'Escape': this.emit('pause'); break;
+        case 'Tab': this.emit('abilityNext'); break;
         case 'KeyP': this.emit('pause'); break;
-        default: break;
+        default:
+          if (/^Digit[1-9]$/.test(e.code)) this.emit('ability', Number(e.code.slice(5)) - 1);
+          break;
       }
     });
     window.addEventListener('keyup', (e) => this.keys.delete(e.code));

@@ -1,13 +1,15 @@
 import * as THREE from 'three';
 import { HEROES, ELEMENTS } from './heroes.js';
 import { makeCanvas } from './utils.js';
-import { MISSIONS, bestStars } from './missions.js';
+import { LEVELS } from './levels.js';
+import { Save, BADGES } from './save.js';
+import { ITEMS, heroPowerItem } from './items.js';
 import { IS_TOUCH } from './platform.js';
 
 const $ = (id) => document.getElementById(id);
 export const HERO_ICON = { yagua: '🐆', ambar: '🦅', vorak: '🦎', nerea: '🐈', coral: '🦦', aurora: '🦊' };
 
-const SCREENS = ['loading', 'title', 'missions', 'select', 'pause', 'how', 'end'];
+const SCREENS = ['loading', 'title', 'missions', 'select', 'pause', 'how', 'end', 'reveal', 'inventory', 'levelintro'];
 
 class TipManager {
   constructor() {
@@ -84,6 +86,10 @@ class Minimap {
   }
   init(world) {
     this.world = world;
+    const mv = world.mapView;
+    this.cx = mv.cx;
+    this.cz = mv.cz;
+    this.half = mv.half;
     const g = this.base.getContext('2d');
     const gc = world.groundCanvas;
     const k = gc.width / 256;
@@ -129,7 +135,7 @@ class Minimap {
   }
   draw(dt, st) {
     this.acc += dt;
-    if (this.acc > 0.5) {
+    if (this.acc > 0.5 && st.waterY > -40) {
       this.acc = 0;
       this.updateWater(st.waterY);
     }
@@ -137,7 +143,7 @@ class Minimap {
     g.clearRect(0, 0, S, S);
     g.drawImage(this.base, 0, 0, S, S);
     g.imageSmoothingEnabled = true;
-    g.drawImage(this.waterC, 0, 0, S, S);
+    if (st.waterY > -40) g.drawImage(this.waterC, 0, 0, S, S);
     const t = performance.now() / 1000;
     for (const v of st.victims) {
       if (v.state === 'delivered') continue;
@@ -243,15 +249,20 @@ export const ui = {
   buildMissions(onPick) {
     const box = $('mission-cards');
     box.innerHTML = '';
-    MISSIONS.forEach((m, i) => {
-      const st = bestStars(m.id);
+    const done = Save.completed;
+    $('progress-line').innerHTML = `Progreso <b>${done}/${LEVELS.length}</b> · Herramientas: ${Save.items.map((id) => ITEMS[id].icon).join(' ') || '—'}`;
+    LEVELS.forEach((m, i) => {
+      const unlocked = Save.isUnlocked(m.n);
+      const st = Save.stars(m.id);
       const c = document.createElement('div');
-      c.className = 'mcard';
+      c.className = 'mcard' + (unlocked ? '' : ' locked') + (unlocked && done >= m.n ? ' done' : '');
       const rec = m.best.map((e) => ELEMENTS[e].icon).join(' ');
-      c.innerHTML = `<div class="m-kicker">${m.kicker}</div><div class="m-icon">${m.icon}</div><div class="m-name">${m.name}</div><p>${m.desc}</p>
-        <div class="m-meta"><span>Ideal: ${rec}</span><span class="m-stars">${[0, 1, 2].map((k) => (k < st ? '⭐' : '☆')).join('')}</span></div>
-        <button class="btn primary small-play">JUGAR</button>`;
-      c.addEventListener('click', () => onPick(i));
+      const rw = ITEMS[m.reward];
+      c.innerHTML = `<div class="m-kicker">${unlocked ? '🔓' : '🔒'} ${m.kicker}</div><div class="m-icon">${m.icon}</div><div class="m-name">${m.name}</div><div class="m-place">${m.place}</div><p>${m.desc}</p>
+        <div class="m-meta"><span>Dificultad ${'🔥'.repeat(Math.ceil(m.n / 2))}</span><span class="m-stars">${[0, 1, 2].map((k) => (k < st ? '⭐' : '☆')).join('')}</span></div>
+        <div class="m-meta"><span>Ideal: ${rec}</span><span>Premio: ${rw ? rw.icon : ''}</span></div>
+        ${unlocked ? '<button class="btn primary small-play">JUGAR</button>' : `<div class="m-lock">Completa el nivel ${m.n - 1} para desbloquearlo</div>`}`;
+      if (unlocked) c.addEventListener('click', () => onPick(i));
       box.appendChild(c);
     });
   },
@@ -291,11 +302,43 @@ export const ui = {
     $('hud-el').textContent = `${el.icon} ${el.name}`;
     $('hud-power-name').textContent = `Q · ${h.power.name}`;
   },
-  setPower(ratio) {
+  setPower(ratio, ability) {
     // ratio: 0 = listo, 1 = recién usado
     const ring = $('power-ring');
     ring.style.strokeDashoffset = String(119.4 * ratio);
     $('power-btn').classList.toggle('ready', ratio <= 0.001);
+    if (ability && this._abKey !== ability.id) {
+      this._abKey = ability.id;
+      $('power-key').textContent = ability.icon;
+      $('hud-power-name').textContent = `Q · ${ability.name}`;
+      const tp = document.querySelector('.t-power');
+      if (tp) tp.textContent = ability.icon;
+    }
+  },
+  setAbilities(list, index, onPick) {
+    const bar = $('skillbar');
+    bar.innerHTML = '';
+    this._abKey = null;
+    list.forEach((a, i) => {
+      const b = document.createElement('button');
+      b.className = 'skill' + (i === index ? ' sel' : '');
+      b.innerHTML = `<span class="sk">${i + 1}</span><span class="ic">${a.icon}</span><i class="cdo"></i>`;
+      b.title = a.name;
+      b.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); onPick(i); });
+      bar.appendChild(b);
+    });
+    bar.style.display = list.length > 1 ? 'flex' : 'none';
+  },
+  selectAbilityUI(i) {
+    [...$('skillbar').children].forEach((b, k) => b.classList.toggle('sel', k === i));
+    this._abKey = null;
+  },
+  setAbilityCds(arr) {
+    const bar = $('skillbar');
+    arr.forEach((r, i) => {
+      const el = bar.children[i] && bar.children[i].querySelector('.cdo');
+      if (el) el.style.height = `${Math.round(Math.max(0, Math.min(1, r)) * 100)}%`;
+    });
   },
   setRescued(n, total) {
     $('hud-rescued').innerHTML = `${n}<span>/${total}</span>`;
@@ -410,24 +453,85 @@ export const ui = {
     this.edges = {};
   },
 
-  /* ---------- fin ---------- */
-  showEnd({ success, rescued, total, score, time, stars, learned, heroName, mission, hasNext }) {
-    $('end-mission').textContent = mission ? `${mission.icon} ${mission.name}` : '';
-    $('btn-next').style.display = hasNext ? '' : 'none';
-    $('end-kicker').textContent = success ? 'MISIÓN COMPLETADA' : 'SE ACABÓ EL TIEMPO';
-    $('end-kicker').classList.toggle('fail', !success);
-    $('end-title').textContent = success
-      ? `¡Increíble, ${heroName}! Has salvado a todos.`
-      : rescued >= Math.ceil(total * 0.6)
-        ? `¡Buen trabajo, ${heroName}! ${mission ? mission.failTitle : ''}.`
-        : `El agua fue más rápida esta vez. ¡Inténtalo de nuevo!`;
-    $('end-stars').innerHTML = [0, 1, 2].map((i) => `<span class="${i < stars ? '' : 'off'}">⭐</span>`).join('');
-    $('end-rescued').textContent = `${rescued}/${total}`;
-    $('end-score').textContent = score.toLocaleString('es-ES');
-    const s = Math.round(time);
-    $('end-time').textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-    $('end-tips').textContent = String(learned.length);
-    $('end-learn').innerHTML = learned.length ? learned.slice(0, 8).map((t) => `<li>${t}</li>`).join('') : '<li>Lee los carteles con E y presta atención a los consejos durante la misión.</li>';
-    this.showScreen('end');
+  /* ---------- resultados, recompensa e inventario ---------- */
+  showResults(d) {
+    $('end-mission').textContent = d.level ? `${d.level.icon} ${d.level.name}` : '';
+    $('end-kicker').textContent = d.success ? 'MISIÓN COMPLETADA' : 'SE ACABÓ EL TIEMPO';
+    $('end-kicker').classList.toggle('fail', !d.success);
+    $('end-title').textContent = d.success
+      ? (d.rescued >= d.total ? `¡Increíble, ${d.heroName}! Has salvado a todos.` : `¡Bien hecho, ${d.heroName}! Misión superada.`)
+      : `${d.level ? d.level.failTitle : 'El tiempo se agotó'}. ¡Inténtalo de nuevo!`;
+    $('end-stars').innerHTML = [0, 1, 2].map((i) => `<span class="${i < d.stars ? '' : 'off'}">⭐</span>`).join('');
+    $('end-people').textContent = String(d.people);
+    $('end-animals').textContent = String(d.animals);
+    $('end-score').textContent = d.score.toLocaleString('es-ES');
+    $('end-eco').textContent = String(d.eco);
+    const sec = Math.round(d.time);
+    $('end-time').textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+    $('end-rescued').textContent = `${d.rescued}/${d.total}`;
+    $('end-tips').textContent = String(d.learned.length);
+    $('end-reward').innerHTML = d.reward
+      ? `<div class="rw-card"><div class="rw-ic">${d.reward.icon}</div><div><div class="rw-k">🎁 NUEVA RECOMPENSA</div><b>${d.reward.name}</b><p>${d.reward.func}</p><small>No sustituye a tu poder: es una habilidad adicional (teclas 1, 2, 3…)</small></div></div>`
+      : '';
+    $('end-unlock').innerHTML = d.unlockedNext && d.nextLevel
+      ? `<div class="un-card">🔓 <b>¡NUEVO NIVEL DESBLOQUEADO!</b><span>${d.nextLevel.icon} ${d.nextLevel.name}</span></div>`
+      : '';
+    $('end-badges').innerHTML = (d.newBadges || []).map((b) => `<span class="badge new">${b.icon} ${b.name}</span>`).join('');
+    $('end-learn').innerHTML = d.learned.length ? d.learned.slice(0, 8).map((t) => `<li>${t}</li>`).join('') : '<li>Lee los carteles y presta atención a los consejos durante la misión.</li>';
+    const nb = $('btn-next');
+    nb.style.display = d.hasNext ? '' : 'none';
+    nb.textContent = 'CONTINUAR AL SIGUIENTE NIVEL ▶';
+    $('end').scrollTop = 0;
+    if (d.reward) this.showReveal(d.reward, d.nextLevel && d.unlockedNext ? d.nextLevel : null, () => this.showScreen('end'));
+    else this.showScreen('end');
+  },
+  showReveal(item, nextLevel, done) {
+    $('reveal-icon').textContent = item.icon;
+    $('reveal-name').textContent = item.name;
+    $('reveal-func').textContent = item.func;
+    $('reveal-unlock').textContent = nextLevel ? `🔓 ¡Nuevo nivel desbloqueado! ${nextLevel.icon} ${nextLevel.name}` : '';
+    this.showScreen('reveal');
+    $('btn-reveal').onclick = () => done();
+  },
+  showInventory(hero) {
+    const grid = $('inv-grid');
+    grid.innerHTML = '';
+    const cards = [];
+    if (hero) cards.push({ it: heroPowerItem(hero), unlocked: true, level: 0 });
+    for (const l of LEVELS) {
+      const it = ITEMS[l.reward];
+      if (it) cards.push({ it, unlocked: Save.hasItem(it.id), level: l.n });
+    }
+    for (const c of cards) {
+      const el = document.createElement('div');
+      el.className = 'inv-card' + (c.unlocked ? '' : ' locked');
+      el.innerHTML = c.unlocked
+        ? `<div class="ic">${c.it.icon}</div><div><b>${c.it.name}</b><p>${c.it.desc}</p><p class="fn">⚙️ ${c.it.func}</p><small>${c.level ? `Desbloqueado al completar el nivel ${c.level}` : 'Poder original del héroe'}</small></div>`
+        : `<div class="ic">🔒</div><div><b>???</b><p>Completa el nivel ${c.level} para obtenerlo.</p></div>`;
+      grid.appendChild(el);
+    }
+    const d = Save.data;
+    $('inv-totals').innerHTML = `❤️ ${d.people} personas · 🐾 ${d.animals} animales · ⭐ ${d.score.toLocaleString('es-ES')} puntos · 🌱 ${d.eco} eco`;
+    $('inv-badges').innerHTML = Object.values(BADGES).map((b) => `<span class="badge${d.badges.includes(b.id) ? ' new' : ' off'}">${b.icon} ${b.name}</span>`).join('');
+    $('inventory').scrollTop = 0;
+    this.showOverlay('inventory', true);
+  },
+  showLevelIntro(level) {
+    $('li-kicker').textContent = level.kicker;
+    $('li-icon').textContent = level.icon;
+    $('li-name').textContent = level.name;
+    $('li-place').textContent = level.place;
+    $('li-desc').textContent = level.desc;
+    $('li-mech').textContent = `⚠️ ${level.mechanic}`;
+    const rw = ITEMS[level.reward];
+    $('li-diff').innerHTML = `Dificultad ${'🔥'.repeat(Math.ceil(level.n / 2))} · Premio del nivel: ${rw ? rw.icon + ' ' + rw.name : ''}`;
+    $('li-progress').style.width = '4%';
+    $('li-msg').textContent = 'Cargando el escenario 3D…';
+    $('li-bg').className = 'li-bg ' + level.scenario;
+    this.showScreen('levelintro');
+  },
+  levelIntroProgress(p, msg) {
+    $('li-progress').style.width = `${Math.round(p * 100)}%`;
+    if (msg) $('li-msg').textContent = msg;
   },
 };

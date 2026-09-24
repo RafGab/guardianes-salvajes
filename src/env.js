@@ -67,9 +67,9 @@ export function createSky(scene) {
 /* ------------------------------------------------------------------ */
 /*  Agua: olas, reflejo del cielo, espuma en orillas (mapa de alturas) */
 /* ------------------------------------------------------------------ */
-export function createWater(scene, heightTex, rect) {
+export function createWater(scene, heightTex, rect, { segments = 220 } = {}) {
   const size = 640;
-  const geo = new THREE.PlaneGeometry(size, size, 220, 220);
+  const geo = new THREE.PlaneGeometry(size, size, segments, segments);
   geo.rotateX(-Math.PI / 2);
   const uniforms = {
     uTime: { value: 0 },
@@ -84,24 +84,25 @@ export function createWater(scene, heightTex, rect) {
     uMud: { value: new THREE.Color(0x6f6a4a) },
     uFlash: { value: 0 },
     uFlow: { value: 0 },
+    uAmp: { value: 1 },
   };
   const mat = new THREE.ShaderMaterial({
     uniforms,
     transparent: true,
     depthWrite: false,
     vertexShader: /* glsl */ `
-      uniform float uTime;
+      uniform float uTime, uAmp;
       varying vec3 vWorld;
       void main() {
         vec3 p = position;
         vec4 w = modelMatrix * vec4(p, 1.0);
         float d = sin(w.x * 0.21 + uTime * 1.2) * 0.5 + sin(w.z * 0.27 - uTime * 1.0) * 0.5 + sin((w.x + w.z) * 0.11 + uTime * 0.7) * 0.6;
-        w.y += d * 0.055;
+        w.y += d * 0.055 * uAmp;
         vWorld = w.xyz;
         gl_Position = projectionMatrix * viewMatrix * w;
       }`,
     fragmentShader: /* glsl */ `
-      uniform float uTime, uLevel, uFogDensity, uFlash, uFlow;
+      uniform float uTime, uLevel, uFogDensity, uFlash, uFlow, uAmp;
       uniform vec3 uSun, uFogColor, uRect, uShallow, uDeep, uMud;
       uniform sampler2D uHeight;
       varying vec3 vWorld;
@@ -128,6 +129,7 @@ export function createWater(scene, heightTex, rect) {
         wave(p, normalize(vec2(-1.0, -0.2)), 6.1, 0.012, 4.6, g);
         vec2 fl = vec2(1.0, 0.0) * uFlow;
         g += (vec2(noise(p * 1.7 + fl * uTime * 0.9), noise(p * 1.7 + 17.0 + fl * uTime * 0.9)) - 0.5) * 0.18;
+        g *= uAmp;
         vec3 N = normalize(vec3(-g.x, 1.0, -g.y));
         vec3 V = normalize(cameraPosition - vWorld);
         float dist = length(cameraPosition - vWorld);

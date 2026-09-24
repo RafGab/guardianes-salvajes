@@ -1,96 +1,25 @@
 import * as THREE from 'three';
-import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
-import { makeRng, clamp, damp, smoothstep, lerp, TAU } from './utils.js';
-import { CFG, terrainH, buildCity, buildTerrain, bakeHeightMap, paintGround, M4 } from './city.js';
+import { makeRng, clamp, damp, smoothstep, TAU } from './utils.js';
+import { CFG, terrainH } from './terrain.js';
+import { buildTerrain, bakeHeightMap } from './city.js';
+import { createKit } from './kit.js';
 import { createSky, createWater, createRain, Ripples, createBirds } from './env.js';
+import { carGeometry } from './bodies.js';
 import { IS_TOUCH } from './platform.js';
-
-const unitBox = new THREE.BoxGeometry(1, 1, 1);
-unitBox.translate(0, 0.5, 0);
-const unitCyl = new THREE.CylinderGeometry(1, 1, 1, 12);
-unitCyl.translate(0, 0.5, 0);
-
-function mergeParts(parts) {
-  const geos = parts.map(([geo, matrix, color]) => {
-    const g = geo.clone();
-    g.applyMatrix4(matrix);
-    const c = new THREE.Color(color);
-    const n = g.attributes.position.count;
-    const arr = new Float32Array(n * 3);
-    for (let i = 0; i < n; i++) {
-      arr[i * 3] = c.r; arr[i * 3 + 1] = c.g; arr[i * 3 + 2] = c.b;
-    }
-    g.setAttribute('color', new THREE.BufferAttribute(arr, 3));
-    return g;
-  });
-  return mergeGeometries(geos, false);
-}
-
-function carGeometry(color) {
-  const wheels = [[-1.3, 0.34, -0.92], [1.3, 0.34, -0.92], [-1.3, 0.34, 0.92], [1.3, 0.34, 0.92]];
-  const parts = [
-    [unitBox, M4(0, 0.2, 0, 4.2, 0.72, 1.9), color],
-    [unitBox, M4(-0.15, 0.85, 0, 2.3, 0.62, 1.72), 0x2a3846],
-    [unitBox, M4(-0.15, 1.42, 0, 2.2, 0.1, 1.66), color],
-    [unitBox, M4(2.11, 0.42, -0.6, 0.06, 0.16, 0.34), new THREE.Color(0xfff2c0).multiplyScalar(2.5)],
-    [unitBox, M4(2.11, 0.42, 0.6, 0.06, 0.16, 0.34), new THREE.Color(0xfff2c0).multiplyScalar(2.5)],
-    [unitBox, M4(-2.11, 0.42, -0.6, 0.06, 0.16, 0.34), new THREE.Color(0xff2a1a)],
-    [unitBox, M4(-2.11, 0.42, 0.6, 0.06, 0.16, 0.34), new THREE.Color(0xff2a1a)],
-  ];
-  for (const [x, y, z] of wheels) parts.push([unitCyl, M4(x, y - 0.34, z, 0.34, 0.26, 0.34, 0, Math.PI / 2), 0x151515]);
-  return mergeParts(parts);
-}
-
-function busGeometry() {
-  const parts = [
-    [unitBox, M4(0, 0.35, 0, 9.4, 2.5, 2.6), 0xe0a020],
-    [unitBox, M4(0, 1.5, 0, 9.42, 0.9, 2.62), 0x243848],
-    [unitBox, M4(0, 2.85, 0, 9.2, 0.15, 2.4), 0xc8901a],
-    [unitBox, M4(4.7, 0.6, 0, 0.06, 0.4, 2.0), new THREE.Color(0xfff2c0).multiplyScalar(2.5)],
-  ];
-  for (const x of [-3, 3]) for (const z of [-1.2, 1.2]) parts.push([unitCyl, M4(x, 0, z, 0.45, 0.32, 0.45, 0, Math.PI / 2), 0x151515]);
-  return mergeParts(parts);
-}
-
-function raftGeometry() {
-  const parts = [[unitBox, M4(0, 0.1, 0, 3.2, 0.2, 3.0), 0x9a7048]];
-  for (let i = -1; i <= 1; i++) parts.push([unitBox, M4(i * 1.0, 0.2, 0, 0.9, 0.08, 3.06), 0x7a5230]);
-  for (const x of [-1.4, 1.4]) parts.push([unitCyl, M4(x, -0.2, 0, 0.42, 3.0, 0.42, 0, 0, Math.PI / 2), 0x3a6ea8]);
-  return mergeParts(parts);
-}
-
-function crateGeometry() {
-  return mergeParts([
-    [unitBox, M4(0, 0, 0, 1.1, 1.1, 1.1), 0xa9793f],
-    [unitBox, M4(0, 0.5, 0, 1.16, 0.1, 1.16), 0x6a4a2a],
-    [unitBox, M4(0, 0, 0, 1.16, 0.1, 1.16), 0x6a4a2a],
-  ]);
-}
-function barrelGeometry(color) {
-  return mergeParts([
-    [unitCyl, M4(0, 0, 0, 0.32, 0.9, 0.32), color],
-    [unitCyl, M4(0, 0.2, 0, 0.34, 0.06, 0.34), 0x2a2a2a],
-    [unitCyl, M4(0, 0.6, 0, 0.34, 0.06, 0.34), 0x2a2a2a],
-  ]);
-}
-function logGeometry() {
-  return mergeParts([[unitCyl, M4(0, 0, 0, 0.26, 3.2, 0.26, 0, 0, Math.PI / 2), 0x6a4a30], [unitCyl, M4(1.62, -0.05, 0, 0.27, 0.05, 0.27, 0, 0, Math.PI / 2), 0xb08a5a]]);
-}
-
-const LOOKS = {
-  flood: { horizon: 0x5f7085, zenith: 0x1c2532, cloudLo: [0.07, 0.085, 0.11], cloudHi: [0.42, 0.47, 0.55], cover: 0.32, fog: 0x5f7085, fogD: 0.0065, hemi: [0x9fb4cc, 0x3c3a36, 1.25], sun: [0xdfe6f2, 2.3], exposure: 0.95, lightning: true,
-    precip: { color: [0.72, 0.8, 0.9], alpha: 0.32, speed: 30, len: 0.9, wind: [3.5, 0, 1.2] } },
-  fire: { horizon: 0xb2703f, zenith: 0x2a1e1c, cloudLo: [0.14, 0.08, 0.05], cloudHi: [0.66, 0.4, 0.2], cover: 0.18, fog: 0x9a6236, fogD: 0.0085, hemi: [0xe8a870, 0x3a2a1c, 1.2], sun: [0xffb070, 2.7], exposure: 1.0, lightning: false, precip: null },
-  quake: { horizon: 0xa39680, zenith: 0x4a5866, cloudLo: [0.16, 0.16, 0.17], cloudHi: [0.62, 0.6, 0.56], cover: 0.4, fog: 0x9a917f, fogD: 0.0072, hemi: [0xc8c4b8, 0x4a463c, 1.35], sun: [0xfff0d8, 2.4], exposure: 1.0, lightning: false, precip: null },
-  ice: { horizon: 0xb4c4d6, zenith: 0x6d88a6, cloudLo: [0.45, 0.5, 0.56], cloudHi: [0.85, 0.9, 0.95], cover: 0.15, fog: 0xb4c4d6, fogD: 0.011, hemi: [0xdfeaf6, 0x8898aa, 0.8], sun: [0xe8f0ff, 0.95], exposure: 0.85, bloom: 1.8, lightning: false,
-    precip: { color: [0.96, 0.98, 1], alpha: 0.8, speed: 8, len: 0.3, wind: [10, 0, 3.5] } },
-};
+import { SCENARIOS } from './scenarios/index.js';
+import { generateRescues, computeReach } from './spawn.js';
 
 export function createWorld(scene, renderer, { quality = 'high', scenario = 'flood' } = {}) {
-  const look = LOOKS[scenario] || LOOKS.flood;
-  const hasWater = scenario === 'flood';
-  const W = { time: 0, waterY: hasWater ? CFG.WATER0 : -50, quality, scenario, hasWater, look, fogBase: look.fogD };
+  const def = SCENARIOS[scenario] || SCENARIOS.flood;
+  const mobile = IS_TOUCH;
+  const K = createKit({ scene, seed: def.seed || 555, mobile });
+  const sc = def.build(K, { scene, quality, mobile });
+  const look = sc.look;
+  const wcfg = sc.water || { mode: 'none' };
+  const hasWater = wcfg.mode !== 'none';
+  const W = { time: 0, waterY: hasWater ? wcfg.base : -50, quality, scenario, hasWater, look, fogBase: look.fogD, sc, K, duration: 360, mobile, missionT: 0 };
   const rng = makeRng(555);
+  W.rng = rng;
 
   /* ---------- cielo, niebla, luces ---------- */
   const sky = createSky(scene);
@@ -106,11 +35,11 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(look.sun[0], look.sun[1]);
   sun.position.set(60, 90, 40);
-  sun.castShadow = !IS_TOUCH;
+  sun.castShadow = !mobile;
   const ss = quality === 'high' ? 2048 : 1024;
   sun.shadow.mapSize.set(ss, ss);
-  const sc = sun.shadow.camera;
-  sc.left = -48; sc.right = 48; sc.top = 48; sc.bottom = -48; sc.near = 10; sc.far = 260;
+  const shc = sun.shadow.camera;
+  shc.left = -48; shc.right = 48; shc.top = 48; shc.bottom = -48; shc.near = 10; shc.far = 260;
   sun.shadow.bias = -0.0006;
   sun.shadow.normalBias = 0.05;
   scene.add(sun);
@@ -119,20 +48,23 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
   W.sun = sun;
   const sunOffset = new THREE.Vector3(60, 90, 40);
 
-  /* ---------- ciudad y terreno ---------- */
-  const city = buildCity(scene, { quality, scenario });
-  W.city = city;
-  const ground = paintGround(city.parkBlocks, city.plazaBlocks, scenario);
-  buildTerrain(scene, ground.tex);
+  /* ---------- terreno y estructuras ---------- */
+  const ground = sc.paint();
+  buildTerrain(scene, ground.tex, { tint: !!sc.terrainTint });
   W.groundCanvas = ground.canvas;
+  W.city = sc; // compatibilidad (minimapa)
+  W.mapView = sc.mapView || { cx: 0, cz: -15, half: 95 };
 
   const treeTime = { value: 0 };
+  const windAmp = { value: sc.windAmp ?? 1 };
+  W.windAmp = windAmp;
   const mats = {
-    facade: new THREE.MeshStandardMaterial({ map: city.facade.map, emissiveMap: city.facade.em, emissive: 0xffffff, emissiveIntensity: 1.6, vertexColors: true, roughness: 0.88 }),
     flat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.05 }),
     trees: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true }),
     glow: new THREE.MeshBasicMaterial({ vertexColors: true }),
+    treeInst: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true }),
   };
+  if (sc.facade) mats.facade = new THREE.MeshStandardMaterial({ map: sc.facade.map, emissiveMap: sc.facade.em, emissive: 0xffffff, emissiveIntensity: 1.6, vertexColors: true, roughness: 0.88 });
   mats.trees.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = treeTime;
     shader.vertexShader = shader.vertexShader
@@ -142,18 +74,40 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
         transformed.x += sin(uTime * 1.5 + transformed.z * 0.15 + transformed.x * 0.1) * 0.16 * kk * kk;
         transformed.z += cos(uTime * 1.2 + transformed.x * 0.13) * 0.12 * kk * kk;`);
   };
-  city.batch.build(scene, mats, { glow: { cast: false, receive: false }, trees: { receive: false } });
+  mats.treeInst.onBeforeCompile = (shader) => {
+    shader.uniforms.uTime = treeTime;
+    shader.uniforms.uWindAmp = windAmp;
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nuniform float uTime;\nuniform float uWindAmp;')
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        float kk = clamp((position.y - 1.2) / 6.0, 0.0, 1.0);
+        float ph = 0.0;
+        #ifdef USE_INSTANCING
+          ph = instanceMatrix[3].x * 0.13 + instanceMatrix[3].z * 0.11;
+        #endif
+        transformed.x += sin(uTime * 1.6 + ph) * 0.16 * kk * kk * uWindAmp;
+        transformed.z += cos(uTime * 1.3 + ph * 1.3) * 0.12 * kk * kk * uWindAmp;`);
+  };
+  for (const b of sc.batches) b.build(scene, mats, { glow: { cast: false, receive: false }, trees: { receive: false } });
+  W.treeMeshes = K.buildTrees(scene, mats.treeInst);
+  W.mats = mats;
 
-  const hm = bakeHeightMap(city.buildings);
+  const hm = bakeHeightMap(sc.buildings);
   W.heightData = hm.data;
 
   /* ---------- agua, lluvia, ondas, pájaros ---------- */
-  const water = createWater(scene, hm.tex, { x0: CFG.MAP.x0, z0: CFG.MAP.z0, size: CFG.MAP.size });
+  const water = createWater(scene, hm.tex, { x0: CFG.MAP.x0, z0: CFG.MAP.z0, size: CFG.MAP.size }, { segments: mobile ? 110 : 220 });
   water.mesh.visible = hasWater;
   water.uniforms.uFogColor.value.set(look.fog);
   water.uniforms.uFogDensity.value = look.fogD;
+  if (wcfg.colors) {
+    water.uniforms.uShallow.value.set(wcfg.colors.shallow);
+    water.uniforms.uDeep.value.set(wcfg.colors.deep);
+    water.uniforms.uMud.value.set(wcfg.colors.mud);
+  }
+  water.uniforms.uAmp.value = wcfg.amp ?? 1;
   W.water = water;
-  const rain = createRain(scene, quality === 'high' ? 4200 : IS_TOUCH ? 1400 : 2200);
+  const rain = createRain(scene, quality === 'high' ? 4200 : mobile ? 1400 : 2200);
   if (look.precip) {
     const pr = look.precip;
     rain.uniforms.uColor.value.setRGB(...pr.color);
@@ -164,23 +118,22 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
     W.precipAlpha = pr.alpha;
   } else rain.lines.visible = false;
   W.rain = rain;
+  W.fogMul = 1;
   W.setFog = (d) => {
-    scene.fog.density = d;
-    water.uniforms.uFogDensity.value = d;
+    const v = d * W.fogMul;
+    scene.fog.density = v;
+    water.uniforms.uFogDensity.value = v;
   };
   W.ripples = new Ripples(scene, 110);
-  const birds = createBirds(scene, 12);
+  const birds = look.birds === false ? null : createBirds(scene, mobile ? 6 : 12);
 
   /* ---------- rejilla espacial de sólidos ---------- */
   const CELL = 8;
   const GN = 256 / CELL;
   const grid = Array.from({ length: GN * GN }, () => []);
-  const cellRange = (s) => [
-    clamp(Math.floor((s.x0 + 128) / CELL), 0, GN - 1), clamp(Math.floor((s.x1 + 128) / CELL), 0, GN - 1),
-    clamp(Math.floor((s.z0 + 128) / CELL), 0, GN - 1), clamp(Math.floor((s.z1 + 128) / CELL), 0, GN - 1),
-  ];
-  for (const s of city.solids) {
-    const [i0, i1, j0, j1] = cellRange(s);
+  for (const s of sc.solids) {
+    const i0 = clamp(Math.floor((s.x0 + 128) / CELL), 0, GN - 1), i1 = clamp(Math.floor((s.x1 + 128) / CELL), 0, GN - 1);
+    const j0 = clamp(Math.floor((s.z0 + 128) / CELL), 0, GN - 1), j1 = clamp(Math.floor((s.z1 + 128) / CELL), 0, GN - 1);
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) grid[j * GN + i].push(s);
   }
   W.dynSolids = [];
@@ -208,25 +161,15 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
 
   /* ---------- corriente ---------- */
   const flowOut = { x: 0, z: 0 };
-  W.missionT = 0;
   W.flowAt = (x, z) => {
-    const inCity = Math.abs(x) < 72 && Math.abs(z) < 72;
-    let fx = 0, fz = 0;
-    if (inCity) {
-      const mz = ((((z + 16) % 32) + 32) % 32) - 16;
-      const mx = ((((x + 16) % 32) + 32) % 32) - 16;
-      const wx = smoothstep(7, 3, Math.abs(mz));
-      const wz = smoothstep(7, 3, Math.abs(mx));
-      fx = 1.35 * wx;
-      fz = 0.6 * wz;
-    }
-    const gain = 0.5 + 0.5 * clamp(W.waterY / 3, 0, 1) + 0.4 * smoothstep(CFG.SURGE_T, CFG.SURGE_T + 7, W.missionT);
-    flowOut.x = fx * gain;
-    flowOut.z = fz * gain;
+    if (sc.flowAt) return sc.flowAt(x, z, W, flowOut);
+    flowOut.x = 0;
+    flowOut.z = 0;
     return flowOut;
   };
+  W.slowAt = sc.slowAt || null;
 
-  /* ---------- cuerpos dinámicos (coches, balsa, escombros) ---------- */
+  /* ---------- cuerpos dinámicos ---------- */
   const bodies = [];
   W.bodies = bodies;
   const restRoad = -0.02;
@@ -243,145 +186,171 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
     bodies.push(b);
     return b;
   }
-  const carColors = [0xc0392b, 0x2e86c1, 0xecf0f1, 0x27ae60, 0xf1c40f, 0x7f8c8d, 0x8e44ad, 0xe67e22, 0x1abc9c];
   const carGeoCache = new Map();
   function makeCar(x, z, axis, color) {
     let geo = carGeoCache.get(color);
     if (!geo) carGeoCache.set(color, (geo = carGeometry(color)));
     const mesh = new THREE.Mesh(geo, mats.flat);
-    mesh.castShadow = true;
+    mesh.castShadow = !mobile;
     mesh.receiveShadow = true;
     mesh.rotation.y = axis === 'z' ? Math.PI / 2 : 0;
-    return addBody({ kind: 'car', mesh, x, z, axis, hx: axis === 'x' ? 2.1 : 0.95, hz: axis === 'x' ? 0.95 : 2.1, h: 1.5, draft: 0.5, drift: 0.55 });
+    return addBody({ kind: 'car', mesh, x, z, axis, hx: axis === 'x' ? 2.1 : 0.95, hz: axis === 'x' ? 0.95 : 2.1, h: 1.5, draft: 0.5, drift: 0.55, rescue: 1.5, rescueX: -0.15 });
   }
-  // coches aparcados en las calles
-  const lines = [-32, 0, 32];
-  for (const line of lines) {
-    for (let t = -56; t <= 56; t += 9) {
-      const tl = ((((t + 16) % 32) + 32) % 32) - 16;
-      if (Math.abs(tl) < 8.5) continue;
-      for (const side of [-1, 1]) {
-        if (!rng.chance(scenario === 'fire' ? 0.06 : 0.28)) continue;
-        const off = 3.4 * side;
-        // calle E-O
-        makeCar(t + rng.range(-1.5, 1.5), line + off, 'x', rng.pick(carColors));
-        // calle N-S
-        if (rng.chance(0.7)) makeCar(line + off, t + rng.range(-1.5, 1.5), 'z', rng.pick(carColors));
+  function removeBody(b) {
+    scene.remove(b.mesh);
+    if (b.solid) {
+      const k = W.dynSolids.indexOf(b.solid);
+      if (k >= 0) W.dynSolids.splice(k, 1);
+    }
+    bodies.splice(bodies.indexOf(b), 1);
+  }
+  // retira cuerpos que chocan con edificios/otros o que están demasiado cerca del inicio
+  function pruneBodies(startClear = 9) {
+    for (let i = bodies.length - 1; i >= 0; i--) {
+      const b = bodies[i];
+      if (!b.hx) continue;
+      const near = [];
+      W.solidsNear(b.x - b.hx, b.x + b.hx, b.z - b.hz, b.z + b.hz, near);
+      const clash = near.some((s) => !s.dyn && s.tag !== 'tree' && s.y1 > b.restY + 0.4) || Math.hypot(b.x - CFG.START.x, b.z - CFG.START.z) < startClear;
+      if (clash) removeBody(b);
+    }
+    for (let i = bodies.length - 1; i >= 0; i--) {
+      const a = bodies[i];
+      if (!a.hx) continue;
+      for (let j = 0; j < i; j++) {
+        const c = bodies[j];
+        if (!c.hx) continue;
+        if (Math.abs(a.x - c.x) < a.hx + c.hx + 0.3 && Math.abs(a.z - c.z) < a.hz + c.hz + 0.3) {
+          removeBody(a);
+          break;
+        }
       }
     }
   }
-  // coches bloqueados por edificios se retiran para no solapar
-  for (let i = bodies.length - 1; i >= 0; i--) {
-    const b = bodies[i];
-    const near = [];
-    W.solidsNear(b.x - b.hx, b.x + b.hx, b.z - b.hz, b.z + b.hz, near);
-    const clash = near.some((s) => !s.dyn && s.tag !== 'tree' ? true : false) || Math.hypot(b.x - CFG.START.x, b.z - CFG.START.z) < 9;
-    if (clash) {
-      scene.remove(b.mesh);
-      W.dynSolids.splice(W.dynSolids.indexOf(b.solid), 1);
-      bodies.splice(i, 1);
-    }
-  }
-  // entre coches también
-  for (let i = bodies.length - 1; i >= 0; i--) {
-    const a = bodies[i];
-    for (let j = 0; j < i; j++) {
-      const c = bodies[j];
-      if (Math.abs(a.x - c.x) < a.hx + c.hx + 0.3 && Math.abs(a.z - c.z) < a.hz + c.hz + 0.3) {
-        scene.remove(a.mesh);
-        W.dynSolids.splice(W.dynSolids.indexOf(a.solid), 1);
-        bodies.splice(i, 1);
-        break;
-      }
-    }
-  }
-
-  // Coches con rescatables
-  const carDog1 = makeCar(3.4, 44, 'z', 0xc0392b);
-  const carDog2 = makeCar(20, -35.4, 'x', 0x2e86c1);
-  // autobús
-  const busMesh = new THREE.Mesh(busGeometry(), mats.flat);
-  busMesh.castShadow = true;
-  busMesh.receiveShadow = true;
-  busMesh.rotation.y = Math.PI / 2;
-  const bus = addBody({ kind: 'bus', mesh: busMesh, x: -35.2, z: -22, hx: 1.3, hz: 4.7, h: 3.0, draft: 0.8, drift: 0.3 });
-  // balsa
-  const raftMesh = new THREE.Mesh(raftGeometry(), mats.flat);
-  raftMesh.castShadow = true;
-  const raft = addBody({ kind: 'raft', mesh: raftMesh, x: -20, z: 0.6, hx: 1.6, hz: 1.5, h: 0.3, draft: 0.05, drift: 0.55, wobble: 0.05 });
-
-  // escombros flotantes
-  const barrelCols = [0xc0392b, 0x2e86c1, 0x27ae60, 0xd4a017];
-  const streetPos = () => {
-    const line = rng.pick([-32, 0, 32, -64, 64]);
-    const t = rng.range(-60, 60);
-    return rng.chance(0.5) ? [t, line + rng.range(-3, 3)] : [line + rng.range(-3, 3), t];
-  };
-  for (let i = 0; i < 20; i++) {
-    const [x, z] = streetPos();
-    const m = new THREE.Mesh(barrelGeometry(rng.pick(barrelCols)), mats.flat);
-    m.castShadow = true;
-    addBody({ kind: 'barrel', mesh: m, x, z, draft: 0.3, pushR: 0.5, drift: 0.9, wobble: 0.12 });
-  }
-  for (let i = 0; i < 8; i++) {
-    const [x, z] = streetPos();
-    const m = new THREE.Mesh(logGeometry(), mats.flat);
-    m.castShadow = true;
-    m.rotation.y = rng.range(0, TAU);
-    addBody({ kind: 'log', mesh: m, x, z, draft: 0.22, pushR: 1.2, drift: 1.0, wobble: 0.06 });
-  }
-  const crateGeo = crateGeometry();
-  for (let i = 0; i < 10; i++) {
-    const [x, z] = streetPos();
-    const m = new THREE.Mesh(crateGeo, mats.flat);
-    m.castShadow = true;
-    addBody({ kind: 'crate', mesh: m, x, z, hx: 0.58, hz: 0.58, h: 1.1, draft: 0.5, drift: 0.8, wobble: 0.05 });
-  }
+  W.H = { addBody, makeCar, mats, rng, pruneBodies, removeBody, mobile, scene };
+  if (sc.populate) sc.populate(W, W.H);
   W.pushables = bodies.filter((b) => b.pushR);
 
-  /* ---------- puntos de aparición de rescatables ---------- */
-  const R = city.roofs;
-  const findRoof = (kind, bi, bj) => R.find((r) => r.kind === kind && r.b.bi === bi && r.b.bj === bj);
-  const slots = [];
-  const roofSlot = (kind, r, dx = 0, dz = 0, hard = false) => {
-    if (r) slots.push({ kind, x: r.x + dx, y: r.roofY, z: r.z + dz, hard, where: 'tejado' });
-  };
-  const low3 = R.filter((r) => r.kind === 'low3' && r.b.bi === 1 && r.b.bj === 3);
-  const porch = city.porches.find((p) => p.b.bi === 1 && p.b.bj === 3) || city.porches[0];
-  const childRoof = low3.find((r) => !porch || r.b !== porch.b) || low3[0];
-  slots.push({ kind: 'perro', body: carDog1, ly: 1.5, where: 'coche' });
-  if (porch) slots.push({ kind: 'anciano', x: porch.x, y: porch.y, z: porch.z, where: 'porche' });
-  roofSlot('nino', childRoof, 0, 0);
-  roofSlot('gato', findRoof('low6', 2, 2) || R.find((r) => r.kind === 'low6'), 0, 0);
-  slots.push({ kind: 'hombre', body: raft, ly: 0.28, where: 'balsa' });
-  slots.push({ kind: 'ciervo', body: bus, ly: 3.0, where: 'autobús' });
-  roofSlot('mujer', findRoof('mid9', 2, 1) || R.find((r) => r.kind === 'mid9'), 0, 0);
-  slots.push({ kind: 'perro', body: carDog2, ly: 1.5, where: 'coche' });
-  roofSlot('nino', findRoof('mid12', 0, 0) || R.find((r) => r.kind === 'mid12'), 0, 0, true);
-  const lands = city.landings.filter((l) => l.b.bi === 3 && l.b.bj === 1);
-  const land = lands[Math.min(3, lands.length - 1)] || city.landings[0];
-  if (land) slots.push({ kind: 'mujer', x: land.x, y: land.top, z: land.z, where: 'escalera de emergencia', hard: true });
-  if (scenario === 'fire') {
-    for (const b of [...bodies]) {
-      if (b.kind === 'bus' || b.kind === 'raft' || b.pushR || b === carDog1 || b === carDog2) {
-        scene.remove(b.mesh);
-        if (b.solid) W.dynSolids.splice(W.dynSolids.indexOf(b.solid), 1);
-        bodies.splice(bodies.indexOf(b), 1);
+  /* ---------- candidatos y rescates ---------- */
+  W.candidates = sc.cands;
+  W.bodyCandidates = () => bodies.filter((b) => b.rescue != null && b.hx).map((b) => ({ body: b, ly: b.rescue, type: 'vehicle', zone: 'vehículos', x: b.x0, z: b.z0, y: b.restY + b.rescue }));
+  W.noSpawn = sc.noSpawn || null;
+
+  /* ---------- obstáculos rompibles ---------- */
+  const obsGroup = new THREE.Group();
+  scene.add(obsGroup);
+  W.obstacles = [];
+  const woodM = new THREE.MeshStandardMaterial({ color: 0x6a4a2e, roughness: 0.9 });
+  const leafM = new THREE.MeshStandardMaterial({ color: 0x4a7a34, roughness: 0.9, flatShading: true });
+  const plankM = new THREE.MeshStandardMaterial({ color: 0x9a7048, roughness: 0.9 });
+  const coverCols = { sand: 0xd8b878, ash: 0x55504c, snow: 0xeef4fa, tarp: 0x2e86c1, dust: 0xb09a80 };
+  W.addObstacle = ({ kind = 'branch', x, z, y, breakBy = 'axe', ry = 0, size = 1 }) => {
+    const gy = y ?? terrainH(x, z);
+    const g = new THREE.Group();
+    g.position.set(x, gy, z);
+    g.rotation.y = ry;
+    let w = 2.6 * size, h = 1.3 * size, d = 1.6 * size;
+    if (kind === 'branch') {
+      for (let i = 0; i < 3; i++) {
+        const c = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.2, 2.6 * size, 6), woodM);
+        c.position.set(0, 0.5 + i * 0.28, 0);
+        c.rotation.set(Math.PI / 2 + (i - 1) * 0.35, i * 0.6, (i - 1) * 0.4);
+        c.castShadow = true;
+        g.add(c);
       }
+      const leaves = new THREE.Mesh(new THREE.IcosahedronGeometry(0.8 * size, 0), leafM);
+      leaves.position.set(0.5, 0.7, 0.2);
+      leaves.scale.set(1.3, 0.8, 1);
+      g.add(leaves);
+    } else if (kind === 'planks') {
+      for (let i = 0; i < 5; i++) {
+        const p = new THREE.Mesh(new THREE.BoxGeometry(2.6 * size, 0.14, 0.42), plankM);
+        p.position.set(0, 0.2 + i * 0.22, (i % 2 ? 0.25 : -0.25));
+        p.rotation.set(0, (i - 2) * 0.16, (i % 2 ? 0.08 : -0.08));
+        p.castShadow = true;
+        g.add(p);
+      }
+    } else if (kind === 'trunk') {
+      w = 4.2 * size; h = 1.3 * size; d = 1.3 * size;
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.62 * size, 0.7 * size, 4.2 * size, 9), woodM);
+      c.rotation.z = Math.PI / 2;
+      c.position.y = 0.62 * size;
+      c.castShadow = true;
+      g.add(c);
+      const stub = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.16, 1.2, 6), woodM);
+      stub.position.set(0.6, 1.3 * size, 0.3);
+      stub.rotation.z = -0.7;
+      g.add(stub);
+    } else {
+      // montones ligeros (se despejan con el viento)
+      const col = coverCols[kind] ?? coverCols.sand;
+      const m = new THREE.Mesh(new THREE.IcosahedronGeometry(1.4 * size, 1), new THREE.MeshStandardMaterial({ color: col, roughness: 1, flatShading: true }));
+      m.scale.set(1.5, 0.7, 1.2);
+      m.position.y = 0.35;
+      m.castShadow = true;
+      g.add(m);
+      w = 3.0 * size; h = 1.1 * size; d = 2.4 * size;
     }
-    W.pushables = [];
-    slots.length = 0;
-    const kinds = ['ciervo', 'perro', 'nino', 'gato', 'mujer', 'ciervo', 'hombre', 'anciano'];
-    const fs = city.forestSpots.filter((f) => Math.hypot(f.x - CFG.START.x, f.z - CFG.START.z) > 14);
-    const step = Math.max(1, Math.floor(fs.length / kinds.length));
-    kinds.forEach((kind, i) => {
-      const f = fs[(i * step + (i % 2)) % fs.length];
-      if (f) slots.push({ kind, x: f.x + rng.range(-0.8, 0.8), y: city.G, z: f.z + rng.range(-0.8, 0.8), where: 'claro del bosque' });
-    });
-    roofSlot('nino', R.find((r) => r.kind === 'low3'), 0, 0);
-    roofSlot('gato', R.find((r) => r.kind === 'low6') || R.filter((r) => r.kind === 'low3')[1], 0, 0);
-  }
-  W.victimSlots = slots;
+    obsGroup.add(g);
+    const c = Math.abs(Math.cos(ry)), s2 = Math.abs(Math.sin(ry));
+    const ex = (w * c + d * s2) / 2, ez = (w * s2 + d * c) / 2;
+    const solid = { x0: x - ex, x1: x + ex, y0: gy - 1, y1: gy + h, z0: z - ez, z1: z + ez, tag: 'obstacle', dyn: true, dx: 0, dy: 0, dz: 0, _q: 0 };
+    W.dynSolids.push(solid);
+    const o = { kind, breakBy, x, y: gy, z, g, solid, alive: true, w, d, h };
+    solid.obs = o;
+    W.obstacles.push(o);
+    return o;
+  };
+  W.breakObstacle = (o) => {
+    if (!o.alive) return;
+    o.alive = false;
+    obsGroup.remove(o.g);
+    const k = W.dynSolids.indexOf(o.solid);
+    if (k >= 0) W.dynSolids.splice(k, 1);
+    if (W.onObstacleBroken) W.onObstacleBroken(o);
+  };
+  W.clearObstacles = () => {
+    for (const o of [...W.obstacles]) {
+      obsGroup.remove(o.g);
+      const k = W.dynSolids.indexOf(o.solid);
+      if (k >= 0) W.dynSolids.splice(k, 1);
+    }
+    W.obstacles = [];
+  };
+  // anillo de obstáculos alrededor de un punto (rescatado atrapado)
+  W.addRing = (x, y, z, breakBy, kind) => {
+    const out = [];
+    for (let i = 0; i < 4; i++) {
+      const a = (i / 4) * TAU + 0.4;
+      out.push(W.addObstacle({ kind, x: x + Math.cos(a) * 1.9, z: z + Math.sin(a) * 1.9, y: y - 0.02, breakBy, ry: a + Math.PI / 2, size: 0.9 }));
+    }
+    return out;
+  };
+  // obstáculos sueltos por el mapa (dificultad): solo con herramientas para retirarlos y sin cortar el paso
+  W.scatterObstacles = (n, tools) => {
+    const kinds = [];
+    if (tools.has('axe')) kinds.push(['branch', 'axe'], ['planks', 'axe'], ['trunk', 'axe']);
+    if (tools.has('wind') && sc.windCover) kinds.push([sc.coverKind || 'sand', 'wind']);
+    if (!kinds.length || !sc.sites.length) return;
+    for (let i = 0; i < n; i++) {
+      const site = sc.sites[Math.floor(rng.next() * sc.sites.length)];
+      const [kind, tool] = kinds[Math.floor(rng.next() * kinds.length)];
+      if (Math.hypot(site.x - CFG.START.x, site.z - CFG.START.z) < 14) continue;
+      if (Math.hypot(site.x - CFG.SAFE.x, site.z - CFG.SAFE.z) < 14) continue;
+      W.addObstacle({ kind, x: site.x, z: site.z, breakBy: tool, ry: site.ry || rng.range(0, TAU) });
+    }
+  };
+
+  W.generateRescues = (params) => {
+    const slots = generateRescues(W, params);
+    for (const s of slots) {
+      s.blockers = [];
+      if (s.obstacleKind === 'axe') s.blockers = W.addRing(s.x, s.y, s.z, 'axe', rng.pick(['branch', 'planks', 'trunk']));
+      else if (s.obstacleKind === 'wind') s.blockers = W.addRing(s.x, s.y, s.z, 'wind', sc.coverKind || 'sand');
+    }
+    return slots;
+  };
+  W.recomputeReach = () => { W.reach = computeReach(W, { half: sc.bounds ?? 112 }); };
 
   /* ---------- pilares de roca y placas de hielo ---------- */
   const pillars = [];
@@ -485,9 +454,10 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
   /* ---------- nivel del agua ---------- */
   W.levelAt = (t) => {
     if (!hasWater) return -50;
-    const k = clamp(t / CFG.MISSION_TIME, 0, 1);
-    const base = CFG.WATER0 + (CFG.WATER_BASE - CFG.WATER0) * Math.pow(k, 1.2);
-    return base + CFG.SURGE * smoothstep(CFG.SURGE_T, CFG.SURGE_T + 7, t);
+    const k = clamp(t / W.duration, 0, 1);
+    const base = wcfg.base + (wcfg.max - wcfg.base) * Math.pow(k, wcfg.pow ?? 1.2);
+    const surge = wcfg.surge ? wcfg.surge * smoothstep(wcfg.surgeAt, wcfg.surgeAt + 7, t) : 0;
+    return base + surge;
   };
 
   /* ---------- relámpagos ---------- */
@@ -504,6 +474,7 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
   W.reset = () => {
     for (const p of [...pillars]) removePillar(p);
     for (const s of [...iceSheets]) removeIce(s);
+    W.clearObstacles();
     for (const b of bodies) {
       b.x = b.x0; b.z = b.z0; b.y = b.restY; b.vx = b.vz = 0; b.floating = false;
       b.px = b.x; b.py = b.y; b.pz = b.z;
@@ -515,6 +486,7 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
     W.waterY = W.levelAt(0);
     lightningTimer = 12;
     flash = 0;
+    windAmp.value = sc.windAmp ?? 1;
   };
 
   /* ---------- actualización ---------- */
@@ -541,9 +513,8 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
     const ru = rain.uniforms;
     ru.uTime.value = t;
     ru.uCam.value.copy(camPos);
-    birds.update(t);
+    if (birds) birds.update(t);
 
-    // relámpagos
     lightningTimer -= dt;
     if (lightningTimer <= 0 && gameOn && look.lightning) {
       W.triggerLightning();
@@ -575,8 +546,8 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
         } else {
           b.x = nx; b.z = nz;
         }
-        if (Math.abs(b.x) > 100) { b.x = clamp(b.x, -100, 100); b.vx = 0; }
-        if (Math.abs(b.z) > 100) { b.z = clamp(b.z, -100, 100); b.vz = 0; }
+        if (Math.abs(b.x) > 110) { b.x = clamp(b.x, -110, 110); b.vx = 0; }
+        if (Math.abs(b.z) > 110) { b.z = clamp(b.z, -110, 110); b.vz = 0; }
         b.mesh.rotation.z = Math.sin(t * 1.3 + b.phase) * b.wobble;
         b.mesh.rotation.x = Math.cos(t * 1.1 + b.phase * 2) * b.wobble * 0.8;
         if (b.kind === 'barrel' || b.kind === 'log') b.mesh.rotation.y += dt * 0.3 * Math.sin(b.phase);
@@ -593,8 +564,6 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
       }
       b.px = b.x; b.py = b.y; b.pz = b.z;
     }
-
-    // pilares
     for (let i = pillars.length - 1; i >= 0; i--) {
       const p = pillars[i];
       const prev = p.height;
@@ -608,7 +577,6 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
       p.rock.scale.set(1, p.height, 1);
       p.crystals.position.y = p.height;
     }
-    // hielo (flota con el agua)
     for (let i = iceSheets.length - 1; i >= 0; i--) {
       const s = iceSheets[i];
       s.life -= dt;
@@ -621,13 +589,11 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
       s.mat.opacity = s.life < 3 ? 0.35 + 0.57 * (s.life / 3) : 0.92;
       if (s.life <= 0) removeIce(s);
     }
-    // sol siguiendo al jugador
     if (playerPos) {
       sun.target.position.set(playerPos.x, playerPos.y, playerPos.z);
       sun.position.set(playerPos.x + sunOffset.x, playerPos.y + sunOffset.y, playerPos.z + sunOffset.z);
     }
-    // refugio
-    const so = city.safeObj;
+    const so = sc.safeObj;
     so.rotor.rotation.y += dt * 4 * (0.25 + 0.75 * Math.abs(Math.sin(t * 0.2)));
     so.tailRotor.rotation.x += dt * 12;
     so.beaconMat.uniforms.uTime.value = t;
@@ -648,7 +614,7 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
       const dx = px - b.x, dz = pz - b.z;
       const rr = r + b.pushR;
       const d2 = dx * dx + dz * dz;
-      if (d2 < rr * rr && Math.abs(W.waterY - b.draft - 0) > -1) {
+      if (d2 < rr * rr) {
         const d = Math.sqrt(d2) || 0.01;
         out.x += (dx / d) * (rr - d) * 3 + b.vx * 0.5;
         out.z += (dz / d) * (rr - d) * 3 + b.vz * 0.5;
@@ -659,7 +625,7 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
   };
 
   W.safe = CFG.SAFE;
-  W.signs = city.signs;
+  W.signs = sc.signs;
   W.sunLightRef = sun;
   return W;
 }

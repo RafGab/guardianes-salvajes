@@ -15,7 +15,9 @@ import { Game } from './game.js';
 import { ui } from './ui.js';
 import { Audio3D as audio } from './audio.js';
 import { clamp, damp } from './utils.js';
-import { MISSIONS } from './missions.js';
+import { LEVELS } from './levels.js';
+import { Save } from './save.js';
+import { ITEMS } from './items.js';
 import { IS_TOUCH } from './platform.js';
 
 const $ = (id) => document.getElementById(id);
@@ -91,7 +93,7 @@ function resizeIfNeeded() {
 
 /* ---------- estado ---------- */
 let world, player, chase, fx, game, input;
-let currentMission = MISSIONS[0];
+let currentLevel = LEVELS[0];
 let envTex = null;
 let mode = 'boot';
 let selected = 0;
@@ -161,19 +163,37 @@ function enterTitle() {
   ui.clickHint(false);
   world.reset();
 }
-async function ensureWorld(scenario) {
-  if (world && world.scenario === scenario) return;
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Muestra la introducción cinemática del nivel mientras se construye su escenario 3D
+async function loadLevel(level, minMs = 2600) {
+  const t0 = performance.now();
   input.enabled = false;
   input.releaseLock();
-  ui.showScreen('loading');
-  ui.loadingMsg('Preparando el escenario…');
+  mode = 'loading';
+  ui.hud(false);
+  ui.showLevelIntro(level);
+  ui.levelIntroProgress(0.12, 'Preparando el escenario 3D…');
   await nextFrame();
-  await buildGame(scenario);
+  if (!world || world.scenario !== level.scenario) {
+    ui.levelIntroProgress(0.3, `Construyendo: ${level.place}…`);
+    await nextFrame();
+    await buildGame(level.scenario);
+  }
+  ui.levelIntroProgress(0.85, 'Colocando a las personas y animales…');
+  await nextFrame();
+  const el = performance.now() - t0;
+  if (el < minMs) {
+    ui.levelIntroProgress(0.95, '¡Todo listo!');
+    await wait(minMs - el);
+  }
+  ui.levelIntroProgress(1, '');
 }
 function enterMissions() {
   mode = 'title';
   input.enabled = false;
   ui.hud(false);
+  ui.showOverlay('inventory', false);
   if (showcase) scene.remove(showcase.root);
   scene.remove(pedestal);
   if (player && player.model) player.model.setVisible(false);
@@ -186,9 +206,22 @@ function enterMissions() {
 async function pickMission(i) {
   audio.init();
   audio.click();
-  currentMission = MISSIONS[i];
-  await ensureWorld(currentMission.scenario);
+  currentLevel = LEVELS[i];
+  if (!Save.isUnlocked(currentLevel.n)) return;
+  await loadLevel(currentLevel, 2400);
   enterSelect();
+}
+async function startNextLevel() {
+  const idx = LEVELS.findIndex((l) => l.id === currentLevel.id);
+  if (idx < 0 || idx >= LEVELS.length - 1) return;
+  currentLevel = LEVELS[idx + 1];
+  if (!Save.isUnlocked(currentLevel.n)) return;
+  ui.showOverlay('inventory', false);
+  await loadLevel(currentLevel, 3200);
+  ui.showScreen(null);
+  mode = 'playing';
+  game.start(curHero || HEROES[selected], currentLevel);
+  input.requestLock();
 }
 function enterSelect() {
   mode = 'select';
@@ -201,17 +234,19 @@ function enterSelect() {
   scene.add(pedestal);
   pedestal.position.set(SHOW.x, terrainH(SHOW.x, SHOW.z), SHOW.z);
   ui.showScreen('select');
-  ui.markRecommended(currentMission);
-  showHero(curHero ? HEROES.findIndex((h) => h.id === curHero.id) : 0, true);
+  ui.markRecommended(currentLevel);
+  const saved = Math.max(0, HEROES.findIndex((h) => h.id === (curHero ? curHero.id : Save.hero)));
+  showHero(saved, true);
 }
 function beginMission() {
   curHero = HEROES[selected];
+  Save.setHero(curHero.id);
   scene.remove(pedestal);
   if (showcase) scene.remove(showcase.root);
   audio.init();
   goFullscreen();
   mode = 'playing';
-  game.start(curHero, currentMission);
+  game.start(curHero, currentLevel);
   input.requestLock();
 }
 function goFullscreen() {
@@ -332,6 +367,8 @@ async function buildGame(scenario) {
   buildEnvironment();
   await nextFrame();
   world = createWorld(scene, renderer, { quality, scenario });
+  SHOW.x = CFG.START.x;
+  SHOW.z = CFG.START.z - 5.5;
   renderer.toneMappingExposure = world.look.exposure;
   if (bloomPass) bloomPass.threshold = world.look.bloom || 0.92;
   await nextFrame();
@@ -339,7 +376,7 @@ async function buildGame(scenario) {
   player = new Player(world);
   chase = new ChaseCam(camera, world);
   game = new Game({ scene, camera, renderer, world, player, chase, fx, input });
-  window.__g = { game, world, player, chase, input, camera, scene, renderer, get mode() { return mode; }, setMode: (m) => (mode = m), enterSelect, beginMission, showHero, HEROES, fx, MISSIONS, pickMission, enterMissions, buildGame };
+  window.__g = { game, world, player, chase, input, camera, scene, renderer, get mode() { return mode; }, setMode: (m) => (mode = m), enterSelect, beginMission, showHero, HEROES, fx, LEVELS, Save, ITEMS, pickMission, enterMissions, buildGame, loadLevel, startNextLevel, get level() { return currentLevel; } };
 }
 
 async function boot() {
@@ -425,15 +462,10 @@ function bindUi() {
   $('btn-back-m').onclick = () => { audio.click(); enterTitle(); };
   $('btn-missions').onclick = () => enterMissions();
   $('btn-missions2').onclick = () => enterMissions();
-  $('btn-next').onclick = async () => {
-    const idx = MISSIONS.findIndex((m) => m.id === currentMission.id);
-    currentMission = MISSIONS[Math.min(MISSIONS.length - 1, idx + 1)];
-    await ensureWorld(currentMission.scenario);
-    ui.showScreen(null);
-    mode = 'playing';
-    game.start(curHero, currentMission);
-    input.requestLock();
-  };
+  $('btn-next').onclick = () => startNextLevel();
+  $('btn-inv-m').onclick = () => ui.showInventory(curHero || HEROES[selected]);
+  $('btn-inv-end').onclick = () => ui.showInventory(curHero || HEROES[selected]);
+  $('btn-inv-close').onclick = () => ui.showOverlay('inventory', false);
   $('btn-how').onclick = () => { audio.init(); audio.click(); ui.showOverlay('how', true); };
   $('btn-how-close').onclick = () => ui.showOverlay('how', false);
   $('btn-quality').onclick = () => setQuality(quality === 'high' ? 'low' : 'high');
@@ -444,10 +476,10 @@ function bindUi() {
   $('btn-back').onclick = () => { audio.click(); enterMissions(); };
   $('btn-start').onclick = () => beginMission();
   $('btn-resume').onclick = resumeGame;
-  $('btn-restart').onclick = () => { ui.showScreen(null); mode = 'playing'; game.start(curHero, currentMission); input.requestLock(); };
+  $('btn-restart').onclick = () => { ui.showScreen(null); mode = 'playing'; game.start(curHero, currentLevel); input.requestLock(); };
   $('btn-change').onclick = () => enterSelect();
   $('btn-menu').onclick = () => enterTitle();
-  $('btn-again').onclick = () => { ui.showScreen(null); mode = 'playing'; game.start(curHero, currentMission); input.requestLock(); };
+  $('btn-again').onclick = () => { ui.showScreen(null); mode = 'playing'; game.start(curHero, currentLevel); input.requestLock(); };
   $('btn-change2').onclick = () => enterSelect();
   $('btn-menu2').onclick = () => enterTitle();
 
@@ -455,7 +487,9 @@ function bindUi() {
   input.on('selectNext', () => mode === 'select' && showHero(selected + 1));
   input.on('confirm', () => mode === 'select' && beginMission());
   input.on('mute', toggleSound);
-  input.on('power', () => mode === 'playing' && game.state === 'playing' && game.player.usePower(fx));
+  input.on('power', () => mode === 'playing' && game.state === 'playing' && game.useAbility());
+  input.on('ability', (i) => mode === 'playing' && game.selectAbility(i));
+  input.on('abilityNext', () => mode === 'playing' && game.cycleAbility(1));
   input.on('rescue', () => mode === 'playing' && game.tryRescue());
   input.on('interact', () => mode === 'playing' && game.interact());
   input.on('recenter', () => mode === 'playing' && (chase.yaw = player.facing + Math.PI));

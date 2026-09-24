@@ -1,6 +1,7 @@
 import * as THREE from 'three';
-import { CFG, terrainH } from './city.js';
+import { CFG, terrainH } from './terrain.js';
 import { clamp, damp, smoothstep, makeRng, TAU } from './utils.js';
+import { VolcanoHazard, HurricaneHazard, SandstormHazard, DroughtHazard } from './hazards2.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 
@@ -36,8 +37,14 @@ class FireHazard {
     this.acc = 0;
     this.lightAcc = 0;
     this.extinguished = 0;
-    const seeds = [[-16, -16], [30, -30], [-42, 18], [18, 12]];
-    for (const [x, z] of seeds) this.spawn(x, z, 3.5);
+    const pool = (this.ctx.sc && this.ctx.sc.fireSeedPool) || [[-16, -16], [30, -30], [-42, 18], [18, 12]];
+    const cand = pool.filter(([x, z]) => Math.hypot(x - CFG.START.x, z - CFG.START.z) > 26 && Math.hypot(x - CFG.SAFE.x, z - CFG.SAFE.z) > 20);
+    for (let i = cand.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [cand[i], cand[j]] = [cand[j], cand[i]];
+    }
+    const n = 3 + Math.round(((this.ctx.level && this.ctx.level.hz) || 1) - 1);
+    for (const [x, z] of cand.slice(0, Math.min(cand.length, n + 1))) this.spawn(x, z, 3.5);
   }
 
   spawn(x, z, r0 = 2.5) {
@@ -94,7 +101,8 @@ class FireHazard {
   update(dt, t) {
     const { ctx } = this;
     const { player, fx, camera, world } = ctx;
-    const immune = ctx.hero.element === 'fuego';
+    const immune = ctx.hero.element === 'fuego' || player.shieldT > 0;
+    const hz = ctx.hz || 1;
     // propagación
     this.spreadT -= dt;
     if (t > 100 && !this.windOn) {
@@ -103,14 +111,14 @@ class FireHazard {
       ctx.tip('wind');
     }
     if (this.spreadT <= 0) {
-      this.spreadT = Math.max(2.4, 6.2 - t / 70) * (this.windOn ? 0.75 : 1);
+      this.spreadT = (Math.max(2.4, 6.2 - t / 70) * (this.windOn ? 0.75 : 1)) / hz;
       const alive = this.burning();
       if (alive.length && this.zones.length < this.MAX) {
         const src = alive[Math.floor(Math.random() * alive.length)];
         const a = Math.random() * TAU + (this.windOn ? 0 : 0);
         const d = src.r * rnd(1.0, 1.5) + 2.2;
         const nx = src.x + Math.cos(a) * d + (this.windOn ? 2.5 : 0), nz = src.z + Math.sin(a) * d;
-        const okBounds = Math.abs(nx) < 62 && Math.abs(nz) < 62;
+        const okBounds = Math.abs(nx) < 104 && Math.abs(nz) < 104 && terrainH(nx, nz) < 15 && Math.hypot(nx - CFG.SAFE.x, nz - CFG.SAFE.z) > 18;
         const okStart = Math.hypot(nx - CFG.START.x, nz - CFG.START.z) > 16;
         const okFar = this.zones.every((z) => Math.hypot(nx - z.x, nz - z.z) > 4.2 || z.state === 'out');
         if (okBounds && okStart && okFar) this.spawn(nx, nz, 2.4);
@@ -199,10 +207,11 @@ class FireHazard {
 class QuakeHazard {
   constructor(ctx) {
     this.ctx = ctx;
-    this.quakes = [
+    const hz = ctx.hz || 1, base = [
       { t: 16, dur: 6, int: 0.55 }, { t: 62, dur: 7, int: 0.7 }, { t: 108, dur: 7, int: 0.85 },
       { t: 160, dur: 8, int: 1 }, { t: 214, dur: 8, int: 1 }, { t: 265, dur: 6, int: 0.8 },
     ];
+    this.quakes = base.map((q) => ({ ...q, t: Math.round(q.t / Math.max(0.8, hz)) }));
     this.group = new THREE.Group();
     ctx.scene.add(this.group);
     this.rockMat = new THREE.MeshStandardMaterial({ color: 0x8a8378, roughness: 0.95, flatShading: true });
@@ -284,7 +293,7 @@ class QuakeHazard {
   spawnDebris(px, pz, intensity) {
     if (this.debris.length > 34) this.removeDebris(this.debris.shift());
     const a = Math.random() * TAU, r = rnd(3, 26);
-    const x = clamp(px + Math.cos(a) * r, -64, 64), z = clamp(pz + Math.sin(a) * r, -64, 64);
+    const x = clamp(px + Math.cos(a) * r, -96, 96), z = clamp(pz + Math.sin(a) * r, -100, 96);
     const size = rnd(0.6, 1.5) * (0.7 + intensity * 0.5);
     const mesh = this.makeRock(size, Math.random() < 0.4);
     mesh.position.set(x, rnd(18, 30), z);
@@ -293,7 +302,7 @@ class QuakeHazard {
   }
 
   spawnRubble() {
-    const inter = [[-32, -32], [0, -32], [32, -32], [-32, 0], [0, 0], [32, 0], [-32, 32], [0, 32], [32, 32]];
+    const inter = this.ctx.sc?.rubbleSites?.length ? this.ctx.sc.rubbleSites : [[-32, -32], [0, -32], [32, -32], [-32, 0], [0, 0], [32, 0], [-32, 32], [0, 32], [32, 32]];
     const [ix, iz] = inter[Math.floor(Math.random() * inter.length)];
     if (this.static.some((o) => Math.hypot(o.x - ix, o.z - iz) < 10)) return;
     const cx = ix + rnd(-3, 3), cz = iz + rnd(-3, 3);
@@ -350,7 +359,7 @@ class QuakeHazard {
     if (this.active) {
       const a = this.active;
       const k = (t - a.t) / a.dur;
-      intensity = a.int * Math.sin(clamp(k, 0, 1) * Math.PI) ** 0.6;
+      intensity = a.int * Math.sin(clamp(k, 0, 1) * Math.PI) ** 0.6 * clamp(0.75 + 0.25 * (ctx.hz || 1), 0.7, 1.4);
       if (t >= a.end) {
         this.active = null;
         this.spawnRubble();
@@ -389,7 +398,7 @@ class QuakeHazard {
         d.mesh.rotation.x += dt * 2;
         // ¿golpea al héroe?
         const dx = d.x - player.pos.x, dz = d.z - player.pos.z;
-        if (Math.abs(dx) < 1.3 && Math.abs(dz) < 1.3 && d.y < player.pos.y + 2.4 && d.y > player.pos.y - 0.2) {
+        if (!(player.shieldT > 0) && Math.abs(dx) < 1.3 && Math.abs(dz) < 1.3 && d.y < player.pos.y + 2.4 && d.y > player.pos.y - 0.2) {
           const l = Math.hypot(dx, dz) || 1;
           player.vx = -dx / l * 9;
           player.vz = -dz / l * 9;
@@ -440,7 +449,7 @@ class IceHazard {
     this.group = new THREE.Group();
     ctx.scene.add(this.group);
     this.warm = [];
-    const spots = [[0, 50], [-30, 30], [30, 10], [-30, -18], [30, -34], [0, -52], [-6, -78]];
+    const spots = (ctx.sc && ctx.sc.warmSpots) || [[0, 50], [-30, 30], [30, 10], [-30, -18], [30, -34], [0, -52], [-6, -78]];
     const barrelMat = new THREE.MeshStandardMaterial({ color: 0x3a2a24, roughness: 0.7, metalness: 0.4 });
     const emberMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff8a30).multiplyScalar(2.2) });
     spots.forEach(([x, z], i) => {
@@ -494,15 +503,16 @@ class IceHazard {
     const { player, fx, world, ui, hero } = ctx;
     // rachas de viento y nevadas intensas
     const gust = clamp(Math.sin(t * 0.21) * 0.6 + Math.sin(t * 0.83 + 1) * 0.35 + 0.45, 0, 1);
-    const whiteout = Math.pow((Math.sin(t * 0.11 + 0.8) + 1) / 2, 3);
+    const whiteout = Math.pow((Math.sin(t * 0.11 + 4.0) + 1) / 2, 3);
     world.setFog(world.fogBase + 0.019 * whiteout);
     const ang = 0.6;
     this.wind.x = Math.cos(ang) * gust * 4.6;
     this.wind.z = Math.sin(ang) * gust * 4.6;
     player.env.wind = this.wind;
     if (world.rain) world.rain.uniforms.uWind.value.set(6 + gust * 14, 0, 2 + gust * 5);
-    const icy = hero.element !== 'hielo';
+    const icy = hero.element !== 'hielo' && !(player.climbT > 0);
     player.env.slip = icy ? 0.32 : 1;
+    const hz = ctx.hz || 1;
     if (icy && !this.slideTip && t > 20) {
       this.slideTip = true;
       ctx.tip('ice');
@@ -512,8 +522,9 @@ class IceHazard {
       ctx.tip('visibility');
     }
     // frío
-    let rate = 0.0065 * (1 + gust * 1.2);
+    let rate = 0.0065 * hz * (1 + gust * 1.2);
     if (hero.element === 'fuego') rate *= 0.25;
+    if (player.shieldT > 0) rate *= 0.3;
     let warmNear = false;
     for (const w of this.warm) {
       if (Math.hypot(player.pos.x - w.x, player.pos.z - w.z) < 6 && Math.abs(player.pos.y - w.y) < 4) warmNear = true;
@@ -561,9 +572,40 @@ export class FloodHazard {
   dispose() {}
 }
 
+// Catástrofe final: sismos + incendios + viento con objetos voladores a la vez
+class ExtremeHazard {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.parts = [new QuakeHazard(ctx), new FireHazard(ctx), new HurricaneHazard(ctx, { debrisOnly: true })];
+    this.focus = 0;
+  }
+  reset() { this.parts.forEach((p) => p.reset()); }
+  urgentAt(pos) { return this.parts.some((p) => p.urgentAt(pos)); }
+  onPower(a, b, c) { this.parts.forEach((p) => p.onPower(a, b, c)); }
+  gust(...a) { this.parts[2].gust(...a); }
+  cool(f) { this.parts[1].heat = Math.max(0, this.parts[1].heat - f); }
+  gauge() {
+    const q = this.parts[0].gauge(), f = this.parts[1].gauge();
+    return this.parts[0].active || (q.pct > 0.7) ? q : f.pct > 0.1 ? f : q;
+  }
+  update(dt, t) {
+    this.parts[0].update(dt, t);
+    this.parts[1].update(dt, t);
+    this.parts[2].update(dt, t);
+  }
+  dispose() { this.parts.forEach((p) => p.dispose()); }
+}
+
 export function createHazards(scenario, ctx) {
-  if (scenario === 'fire') return new FireHazard(ctx);
-  if (scenario === 'quake') return new QuakeHazard(ctx);
-  if (scenario === 'ice') return new IceHazard(ctx);
-  return new FloodHazard(ctx);
+  switch (scenario) {
+    case 'fire': return new FireHazard(ctx);
+    case 'quake': return new QuakeHazard(ctx);
+    case 'ice': return new IceHazard(ctx);
+    case 'volcano': return new VolcanoHazard(ctx);
+    case 'hurricane': return new HurricaneHazard(ctx);
+    case 'sandstorm': return new SandstormHazard(ctx);
+    case 'drought': return new DroughtHazard(ctx);
+    case 'extreme': return new ExtremeHazard(ctx);
+    default: return new FloodHazard(ctx);
+  }
 }
