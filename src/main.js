@@ -15,6 +15,7 @@ import { Game } from './game.js';
 import { ui } from './ui.js';
 import { Audio3D as audio } from './audio.js';
 import { clamp, damp } from './utils.js';
+import { MISSIONS } from './missions.js';
 
 const $ = (id) => document.getElementById(id);
 const stage = $('stage');
@@ -28,7 +29,7 @@ renderer.toneMappingExposure = 0.95;
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 stage.appendChild(renderer.domElement);
-const scene = new THREE.Scene();
+let scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.1, 1600);
 camera.position.set(0, 40, 100);
 
@@ -59,6 +60,7 @@ function buildComposer(w, h) {
   composer.addPass(renderPass);
   bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.55, 0.7, 0.92);
   bloomPass.enabled = quality === 'high' && URLQ.get('bloom') !== '0';
+  bloomPass.threshold = world && world.look.bloom ? world.look.bloom : 0.92;
   composer.addPass(bloomPass);
   composer.addPass(new OutputPass());
   gradePass = new ShaderPass(GradeShader);
@@ -87,6 +89,8 @@ function resizeIfNeeded() {
 
 /* ---------- estado ---------- */
 let world, player, chase, fx, game, input;
+let currentMission = MISSIONS[0];
+let envTex = null;
 let mode = 'boot';
 let selected = 0;
 let curHero = null;
@@ -155,6 +159,35 @@ function enterTitle() {
   ui.clickHint(false);
   world.reset();
 }
+async function ensureWorld(scenario) {
+  if (world && world.scenario === scenario) return;
+  input.enabled = false;
+  input.releaseLock();
+  ui.showScreen('loading');
+  ui.loadingMsg('Preparando el escenario…');
+  await nextFrame();
+  await buildGame(scenario);
+}
+function enterMissions() {
+  mode = 'title';
+  input.enabled = false;
+  ui.hud(false);
+  if (showcase) scene.remove(showcase.root);
+  scene.remove(pedestal);
+  if (player && player.model) player.model.setVisible(false);
+  game.clearVictims();
+  game.state = 'idle';
+  world.reset();
+  ui.buildMissions(pickMission);
+  ui.showScreen('missions');
+}
+async function pickMission(i) {
+  audio.init();
+  audio.click();
+  currentMission = MISSIONS[i];
+  await ensureWorld(currentMission.scenario);
+  enterSelect();
+}
 function enterSelect() {
   mode = 'select';
   input.enabled = false;
@@ -166,6 +199,7 @@ function enterSelect() {
   scene.add(pedestal);
   pedestal.position.set(SHOW.x, terrainH(SHOW.x, SHOW.z), SHOW.z);
   ui.showScreen('select');
+  ui.markRecommended(currentMission);
   showHero(curHero ? HEROES.findIndex((h) => h.id === curHero.id) : 0, true);
 }
 function beginMission() {
@@ -174,7 +208,7 @@ function beginMission() {
   if (showcase) scene.remove(showcase.root);
   audio.init();
   mode = 'playing';
-  game.start(curHero);
+  game.start(curHero, currentMission);
   input.requestLock();
 }
 function pauseGame() {
@@ -256,21 +290,55 @@ const dragSel = { active: false, x: 0 };
 /* ---------- arranque ---------- */
 const nextFrame = () => new Promise((r) => setTimeout(r, 16));
 
+function disposeScene(sc) {
+  sc.traverse((o) => {
+    if (o.geometry) o.geometry.dispose();
+    const m = o.material;
+    if (m) {
+      for (const mm of Array.isArray(m) ? m : [m]) {
+        for (const k in mm) {
+          const v = mm[k];
+          if (v && v.isTexture) v.dispose();
+        }
+        mm.dispose();
+      }
+    }
+  });
+}
+
+async function buildGame(scenario) {
+  if (game) game.clearVictims();
+  for (const h of HEROES) {
+    const m = getHeroModel(h.id);
+    if (m.root.parent) m.root.parent.remove(m.root);
+  }
+  scene.remove(pedestal);
+  showcase = null;
+  if (world) disposeScene(scene);
+  scene = new THREE.Scene();
+  if (renderPass) renderPass.scene = scene;
+  buildEnvironment();
+  await nextFrame();
+  world = createWorld(scene, renderer, { quality, scenario });
+  renderer.toneMappingExposure = world.look.exposure;
+  if (bloomPass) bloomPass.threshold = world.look.bloom || 0.92;
+  await nextFrame();
+  fx = new FX(scene);
+  player = new Player(world);
+  chase = new ChaseCam(camera, world);
+  game = new Game({ scene, camera, renderer, world, player, chase, fx, input });
+  window.__g = { game, world, player, chase, input, camera, scene, renderer, get mode() { return mode; }, setMode: (m) => (mode = m), enterSelect, beginMission, showHero, HEROES, fx, MISSIONS, pickMission, enterMissions, buildGame };
+}
+
 async function boot() {
   ui.init();
   ui.showScreen('loading');
+  input = new Input(renderer.domElement);
   await nextFrame();
   resizeIfNeeded();
   ui.loadingMsg('Construyendo la ciudad en 3D…');
   await nextFrame();
-  world = createWorld(scene, renderer, { quality });
-  ui.loadingMsg('Creando a los héroes…');
-  await nextFrame();
-  fx = new FX(scene);
-  input = new Input(renderer.domElement);
-  player = new Player(world);
-  chase = new ChaseCam(camera, world);
-  buildEnvironment();
+  await buildGame('flood');
   ui.loadingMsg('Buscando modelos 3D realistas…');
   await preloadGLBHeroes();
   for (const h of HEROES) {
@@ -279,16 +347,19 @@ async function boot() {
     const m = getHeroModel(h.id);
     m.setVisible(false);
   }
-  game = new Game({ scene, camera, renderer, world, player, chase, fx, input });
   bindUi();
   ui.buildSelect((i) => showHero(i));
-  window.__g = { game, world, player, chase, input, camera, scene, renderer, get mode() { return mode; }, setMode: (m) => (mode = m), enterSelect, beginMission, showHero, HEROES, fx };
   enterTitle();
   requestAnimationFrame(frame);
 }
 
 // Mapa de entorno (reflejos realistas en armaduras, ojos y metales)
 function buildEnvironment() {
+  if (envTex) {
+    scene.environment = envTex;
+    scene.environmentIntensity = 0.75;
+    return;
+  }
   const env = new THREE.Scene();
   const sky = new THREE.Mesh(
     new THREE.SphereGeometry(50, 32, 16),
@@ -309,7 +380,8 @@ function buildEnvironment() {
   light(10, 10, -26, 12, -10, 4);
   light(24, 6, 0, 8, -34, 3);
   const pm = new THREE.PMREMGenerator(renderer);
-  scene.environment = pm.fromScene(env, 0.02).texture;
+  envTex = pm.fromScene(env, 0.02).texture;
+  scene.environment = envTex;
   scene.environmentIntensity = 0.75;
   pm.dispose();
 }
@@ -337,20 +409,32 @@ function toggleSound() {
 
 function bindUi() {
   setQuality(quality);
-  $('btn-play').onclick = () => { audio.init(); audio.click(); enterSelect(); };
+  $('btn-play').onclick = () => { audio.init(); audio.click(); enterMissions(); };
+  $('btn-back-m').onclick = () => { audio.click(); enterTitle(); };
+  $('btn-missions').onclick = () => enterMissions();
+  $('btn-missions2').onclick = () => enterMissions();
+  $('btn-next').onclick = async () => {
+    const idx = MISSIONS.findIndex((m) => m.id === currentMission.id);
+    currentMission = MISSIONS[Math.min(MISSIONS.length - 1, idx + 1)];
+    await ensureWorld(currentMission.scenario);
+    ui.showScreen(null);
+    mode = 'playing';
+    game.start(curHero, currentMission);
+    input.requestLock();
+  };
   $('btn-how').onclick = () => { audio.init(); audio.click(); ui.showOverlay('how', true); };
   $('btn-how-close').onclick = () => ui.showOverlay('how', false);
   $('btn-quality').onclick = () => setQuality(quality === 'high' ? 'low' : 'high');
   $('btn-quality2').onclick = () => setQuality(quality === 'high' ? 'low' : 'high');
   $('btn-sound').onclick = toggleSound;
   $('btn-sound2').onclick = toggleSound;
-  $('btn-back').onclick = () => { audio.click(); enterTitle(); };
+  $('btn-back').onclick = () => { audio.click(); enterMissions(); };
   $('btn-start').onclick = () => beginMission();
   $('btn-resume').onclick = resumeGame;
-  $('btn-restart').onclick = () => { ui.showScreen(null); mode = 'playing'; game.start(curHero); input.requestLock(); };
+  $('btn-restart').onclick = () => { ui.showScreen(null); mode = 'playing'; game.start(curHero, currentMission); input.requestLock(); };
   $('btn-change').onclick = () => enterSelect();
   $('btn-menu').onclick = () => enterTitle();
-  $('btn-again').onclick = () => { ui.showScreen(null); mode = 'playing'; game.start(curHero); input.requestLock(); };
+  $('btn-again').onclick = () => { ui.showScreen(null); mode = 'playing'; game.start(curHero, currentMission); input.requestLock(); };
   $('btn-change2').onclick = () => enterSelect();
   $('btn-menu2').onclick = () => enterTitle();
 

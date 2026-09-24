@@ -17,6 +17,9 @@ export function createSky(scene) {
       uZenith: { value: new THREE.Color(0x1c2532) },
       uSun: { value: new THREE.Vector3(0.45, 0.5, 0.3).normalize() },
       uDark: { value: 0 },
+      uCloudLo: { value: new THREE.Color(0.07, 0.085, 0.11) },
+      uCloudHi: { value: new THREE.Color(0.42, 0.47, 0.55) },
+      uCover: { value: 0.32 },
     },
     vertexShader: /* glsl */ `
       varying vec3 vDir;
@@ -29,7 +32,8 @@ export function createSky(scene) {
     fragmentShader: /* glsl */ `
       varying vec3 vDir;
       uniform float uTime, uFlash, uDark;
-      uniform vec3 uHorizon, uZenith, uSun;
+      uniform vec3 uHorizon, uZenith, uSun, uCloudLo, uCloudHi;
+      uniform float uCover;
       float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
       float noise(vec2 p){
         vec2 i = floor(p), f = fract(p); f = f*f*(3.0-2.0*f);
@@ -41,9 +45,9 @@ export function createSky(scene) {
         float h = clamp(d.y, 0.0, 1.0);
         vec3 col = mix(uHorizon, uZenith, pow(h, 0.5));
         vec2 uv = d.xz / (max(d.y, 0.0) + 0.32) * 1.1 + vec2(uTime * 0.010, uTime * 0.005);
-        float c = smoothstep(0.32, 0.8, fbm(uv * 1.4));
+        float c = smoothstep(uCover, uCover + 0.48, fbm(uv * 1.4));
         float shade = fbm(uv * 2.6 + 4.0);
-        vec3 cloudCol = mix(vec3(0.07, 0.085, 0.11), vec3(0.42, 0.47, 0.55), shade);
+        vec3 cloudCol = mix(uCloudLo, uCloudHi, shade);
         cloudCol *= mix(1.0, 0.55, uDark);
         col = mix(col, cloudCol, c * smoothstep(-0.02, 0.22, d.y) * 0.96);
         float sun = pow(max(dot(d, uSun), 0.0), 40.0) * 0.16;
@@ -189,6 +193,7 @@ export function createRain(scene, count = 3500) {
     uLen: { value: 0.9 },
     uWind: { value: new THREE.Vector3(3.5, 0, 1.2) },
     uAlpha: { value: 0.32 },
+    uColor: { value: new THREE.Color(0.72, 0.8, 0.9) },
   };
   const mat = new THREE.ShaderMaterial({
     uniforms,
@@ -213,8 +218,9 @@ export function createRain(scene, count = 3500) {
       }`,
     fragmentShader: /* glsl */ `
       uniform float uAlpha;
+      uniform vec3 uColor;
       varying float vA;
-      void main() { gl_FragColor = vec4(0.72, 0.8, 0.9, uAlpha * vA); }`,
+      void main() { gl_FragColor = vec4(uColor, uAlpha * vA); }`,
   });
   const lines = new THREE.LineSegments(geo, mat);
   lines.frustumCulled = false;

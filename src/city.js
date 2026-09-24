@@ -151,7 +151,15 @@ function makeFacadeTextures() {
   return { map: texFromCanvas(c, { repeat: true, aniso: 8 }), em: texFromCanvas(e, { repeat: true, aniso: 8 }) };
 }
 
-export function paintGround(parkBlocks, plazaBlocks) {
+const PAL = {
+  flood: { g: [82, 112, 66], var: 1, road: '#34373b', walk: '#9da0a2', lot: '#767a7d', dash: true, plaza: '#b8a888', park: '#5b8a45' },
+  quake: { g: [82, 112, 66], var: 1, road: '#3a3c40', walk: '#a5a196', lot: '#7d7a72', dash: true, plaza: '#b8a888', park: '#6a8a48' },
+  fire: { g: [124, 116, 60], var: 1, road: '#6a5844', walk: '#7d6c50', lot: '#6d5f45', dash: false, plaza: '#a89a80', park: '#727a3a' },
+  ice: { g: [168, 182, 200], var: 0.4, road: '#7a8694', walk: '#c2ccd8', lot: '#b0bbc8', dash: true, plaza: '#cbd4de', park: '#bcc8d4' },
+};
+
+export function paintGround(parkBlocks, plazaBlocks, scenario = 'flood') {
+  const pal = PAL[scenario] || PAL.flood;
   const S = 2048;
   const c = makeCanvas(S);
   const g = c.getContext('2d');
@@ -166,9 +174,9 @@ export function paintGround(parkBlocks, plazaBlocks) {
       const n = fbm(i * 0.05, j * 0.05, 4);
       const n2 = fbm(i * 0.3 + 40, j * 0.3, 2);
       const k = (j * 256 + i) * 4;
-      id.data[k] = 82 + n * 40 + n2 * 14;
-      id.data[k + 1] = 112 + n * 42 + n2 * 16;
-      id.data[k + 2] = 66 + n * 22;
+      id.data[k] = pal.g[0] + (n * 40 + n2 * 14) * pal.var;
+      id.data[k + 1] = pal.g[1] + (n * 42 + n2 * 16) * pal.var;
+      id.data[k + 2] = pal.g[2] + (n * 22 + n2 * 6) * pal.var;
       id.data[k + 3] = 255;
     }
   }
@@ -176,7 +184,7 @@ export function paintGround(parkBlocks, plazaBlocks) {
   g.imageSmoothingEnabled = true;
   g.drawImage(nc, 0, 0, S, S);
   // asfalto de toda la cuadrícula
-  g.fillStyle = '#34373b';
+  g.fillStyle = pal.road;
   g.fillRect(px(-70), px(-70), sz(140), sz(140));
   const r = makeRng(5);
   for (let i = 0; i < 9000; i++) {
@@ -187,13 +195,13 @@ export function paintGround(parkBlocks, plazaBlocks) {
   for (let j = 0; j < 4; j++) {
     for (let i = 0; i < 4; i++) {
       const cx = (i - 1.5) * 32, cz = (j - 1.5) * 32;
-      g.fillStyle = '#9da0a2';
+      g.fillStyle = pal.walk;
       g.fillRect(px(cx - 11.6), px(cz - 11.6), sz(23.2), sz(23.2));
-      g.fillStyle = '#767a7d';
+      g.fillStyle = pal.lot;
       g.fillRect(px(cx - 10.4), px(cz - 10.4), sz(20.8), sz(20.8));
       const key = `${i},${j}`;
       if (parkBlocks.has(key)) {
-        g.fillStyle = '#5b8a45';
+        g.fillStyle = pal.park;
         g.fillRect(px(cx - 10.4), px(cz - 10.4), sz(20.8), sz(20.8));
         for (let k = 0; k < 500; k++) {
           g.fillStyle = `rgba(${r.chance(0.5) ? '30,70,20' : '150,190,90'},${r.range(0.05, 0.14)})`;
@@ -208,7 +216,7 @@ export function paintGround(parkBlocks, plazaBlocks) {
         g.lineTo(px(cx), px(cz + 10.4));
         g.stroke();
       } else if (plazaBlocks.has(key)) {
-        g.fillStyle = '#b8a888';
+        g.fillStyle = pal.plaza;
         g.fillRect(px(cx - 10.4), px(cz - 10.4), sz(20.8), sz(20.8));
         g.strokeStyle = 'rgba(80,60,40,.35)';
         g.lineWidth = 1;
@@ -224,21 +232,21 @@ export function paintGround(parkBlocks, plazaBlocks) {
     }
   }
   // marcas viales
-  g.fillStyle = '#d8cf8a';
-  for (const cz of [-64, -32, 0, 32, 64]) {
+  g.fillStyle = scenario === 'ice' ? 'rgba(255,255,255,.5)' : '#d8cf8a';
+  for (const cz of pal.dash ? [-64, -32, 0, 32, 64] : []) {
     for (let x = -66; x < 66; x += 4) {
       if (Math.abs((((x + 64) % 32) + 32) % 32 - 16) < 6.5) continue;
       g.fillRect(px(x), px(cz - 0.12), sz(2), sz(0.24));
     }
   }
-  for (const cx of [-64, -32, 0, 32, 64]) {
+  for (const cx of pal.dash ? [-64, -32, 0, 32, 64] : []) {
     for (let z = -66; z < 66; z += 4) {
       if (Math.abs((((z + 64) % 32) + 32) % 32 - 16) < 6.5) continue;
       g.fillRect(px(cx - 0.12), px(z), sz(0.24), sz(2));
     }
   }
   g.fillStyle = 'rgba(235,235,225,.75)';
-  for (const cz of [-32, 0, 32]) {
+  for (const cz of pal.dash ? [-32, 0, 32] : []) {
     for (const cx of [-32, 0, 32]) {
       for (let k = -3.6; k <= 3.6; k += 1.2) {
         g.fillRect(px(cx + k - 0.3), px(cz - 8.4), sz(0.6), sz(2.2));
@@ -297,7 +305,8 @@ function facadeBox(w, h, d, tint, topColor) {
 /* ------------------------------------------------------------------ */
 /*  Construcción de la ciudad                                          */
 /* ------------------------------------------------------------------ */
-export function buildCity(scene, { quality = 'high' } = {}) {
+export function buildCity(scene, { quality = 'high', scenario = 'flood' } = {}) {
+  const SNOW = scenario === 'ice';
   const rng = makeRng(2024);
   const batch = new Batch();
   const solids = [];
@@ -324,12 +333,21 @@ export function buildCity(scene, { quality = 'high' } = {}) {
 
   const facade = makeFacadeTextures();
   const wallColors = ['#e8d8c0', '#d9c2a5', '#c9d4d8', '#e6c9c0', '#cfd8c0', '#d8cfe0', '#f0e6c8', '#e0b89a', '#b8c8d8'];
-  const layout = [
-    ['midPair', 'tower', 'park', 'lowRow'],
-    ['lowRow', 'plaza', 'midPair', 'tower'],
-    ['tower', 'lot', 'lowRow', 'park'],
-    ['park', 'lowRow', 'midPair', 'lot'],
-  ];
+  const layouts = {
+    city: [
+      ['midPair', 'tower', 'park', 'lowRow'],
+      ['lowRow', 'plaza', 'midPair', 'tower'],
+      ['tower', 'lot', 'lowRow', 'park'],
+      ['park', 'lowRow', 'midPair', 'lot'],
+    ],
+    fire: [
+      ['forest', 'forest', 'forest', 'forest'],
+      ['forest', 'forest', 'lowRow', 'forest'],
+      ['lowRow', 'forest', 'forest', 'forest'],
+      ['forest', 'forest', 'forest', 'forest'],
+    ],
+  };
+  const layout = scenario === 'fire' ? layouts.fire : layouts.city;
   const parkBlocks = new Set();
   const plazaBlocks = new Set();
   const blocks = [];
@@ -337,12 +355,12 @@ export function buildCity(scene, { quality = 'high' } = {}) {
   /* ---------- helpers de construcción ---------- */
   function addBuilding({ x, z, w, d, h, kind, bi, bj, tint }) {
     const t = new THREE.Color(tint);
-    const roofCol = new THREE.Color(0x4a4d52);
+    const roofCol = new THREE.Color(SNOW ? 0xcdd6e0 : 0x4a4d52);
     batch.add(facadeBox(w, h, d, t, roofCol), 'facade', M4(x, G, z));
     const roofY = G + h + 0.35;
     // losa y pretil
-    batch.add(unitBox, 'flat', M4(x, G + h, z, w + 0.5, 0.35, d + 0.5), 0x6b6e73);
-    const pc = 0x9a9ca0;
+    batch.add(unitBox, 'flat', M4(x, G + h, z, w + 0.5, 0.35, d + 0.5), SNOW ? 0xd6dee8 : 0x6b6e73);
+    const pc = SNOW ? 0xdfe6ee : 0x9a9ca0;
     batch.add(unitBox, 'flat', M4(x, roofY, z - d / 2 - 0.05, w + 0.5, 0.45, 0.2), pc);
     batch.add(unitBox, 'flat', M4(x, roofY, z + d / 2 + 0.05, w + 0.5, 0.45, 0.2), pc);
     batch.add(unitBox, 'flat', M4(x - w / 2 - 0.05, roofY, z, 0.2, 0.45, d + 0.5), pc);
@@ -425,7 +443,7 @@ export function buildCity(scene, { quality = 'high' } = {}) {
   function tree(x, z, s = 1) {
     const y = terrainH(x, z);
     batch.add(unitCyl, 'trees', M4(x, y - 0.1, z, 0.28 * s, 3.4 * s, 0.28 * s), 0x5a3f2a);
-    const greens = [0x3f7d3a, 0x4a8f3e, 0x2f6a34, 0x58a044];
+    const greens = SNOW ? [0xb9c9d3, 0xa8bcc8, 0xc4d2db, 0x9db3c1] : scenario === 'fire' ? [0x6a7a34, 0x7d8a3a, 0x5a6a2c, 0x8a8a3a] : [0x3f7d3a, 0x4a8f3e, 0x2f6a34, 0x58a044];
     const sp = [[0, 4.6, 0, 1.9], [0.9, 3.7, 0.5, 1.4], [-0.8, 5.5, -0.3, 1.3], [-0.5, 3.9, 0.9, 1.2]];
     for (const [ox, oy, oz, r] of sp) batch.add(unitIco, 'trees', M4(x + ox * s, y + oy * s, z + oz * s, r * s, r * s * 0.9, r * s, rng.range(0, 3)), rng.pick(greens));
     addSolid(x - 0.35 * s, x + 0.35 * s, y - 1, y + 7 * s, z - 0.35 * s, z + 0.35 * s, 'tree');
@@ -485,6 +503,36 @@ export function buildCity(scene, { quality = 'high' } = {}) {
     }
     return res;
   }
+  function pine(x, z, s = 1) {
+    const y = terrainH(x, z);
+    batch.add(unitCyl, 'trees', M4(x, y - 0.1, z, 0.3 * s, 3.2 * s, 0.3 * s), 0x4a3524);
+    const cols = SNOW ? [0xbccad4, 0xa9bcc8] : scenario === 'fire' ? [0x3a5a26, 0x4a6a2c, 0x2f4a20] : [0x2f5a36, 0x3a6a3e];
+    const tiers = [[1.6, 2.6, 2.4], [3.6, 2.1, 2.2], [5.3, 1.5, 2.0], [6.7, 0.95, 1.6]];
+    for (const [oy, r, h] of tiers) batch.add(unitCone, 'trees', M4(x, y + oy * s, z, r * s, h * s, r * s, rng.range(0, 3)), rng.pick(cols));
+    addSolid(x - 0.4 * s, x + 0.4 * s, y - 1, y + 8 * s, z - 0.4 * s, z + 0.4 * s, 'tree');
+  }
+  const forestSpots = [];
+  function blockForest(cx, cz, bi, bj) {
+    parkBlocks.add(`${bi},${bj}`);
+    let placed = 0, tries = 0;
+    while (placed < 22 && tries < 200) {
+      tries++;
+      const tx = cx + rng.range(-9.6, 9.6), tz = cz + rng.range(-9.6, 9.6);
+      if (Math.hypot(tx - cx, tz - cz) < 4.2) continue;
+      if (Math.abs(tx - cx) < 1.8 || Math.abs(tz - cz) < 1.8) continue;
+      if (rng.chance(0.72)) pine(tx, tz, rng.range(0.85, 1.35)); else tree(tx, tz, rng.range(0.9, 1.3));
+      placed++;
+    }
+    for (let k = 0; k < 4; k++) {
+      const a = rng.range(0, TAU), rr = rng.range(4.6, 8.5);
+      const bx = cx + Math.cos(a) * rr, bz = cz + Math.sin(a) * rr;
+      addBox(bx, G, bz, rng.range(0.7, 1.4), rng.range(0.6, 1.3), rng.range(0.7, 1.4), SNOW ? 0xdde6ec : 0x6a6a60, { tag: 'rock', ry: rng.range(0, 3) });
+    }
+    // tronco caído (se puede saltar)
+    addBox(cx + 3.2, G, cz - 3.8, 3.2, 0.7, 0.7, 0x5a4030, { tag: 'log' });
+    forestSpots.push({ x: cx, z: cz, bi, bj });
+  }
+
   function blockPark(cx, cz, bi, bj) {
     parkBlocks.add(`${bi},${bj}`);
     for (let i = 0; i < 7; i++) {
@@ -551,6 +599,7 @@ export function buildCity(scene, { quality = 'high' } = {}) {
       else if (type === 'park') blockPark(cx, cz, i, j);
       else if (type === 'plaza') blockPlaza(cx, cz, i, j);
       else if (type === 'lot') blockLot(cx, cz, i, j);
+      else if (type === 'forest') blockForest(cx, cz, i, j);
       blockInfo.push({ i, j, cx, cz, type, buildings: bs });
     }
   }
@@ -724,7 +773,7 @@ export function buildCity(scene, { quality = 'high' } = {}) {
 
   return {
     batch, solids, buildings, roofs, porches, signs, blockInfo, carSlots, kiosks, landings,
-    parkBlocks, plazaBlocks, facade, addSolid, addBox, M4, unitBox, unitCyl, unitCone, unitIco, G,
+    parkBlocks, plazaBlocks, forestSpots, scenario, facade, addSolid, addBox, M4, unitBox, unitCyl, unitCone, unitIco, G,
     safeObj: { group: safe, rotor, tailRotor, flag, ring, beaconMat, safeLight },
   };
 }

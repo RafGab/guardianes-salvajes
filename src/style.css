@@ -165,3 +165,26 @@ kbd { display: inline-block; min-width: 26px; padding: 2px 8px; border-radius: 7
 .end-learn ul { margin: 0; padding-left: 20px; font-size: 14.5px; line-height: 1.4; }
 .end-learn li { margin: 4px 0; }
 .end-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; margin-top: 4px; }
+
+/* Overlays de peligro */
+.ov { position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .15s; z-index: 5; }
+.ov-heat { background: radial-gradient(ellipse at center, rgba(255,80,0,0) 40%, rgba(255,60,0,.55) 100%); }
+.ov-cold { background: radial-gradient(ellipse at center, rgba(200,235,255,0) 30%, rgba(190,230,255,.75) 100%); box-shadow: inset 0 0 120px 30px rgba(220,240,255,.55); }
+.ov-dust { background: linear-gradient(180deg, rgba(160,140,110,.35), rgba(120,100,80,.15)); }
+
+/* Misiones */
+#missions { align-items: center; justify-content: center; background: rgba(4, 8, 16, .62); backdrop-filter: blur(4px); }
+.missions-wrap { text-align: center; max-width: 1180px; padding: 20px; }
+.missions-wrap h2 { margin: 4px 0 20px; font-size: 40px; }
+.mission-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; margin-bottom: 22px; }
+.mcard { text-align: left; padding: 18px 18px 16px; border-radius: 18px; background: var(--bg); border: 2px solid var(--line); cursor: pointer; transition: transform .15s, border-color .15s, box-shadow .15s; display: flex; flex-direction: column; gap: 6px; }
+.mcard:hover { transform: translateY(-6px); border-color: #ffb14a; box-shadow: 0 10px 34px rgba(255, 140, 40, .3); }
+.m-kicker { color: var(--accent); font-size: 11px; letter-spacing: 3px; font-weight: 700; }
+.m-icon { font-size: 44px; line-height: 1.1; }
+.m-name { font-size: 20px; font-weight: 700; line-height: 1.15; }
+.mcard p { margin: 0; font-size: 13.5px; color: #cfe0f2; line-height: 1.4; flex: 1; }
+.m-meta { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin: 4px 0; }
+.small-play { font-size: 15px !important; padding: 8px 14px !important; box-shadow: none !important; }
+.sel-mission { margin: 4px 0 2px; font-size: 13px; color: #ffd24a; font-weight: 600; }
+.card.rec::after { content: '⭐ Recomendado'; display: block; margin-top: 3px; font-size: 10px; color: #ffd24a; font-weight: 700; }
+.end-mission { font-size: 14px; color: var(--muted); letter-spacing: 1px; }

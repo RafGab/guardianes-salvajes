@@ -1,11 +1,12 @@
 import * as THREE from 'three';
 import { HEROES, ELEMENTS } from './heroes.js';
 import { makeCanvas } from './utils.js';
+import { MISSIONS, bestStars } from './missions.js';
 
 const $ = (id) => document.getElementById(id);
 export const HERO_ICON = { yagua: '🐆', ambar: '🦅', vorak: '🦎', nerea: '🐈', coral: '🦦', aurora: '🦊' };
 
-const SCREENS = ['loading', 'title', 'select', 'pause', 'how', 'end'];
+const SCREENS = ['loading', 'title', 'missions', 'select', 'pause', 'how', 'end'];
 
 class TipManager {
   constructor() {
@@ -236,6 +237,49 @@ export const ui = {
       .join('');
   },
 
+  /* ---------- misiones ---------- */
+  buildMissions(onPick) {
+    const box = $('mission-cards');
+    box.innerHTML = '';
+    MISSIONS.forEach((m, i) => {
+      const st = bestStars(m.id);
+      const c = document.createElement('div');
+      c.className = 'mcard';
+      const rec = m.best.map((e) => ELEMENTS[e].icon).join(' ');
+      c.innerHTML = `<div class="m-kicker">${m.kicker}</div><div class="m-icon">${m.icon}</div><div class="m-name">${m.name}</div><p>${m.desc}</p>
+        <div class="m-meta"><span>Ideal: ${rec}</span><span class="m-stars">${[0, 1, 2].map((k) => (k < st ? '⭐' : '☆')).join('')}</span></div>
+        <button class="btn primary small-play">JUGAR</button>`;
+      c.addEventListener('click', () => onPick(i));
+      box.appendChild(c);
+    });
+  },
+  markRecommended(mission) {
+    [...$('hero-cards').children].forEach((c, k) => {
+      const h = HEROES[k];
+      c.classList.toggle('rec', !!mission && mission.best.includes(h.element));
+    });
+    $('sel-mission').textContent = mission ? `${mission.icon} ${mission.name}` : '';
+  },
+  setOverlay(kind, v) {
+    const el = $('ov-' + kind);
+    if (el) el.style.opacity = String(Math.max(0, Math.min(1, v)));
+  },
+  setGaugeMode(mission) {
+    this.gaugeMission = mission;
+    $('gauge-title').textContent = mission ? mission.gauge : 'AGUA';
+    $('gauge-fill').style.background = '';
+    $('gauge-fill').style.boxShadow = '';
+    this.tickEl.innerHTML = '';
+  },
+  setGauge(g) {
+    $('gauge-title').textContent = g.label;
+    $('gauge-fill').style.height = `${Math.round(g.pct * 100)}%`;
+    $('gauge-fill').style.background = g.danger ? 'linear-gradient(0deg, #b91c1c, #ff6a3a)' : `linear-gradient(0deg, ${g.color}55, ${g.color})`;
+    $('gauge-fill').style.boxShadow = `0 0 12px ${g.color}`;
+    $('gauge-val').textContent = g.text;
+    this.tickEl.innerHTML = '';
+  },
+
   /* ---------- HUD ---------- */
   setHero(h) {
     const el = ELEMENTS[h.element];
@@ -365,13 +409,15 @@ export const ui = {
   },
 
   /* ---------- fin ---------- */
-  showEnd({ success, rescued, total, score, time, stars, learned, heroName }) {
+  showEnd({ success, rescued, total, score, time, stars, learned, heroName, mission, hasNext }) {
+    $('end-mission').textContent = mission ? `${mission.icon} ${mission.name}` : '';
+    $('btn-next').style.display = hasNext ? '' : 'none';
     $('end-kicker').textContent = success ? 'MISIÓN COMPLETADA' : 'SE ACABÓ EL TIEMPO';
     $('end-kicker').classList.toggle('fail', !success);
     $('end-title').textContent = success
       ? `¡Increíble, ${heroName}! Has salvado a todos.`
       : rescued >= Math.ceil(total * 0.6)
-        ? `¡Buen trabajo, ${heroName}! La ciudad quedó bajo el agua.`
+        ? `¡Buen trabajo, ${heroName}! ${mission ? mission.failTitle : ''}.`
         : `El agua fue más rápida esta vez. ¡Inténtalo de nuevo!`;
     $('end-stars').innerHTML = [0, 1, 2].map((i) => `<span class="${i < stars ? '' : 'off'}">⭐</span>`).join('');
     $('end-rescued').textContent = `${rescued}/${total}`;

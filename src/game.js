@@ -5,6 +5,8 @@ import { CFG, terrainH } from './city.js';
 import { Audio3D as audio } from './audio.js';
 import { ui } from './ui.js';
 import { clamp, smoothstep, damp, TAU, makeCanvas, texFromCanvas } from './utils.js';
+import { MISSIONS, MISSION_TIPS, saveStars } from './missions.js';
+import { createHazards } from './hazards.js';
 
 export const TIPS = {
   start: 'Cuando llueve mucho, sube a lugares altos y aléjate de los ríos y de las calles inundadas.',
@@ -120,6 +122,13 @@ export class Game {
       if (v.root.parent) v.root.parent.remove(v.root);
     }
     this.victims = [];
+    if (this.hazards) {
+      this.hazards.dispose();
+      this.hazards = null;
+    }
+    ui.setOverlay('heat', 0);
+    ui.setOverlay('cold', 0);
+    ui.setOverlay('dust', 0);
   }
 
   makeMarker() {
@@ -165,9 +174,12 @@ export class Game {
   }
 
   /* ---------- inicio de misión ---------- */
-  start(def) {
+  start(def, mission = MISSIONS[0]) {
     const { scene, world, player, chase } = this;
     this.hero = def;
+    this.mission = mission;
+    this.tips = { ...TIPS, ...(MISSION_TIPS[mission.id] || {}) };
+    this.missionTime = mission.time;
     this.clearVictims();
     world.reset();
     ui.tips.reset();
@@ -202,12 +214,20 @@ export class Game {
     player.locked = true;
     this.spawnVictims();
     this.total = this.victims.length;
+    if (this.hazards) this.hazards.dispose();
+    this.hazards = createHazards(mission.scenario, {
+      scene, world, fx: this.fx, player, chase, ui, audio, camera: this.camera, hero: def,
+      tip: (id) => this.tip(id),
+      addScore: (n) => { this.score += n; ui.setScore(this.score); },
+    });
+    this.hazards.reset();
 
     ui.setHero(def);
     ui.setRescued(0, this.total);
     ui.setScore(0);
     ui.setCarry([], player.capacity);
-    ui.setTime(CFG.MISSION_TIME);
+    ui.setTime(this.missionTime);
+    ui.setGaugeMode(mission.scenario === 'flood' ? null : mission);
     ui.setPower(0);
     ui.showScreen(null);
     ui.hud(true);
@@ -219,8 +239,9 @@ export class Game {
     chase.snap(player.pos, 0);
     this.state = 'intro';
     this.input.enabled = true;
-    audio.setIntensity(0.5, 0.4);
-    ui.banner('find', '🌧️ ¡ALERTA DE INUNDACIÓN!', `Rescata a ${this.total} personas y animales y llévalos al refugio de la colina`);
+    const ambience = { flood: [0.5, 0.4], fire: [0.03, 0.55], quake: [0.02, 0.3], ice: [0.25, 1.0] }[mission.scenario];
+    audio.setIntensity(ambience[0], ambience[1]);
+    ui.banner('find', mission.intro, `Rescata a ${this.total} personas y animales · ${mission.introSub}`);
   }
 
   /* ---------- eventos del jugador ---------- */
@@ -252,6 +273,7 @@ export class Game {
           break;
         case 'power':
           this.onPower(ev.power);
+          if (this.hazards) this.hazards.onPower(ev.power, player.pos, this.hero);
           break;
         case 'fail':
           ui.banner('find', '⚠️', ev.msg);
@@ -416,7 +438,7 @@ export class Game {
 
   /* ---------- consejos ---------- */
   tip(id) {
-    if (TIPS[id]) ui.tips.push(id, TIPS[id]);
+    if (this.tips[id]) ui.tips.push(id, this.tips[id]);
   }
 
   interact() {
@@ -429,7 +451,7 @@ export class Game {
     }
     if (best && bd < 3.6) {
       const id = SIGN_TIPS[best.tip];
-      ui.tips.showNow('sign:' + best.tip, TIPS[id]);
+      ui.tips.showNow('sign:' + best.tip, this.tips[id] || TIPS[id]);
       audio.tip();
       if (!best.used) {
         best.used = true;
@@ -487,6 +509,7 @@ export class Game {
 
     player.update(dtg, move, chase.yaw);
     this.handlePlayerEvents();
+    if (this.hazards && (this.state === 'playing' || this.state === 'ending')) this.hazards.update(dtg, this.t);
     world.update(dtg, performance.now() / 1000, camera.position, player.pos, missionT, true);
     const p = player.pos;
 
@@ -500,8 +523,8 @@ export class Game {
           v.root.position.y = damp(v.root.position.y, want, 4, dtg);
         }
         v.platformY = v.parentBody ? v.parentBody.y + v.baseY : v.baseY;
-        const margin = (v.parentBody ? 9 : v.platformY - world.waterY);
-        v.urgent = margin < 0.9;
+        const margin = world.hasWater ? (v.parentBody ? 9 : v.platformY - world.waterY) : 99;
+        v.urgent = margin < 0.9 || (this.hazards ? this.hazards.urgentAt(v.wpos) : false);
         v.marker.material.map = v.urgent ? this.markerTex.urgent : this.markerTex.warn;
         const d = Math.hypot(camera.position.x - v.wpos.x, camera.position.y - v.wpos.y, camera.position.z - v.wpos.z);
         const pulse = 1 + 0.12 * Math.sin(performance.now() / (v.urgent ? 110 : 250) + v.id);
@@ -583,7 +606,7 @@ export class Game {
     this.updateHud(real, dSafe);
 
     // fin por tiempo
-    if (this.state === 'playing' && this.t >= CFG.MISSION_TIME && !this.ended) this.end(false);
+    if (this.state === 'playing' && this.t >= this.missionTime && !this.ended) this.end(false);
     if (this.state === 'ending') {
       this.endT += real;
       if (this.endT > 3.4) this.finish();
@@ -630,6 +653,21 @@ export class Game {
       }
     };
     if (this.state !== 'playing') return;
+    at(this.missionTime - 60, () => ui.alert('⏱️ ¡Queda 1 minuto!', 3500));
+    at(this.missionTime - 20, () => {
+      ui.alert('⏱️ ¡20 segundos!', 3000);
+      audio.alert();
+    });
+    if (this.mission.scenario !== 'flood') {
+      const sched = {
+        fire: [[35, 'smoke'], [130, 'never'], [180, 'wildlife'], [230, 'forest']],
+        quake: [[45, 'elevator'], [120, 'gas'], [180, 'rubble'], [255, 'aftershock']],
+        ice: [[30, 'animals'], [90, 'co'], [150, 'visibility'], [220, 'climate']],
+      }[this.mission.scenario] || [];
+      for (const [tt, id] of sched) at(tt, () => this.tip(id));
+      if (this.mission.scenario !== 'quake') at(1, () => this.tip('start'));
+      return;
+    }
     at(60, () => {
       ui.alert('🌧️ La lluvia se intensifica', 3500);
       this.world.stormIntensity = 0.9;
@@ -644,11 +682,6 @@ export class Game {
       this.tip('surge');
     });
     at(CFG.SURGE_T + 2, () => this.chase.shake(0.3));
-    at(CFG.MISSION_TIME - 60, () => ui.alert('⏱️ ¡Queda 1 minuto!', 3500));
-    at(CFG.MISSION_TIME - 20, () => {
-      ui.alert('⏱️ ¡20 segundos!', 3000);
-      audio.alert();
-    });
     at(40, () => this.tip('cars'));
     at(85, () => this.tip('contaminated'));
     at(150, () => this.tip('lightning'));
@@ -658,6 +691,7 @@ export class Game {
 
   contextTips() {
     const { player } = this;
+    if (this.mission.scenario !== 'flood') return;
     if (player.swimming && !this.shownMoves.has('deep')) {
       this.shownMoves.add('deep');
       this.tip('deep');
@@ -752,12 +786,14 @@ export class Game {
   /* ---------- HUD ---------- */
   updateHud(real, dSafe) {
     const { player, world } = this;
-    ui.setTime(CFG.MISSION_TIME - this.t);
+    ui.setTime(this.missionTime - this.t);
     ui.setPower(player.cdMax > 0 ? player.cd / player.cdMax : 0);
     this.gaugeAcc += real;
     if (this.gaugeAcc > 0.25) {
       this.gaugeAcc = 0;
-      ui.setWater(world.waterY, 8, this.victims);
+      const gg = this.hazards ? this.hazards.gauge() : null;
+      if (gg) ui.setGauge(gg);
+      else ui.setWater(world.waterY, 8, this.victims);
       ui.setCarry(player.carrying, player.capacity);
     }
     ui.minimap.draw(real, {
@@ -794,14 +830,14 @@ export class Game {
     ui.tips.el.classList.remove('show');
     audio.success();
     if (success) {
-      const bonus = Math.round(Math.max(0, CFG.MISSION_TIME - this.t)) * 2;
+      const bonus = Math.round(Math.max(0, this.missionTime - this.t)) * 2;
       this.score += bonus;
       ui.setScore(this.score);
       ui.banner('good', '🏆 ¡MISIÓN CUMPLIDA!', 'Todos están a salvo');
       const p = this.player.pos;
       this.fx.confetti(p.x, p.y + 2, p.z);
     } else {
-      ui.banner('find', '⏱️ ¡Se acabó el tiempo!', 'El agua ha cubierto la ciudad');
+      ui.banner('find', '⏱️ ¡Se acabó el tiempo!', this.mission.failTitle);
     }
   }
 
@@ -813,9 +849,12 @@ export class Game {
     const total = this.total;
     const d = this.delivered;
     const stars = d >= total ? 3 : d >= Math.ceil(total * 0.7) ? 2 : d >= Math.ceil(total * 0.4) ? 1 : 0;
+    saveStars(this.mission.id, stars);
+    const idx = MISSIONS.findIndex((m) => m.id === this.mission.id);
     ui.showEnd({
       success: this.success, rescued: d, total, score: this.score, time: this.t, stars,
       learned: [...ui.tips.shown.values()], heroName: this.hero.name,
+      mission: this.mission, hasNext: idx >= 0 && idx < MISSIONS.length - 1 && stars >= 1,
     });
     this.player.celebrate = false;
     this.player.model.setVisible(true);

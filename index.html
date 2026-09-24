@@ -12,6 +12,7 @@
   <div id="app">
     <div id="stage"></div>
     <div id="lightning"></div>
+    <div id="ov-heat" class="ov ov-heat"></div><div id="ov-cold" class="ov ov-cold"></div><div id="ov-dust" class="ov ov-dust"></div>
 
     <!-- Carga -->
     <section id="loading" class="screen show">
@@ -37,13 +38,24 @@
           </div>
         </div>
       </div>
-      <div class="title-foot">Prototipo 3D · Misión 1: Inundación en Ciudad Ribera</div>
+      <div class="title-foot">Prototipo 3D · Campaña de 4 misiones: inundación, incendio, terremoto y tormenta de hielo</div>
+    </section>
+
+    <!-- Selección de misión -->
+    <section id="missions" class="screen">
+      <div class="missions-wrap">
+        <div class="sel-kicker">CAMPAÑA</div>
+        <h2>Elige una misión</h2>
+        <div id="mission-cards" class="mission-cards"></div>
+        <button id="btn-back-m" class="btn">← Volver</button>
+      </div>
     </section>
 
     <!-- Selección de héroe -->
     <section id="select" class="screen">
       <div class="sel-left panel">
         <div class="sel-kicker">ELIGE A TU HÉROE</div>
+        <div id="sel-mission" class="sel-mission"></div>
         <h2 id="sel-name">Yagua</h2>
         <div class="sel-species"><span id="sel-species">Jaglión</span><span id="sel-element" class="el-badge">🔥 Fuego</span></div>
         <p id="sel-bio" class="sel-bio"></p>
@@ -87,7 +99,7 @@
       </div>
 
       <div id="hud-gauge" class="panel gauge">
-        <div class="gauge-title">AGUA</div>
+        <div id="gauge-title" class="gauge-title">AGUA</div>
         <div class="gauge-bar"><div id="gauge-fill"></div><div id="gauge-ticks"></div></div>
         <div id="gauge-val" class="gauge-val">0.1 m</div>
       </div>
@@ -118,6 +130,7 @@
         <button id="btn-resume" class="btn primary">Continuar</button>
         <button id="btn-restart" class="btn">↻ Reiniciar misión</button>
         <button id="btn-change" class="btn">Cambiar de héroe</button>
+        <button id="btn-missions" class="btn">Elegir otra misión</button>
         <div class="row">
           <button id="btn-quality2" class="btn small">⚙ Calidad: Alta</button>
           <button id="btn-sound2" class="btn small">🔊 Sonido: Sí</button>
@@ -130,7 +143,7 @@
     <section id="how" class="screen">
       <div class="modal panel wide">
         <h2>Cómo jugar</h2>
-        <p class="how-goal"><b>Objetivo:</b> una inundación cubre la ciudad. Encuentra a las personas y animales atrapados, <b>llévalos al refugio</b> de la colina y aprende cómo protegerte. ¡El agua sube cada segundo!</p>
+        <p class="how-goal"><b>Objetivo:</b> una catástrofe amenaza la ciudad (inundación, incendio, terremoto o tormenta de hielo). Encuentra a las personas y animales atrapados, <b>llévalos al refugio</b> de la colina y aprende cómo protegerte. ¡El tiempo corre!</p>
         <div class="how-grid">
           <div><kbd>W A S D</kbd> Mover</div>
           <div><kbd>Ratón</kbd> Cámara libre (clic para activar)</div>
@@ -151,6 +164,7 @@
     <!-- Fin de misión -->
     <section id="end" class="screen">
       <div class="modal panel wide end">
+        <div id="end-mission" class="end-mission"></div>
         <div id="end-kicker" class="end-kicker">MISIÓN COMPLETADA</div>
         <h2 id="end-title">¡Buen trabajo, héroe!</h2>
         <div id="end-stars" class="end-stars"></div>
@@ -165,7 +179,9 @@
           <ul id="end-learn"></ul>
         </div>
         <div class="end-actions">
-          <button id="btn-again" class="btn primary">↻ Jugar de nuevo</button>
+          <button id="btn-next" class="btn primary">Siguiente misión ▶</button>
+          <button id="btn-again" class="btn">↻ Jugar de nuevo</button>
+          <button id="btn-missions2" class="btn">Misiones</button>
           <button id="btn-change2" class="btn">Cambiar de héroe</button>
           <button id="btn-menu2" class="btn">Menú</button>
         </div>

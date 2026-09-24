@@ -24,7 +24,7 @@ export class FX {
   }
 
   flame(x, y, z, k = 1, spread = 0.25) {
-    this.fire.emit(x + r(-spread, spread), y, z + r(-spread, spread), r(-0.4, 0.4), r(1.2, 3) * k, r(-0.4, 0.4), r(0.35, 0.8), 0.5 * k, 1.5 * k, 0xffb040, 0xff2a00, 0.85, 0, -1.5, 1);
+    this.fire.emit(x + r(-spread, spread), y, z + r(-spread, spread), r(-0.4, 0.4), r(1.2, 3) * k, r(-0.4, 0.4), r(0.5, 1.0), 0.9 * k, 2.3 * k, 0xffd070, 0xff2a00, 0.95, 0, -1.6, 1);
   }
   ember(x, y, z, k = 1) {
     this.spark.emit(x + r(-0.5, 0.5), y + r(0, 1.5), z + r(-0.5, 0.5), r(-0.6, 0.6), r(0.5, 2.2), r(-0.6, 0.6), r(0.8, 1.8), 0.14 * k, 0.05, 0xffc060, 0xff5a10, 1, 0, -0.5, 0.3);

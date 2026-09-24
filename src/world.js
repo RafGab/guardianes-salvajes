@@ -76,17 +76,34 @@ function logGeometry() {
   return mergeParts([[unitCyl, M4(0, 0, 0, 0.26, 3.2, 0.26, 0, 0, Math.PI / 2), 0x6a4a30], [unitCyl, M4(1.62, -0.05, 0, 0.27, 0.05, 0.27, 0, 0, Math.PI / 2), 0xb08a5a]]);
 }
 
-export function createWorld(scene, renderer, { quality = 'high' } = {}) {
-  const W = { time: 0, waterY: CFG.WATER0, quality };
+const LOOKS = {
+  flood: { horizon: 0x5f7085, zenith: 0x1c2532, cloudLo: [0.07, 0.085, 0.11], cloudHi: [0.42, 0.47, 0.55], cover: 0.32, fog: 0x5f7085, fogD: 0.0065, hemi: [0x9fb4cc, 0x3c3a36, 1.25], sun: [0xdfe6f2, 2.3], exposure: 0.95, lightning: true,
+    precip: { color: [0.72, 0.8, 0.9], alpha: 0.32, speed: 30, len: 0.9, wind: [3.5, 0, 1.2] } },
+  fire: { horizon: 0xb2703f, zenith: 0x2a1e1c, cloudLo: [0.14, 0.08, 0.05], cloudHi: [0.66, 0.4, 0.2], cover: 0.18, fog: 0x9a6236, fogD: 0.0085, hemi: [0xe8a870, 0x3a2a1c, 1.2], sun: [0xffb070, 2.7], exposure: 1.0, lightning: false, precip: null },
+  quake: { horizon: 0xa39680, zenith: 0x4a5866, cloudLo: [0.16, 0.16, 0.17], cloudHi: [0.62, 0.6, 0.56], cover: 0.4, fog: 0x9a917f, fogD: 0.0072, hemi: [0xc8c4b8, 0x4a463c, 1.35], sun: [0xfff0d8, 2.4], exposure: 1.0, lightning: false, precip: null },
+  ice: { horizon: 0xb4c4d6, zenith: 0x6d88a6, cloudLo: [0.45, 0.5, 0.56], cloudHi: [0.85, 0.9, 0.95], cover: 0.15, fog: 0xb4c4d6, fogD: 0.011, hemi: [0xdfeaf6, 0x8898aa, 0.8], sun: [0xe8f0ff, 0.95], exposure: 0.85, bloom: 1.8, lightning: false,
+    precip: { color: [0.96, 0.98, 1], alpha: 0.8, speed: 8, len: 0.3, wind: [10, 0, 3.5] } },
+};
+
+export function createWorld(scene, renderer, { quality = 'high', scenario = 'flood' } = {}) {
+  const look = LOOKS[scenario] || LOOKS.flood;
+  const hasWater = scenario === 'flood';
+  const W = { time: 0, waterY: hasWater ? CFG.WATER0 : -50, quality, scenario, hasWater, look, fogBase: look.fogD };
   const rng = makeRng(555);
 
   /* ---------- cielo, niebla, luces ---------- */
   const sky = createSky(scene);
   W.sky = sky;
-  scene.fog = new THREE.FogExp2(0x5f7085, 0.0065);
-  const hemi = new THREE.HemisphereLight(0x9fb4cc, 0x3c3a36, 1.25);
+  const su = sky.mat.uniforms;
+  su.uHorizon.value.set(look.horizon);
+  su.uZenith.value.set(look.zenith);
+  su.uCloudLo.value.set(...look.cloudLo);
+  su.uCloudHi.value.set(...look.cloudHi);
+  su.uCover.value = look.cover;
+  scene.fog = new THREE.FogExp2(look.fog, look.fogD);
+  const hemi = new THREE.HemisphereLight(look.hemi[0], look.hemi[1], look.hemi[2]);
   scene.add(hemi);
-  const sun = new THREE.DirectionalLight(0xdfe6f2, 2.3);
+  const sun = new THREE.DirectionalLight(look.sun[0], look.sun[1]);
   sun.position.set(60, 90, 40);
   sun.castShadow = true;
   const ss = quality === 'high' ? 2048 : 1024;
@@ -102,9 +119,9 @@ export function createWorld(scene, renderer, { quality = 'high' } = {}) {
   const sunOffset = new THREE.Vector3(60, 90, 40);
 
   /* ---------- ciudad y terreno ---------- */
-  const city = buildCity(scene, { quality });
+  const city = buildCity(scene, { quality, scenario });
   W.city = city;
-  const ground = paintGround(city.parkBlocks, city.plazaBlocks);
+  const ground = paintGround(city.parkBlocks, city.plazaBlocks, scenario);
   buildTerrain(scene, ground.tex);
   W.groundCanvas = ground.canvas;
 
@@ -131,9 +148,25 @@ export function createWorld(scene, renderer, { quality = 'high' } = {}) {
 
   /* ---------- agua, lluvia, ondas, pájaros ---------- */
   const water = createWater(scene, hm.tex, { x0: CFG.MAP.x0, z0: CFG.MAP.z0, size: CFG.MAP.size });
+  water.mesh.visible = hasWater;
+  water.uniforms.uFogColor.value.set(look.fog);
+  water.uniforms.uFogDensity.value = look.fogD;
   W.water = water;
   const rain = createRain(scene, quality === 'high' ? 4200 : 2200);
+  if (look.precip) {
+    const pr = look.precip;
+    rain.uniforms.uColor.value.setRGB(...pr.color);
+    rain.uniforms.uAlpha.value = pr.alpha;
+    rain.uniforms.uSpeed.value = pr.speed;
+    rain.uniforms.uLen.value = pr.len;
+    rain.uniforms.uWind.value.set(...pr.wind);
+    W.precipAlpha = pr.alpha;
+  } else rain.lines.visible = false;
   W.rain = rain;
+  W.setFog = (d) => {
+    scene.fog.density = d;
+    water.uniforms.uFogDensity.value = d;
+  };
   W.ripples = new Ripples(scene, 110);
   const birds = createBirds(scene, 12);
 
@@ -227,7 +260,7 @@ export function createWorld(scene, renderer, { quality = 'high' } = {}) {
       const tl = ((((t + 16) % 32) + 32) % 32) - 16;
       if (Math.abs(tl) < 8.5) continue;
       for (const side of [-1, 1]) {
-        if (!rng.chance(0.28)) continue;
+        if (!rng.chance(scenario === 'fire' ? 0.06 : 0.28)) continue;
         const off = 3.4 * side;
         // calle E-O
         makeCar(t + rng.range(-1.5, 1.5), line + off, 'x', rng.pick(carColors));
@@ -327,6 +360,26 @@ export function createWorld(scene, renderer, { quality = 'high' } = {}) {
   const lands = city.landings.filter((l) => l.b.bi === 3 && l.b.bj === 1);
   const land = lands[Math.min(3, lands.length - 1)] || city.landings[0];
   if (land) slots.push({ kind: 'mujer', x: land.x, y: land.top, z: land.z, where: 'escalera de emergencia', hard: true });
+  if (scenario === 'fire') {
+    for (const b of [...bodies]) {
+      if (b.kind === 'bus' || b.kind === 'raft' || b.pushR || b === carDog1 || b === carDog2) {
+        scene.remove(b.mesh);
+        if (b.solid) W.dynSolids.splice(W.dynSolids.indexOf(b.solid), 1);
+        bodies.splice(bodies.indexOf(b), 1);
+      }
+    }
+    W.pushables = [];
+    slots.length = 0;
+    const kinds = ['ciervo', 'perro', 'nino', 'gato', 'mujer', 'ciervo', 'hombre', 'anciano'];
+    const fs = city.forestSpots.filter((f) => Math.hypot(f.x - CFG.START.x, f.z - CFG.START.z) > 14);
+    const step = Math.max(1, Math.floor(fs.length / kinds.length));
+    kinds.forEach((kind, i) => {
+      const f = fs[(i * step + (i % 2)) % fs.length];
+      if (f) slots.push({ kind, x: f.x + rng.range(-0.8, 0.8), y: city.G, z: f.z + rng.range(-0.8, 0.8), where: 'claro del bosque' });
+    });
+    roofSlot('nino', R.find((r) => r.kind === 'low3'), 0, 0);
+    roofSlot('gato', R.find((r) => r.kind === 'low6') || R.filter((r) => r.kind === 'low3')[1], 0, 0);
+  }
   W.victimSlots = slots;
 
   /* ---------- pilares de roca y placas de hielo ---------- */
@@ -430,6 +483,7 @@ export function createWorld(scene, renderer, { quality = 'high' } = {}) {
 
   /* ---------- nivel del agua ---------- */
   W.levelAt = (t) => {
+    if (!hasWater) return -50;
     const k = clamp(t / CFG.MISSION_TIME, 0, 1);
     const base = CFG.WATER0 + (CFG.WATER_BASE - CFG.WATER0) * Math.pow(k, 1.2);
     return base + CFG.SURGE * smoothstep(CFG.SURGE_T, CFG.SURGE_T + 7, t);
@@ -475,7 +529,7 @@ export function createWorld(scene, renderer, { quality = 'high' } = {}) {
   W.update = (dt, t, camPos, playerPos, missionT, gameOn) => {
     W.time = t;
     W.missionT = missionT;
-    W.waterY = W.levelAt(missionT) + Math.sin(t * 0.7) * 0.02;
+    W.waterY = hasWater ? W.levelAt(missionT) + Math.sin(t * 0.7) * 0.02 : -50;
     const wu = water.uniforms;
     wu.uTime.value = t;
     water.mesh.position.y = W.waterY;
@@ -490,7 +544,7 @@ export function createWorld(scene, renderer, { quality = 'high' } = {}) {
 
     // relámpagos
     lightningTimer -= dt;
-    if (lightningTimer <= 0 && gameOn) {
+    if (lightningTimer <= 0 && gameOn && look.lightning) {
       W.triggerLightning();
       lightningTimer = rng.range(9, 22) / (0.6 + W.stormIntensity);
     }
@@ -498,8 +552,8 @@ export function createWorld(scene, renderer, { quality = 'high' } = {}) {
     const fl = flash > 0.7 ? 1 : flash > 0.45 ? 0.25 : flash > 0.3 ? 0.9 : flash * 0.5;
     sky.mat.uniforms.uFlash.value = fl;
     wu.uFlash.value = fl;
-    hemi.intensity = 1.25 + fl * 2.2;
-    ru.uAlpha.value = 0.30 + fl * 0.3;
+    hemi.intensity = look.hemi[2] + fl * 2.2;
+    if (look.precip) ru.uAlpha.value = look.precip.alpha - 0.02 + fl * 0.3;
 
     // cuerpos flotantes
     for (const b of bodies) {

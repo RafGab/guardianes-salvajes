@@ -51,6 +51,9 @@ export class Player {
     this.dirZ = 0;
     this.sprint = false;
     this.wallDir = { x: 0, z: 0 };
+    this.env = { slip: 1, wind: { x: 0, z: 0 }, speedMul: 1 };
+    this.boostT = 0;
+    this.grip = false;
   }
 
   setHero(def, model) {
@@ -78,6 +81,9 @@ export class Player {
     this.celebrate = false;
     this.mantling = 0;
     this.powerAnim = 0;
+    this.boostT = 0;
+    this.grip = false;
+    this.env = { slip: 1, wind: { x: 0, z: 0 }, speedMul: 1 };
   }
 
   get capacity() {
@@ -109,6 +115,9 @@ export class Player {
     } else if (type === 'pillar') {
       w.spawnPillar(this.pos.x, this.pos.z, this.pos.y);
       this.vy = Math.max(this.vy, 0);
+    } else if ((type === 'ice' || type === 'surf') && !w.hasWater) {
+      this.boostT = type === 'surf' ? 5 : 6;
+      this.grip = type === 'ice';
     } else if (type === 'ice') {
       const tx = this.pos.x + (dx / len) * 3.6, tz = this.pos.z + (dz / len) * 3.6;
       if (w.waterY - terrainH(tx, tz) < 0.15 && depthHere < 0.15) {
@@ -148,6 +157,8 @@ export class Player {
     this.dashT = Math.max(0, this.dashT - dt);
     this.glideT = Math.max(0, this.glideT - dt);
     this.surfT = Math.max(0, this.surfT - dt);
+    this.boostT = Math.max(0, this.boostT - dt);
+    if (this.boostT <= 0) this.grip = false;
     this.powerAnim = Math.max(0, this.powerAnim - dt * 1.6);
     this.coyote -= dt;
     this.jumpBuf -= dt;
@@ -198,10 +209,12 @@ export class Player {
     else if (this.wading) maxSpeed *= 0.72;
     if (surfing) maxSpeed = st.speed * (this.hero.id === 'nerea' ? 1.8 : 1.55);
     if (this.carrying.length) maxSpeed *= 1 - Math.min(0.08 * this.carrying.length, 0.2);
+    maxSpeed *= this.env.speedMul * (this.boostT > 0 ? 1.5 : 1);
     if (this.dashT > 0) maxSpeed = 20;
     if (this.gliding) maxSpeed = st.speed * 1.6;
     const tvx = dx * maxSpeed, tvz = dz * maxSpeed;
-    const accel = this.dashT > 0 ? 0 : this.grounded ? 16 : this.swimming ? 5 : 4.5;
+    const slip = this.grip ? 1 : this.env.slip;
+    const accel = this.dashT > 0 ? 0 : this.grounded ? 16 * slip : this.swimming ? 5 : 4.5;
     if (this.dashT <= 0) {
       this.vx = damp(this.vx, tvx, accel, dt);
       this.vz = damp(this.vz, tvz, accel, dt);
@@ -251,6 +264,12 @@ export class Player {
       pos.x += this.flow.x * dt;
       pos.z += this.flow.z * dt;
     } else this.flow.set(0, 0, 0);
+    // viento (tormenta de hielo)
+    if (this.env.wind && (this.env.wind.x || this.env.wind.z) && !this.rescueT) {
+      const wk = this.grounded ? 1 : 1.6;
+      pos.x += this.env.wind.x * dt * wk;
+      pos.z += this.env.wind.z * dt * wk;
+    }
     // empuje de escombros
     w.pushAt(pos.x, pos.z, R, this.push);
     if (this.push.x || this.push.z) {
