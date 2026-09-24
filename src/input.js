@@ -1,4 +1,6 @@
-// Teclado + ratón (con bloqueo de puntero) + mando
+// Teclado + ratón (con bloqueo de puntero) + mando + táctil
+import { IS_TOUCH } from './platform.js';
+
 export class Input {
   constructor(el) {
     this.el = el;
@@ -13,8 +15,10 @@ export class Input {
     this.handlers = {};
     this.padPrev = [];
     this.pad = { x: 0, y: 0, lx: 0, ly: 0, sprint: false, jump: false };
-    this.canLock = true;
+    this.canLock = !IS_TOUCH;
+    this.touch = { x: 0, y: 0, run: false, sprint: false, jumpHeld: false, lookX: 0, lookY: 0 };
     this.attach();
+    if (IS_TOUCH) this.attachTouch();
   }
 
   on(name, fn) {
@@ -82,6 +86,87 @@ export class Input {
     document.addEventListener('pointerlockerror', () => (this.canLock = false));
   }
 
+  attachTouch() {
+    const $ = (id) => document.getElementById(id);
+    const zone = $('stick-zone'), base = $('stick-base'), knob = $('stick-knob'), look = $('look-zone');
+    const R = 56;
+    let stickId = null, cx = 0, cy = 0;
+    zone.addEventListener('pointerdown', (e) => {
+      if (stickId !== null) return;
+      stickId = e.pointerId;
+      zone.setPointerCapture(e.pointerId);
+      cx = e.clientX;
+      cy = e.clientY;
+      base.style.left = cx + 'px';
+      base.style.top = cy + 'px';
+      base.classList.add('on');
+      knob.style.transform = 'translate(0px,0px)';
+      e.preventDefault();
+    });
+    zone.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== stickId) return;
+      let dx = e.clientX - cx, dy = e.clientY - cy;
+      const d = Math.hypot(dx, dy);
+      if (d > R) { dx *= R / d; dy *= R / d; }
+      knob.style.transform = `translate(${dx}px,${dy}px)`;
+      const k = Math.min(1, d / R);
+      this.touch.x = (dx / R);
+      this.touch.y = -(dy / R);
+      this.touch.run = k > 0.96;
+    });
+    const endStick = (e) => {
+      if (e.pointerId !== stickId) return;
+      stickId = null;
+      this.touch.x = this.touch.y = 0;
+      this.touch.run = false;
+      base.classList.remove('on');
+    };
+    zone.addEventListener('pointerup', endStick);
+    zone.addEventListener('pointercancel', endStick);
+
+    let lookId = null, lx = 0, ly = 0;
+    look.addEventListener('pointerdown', (e) => {
+      if (lookId !== null) return;
+      lookId = e.pointerId;
+      look.setPointerCapture(e.pointerId);
+      lx = e.clientX;
+      ly = e.clientY;
+      e.preventDefault();
+    });
+    look.addEventListener('pointermove', (e) => {
+      if (e.pointerId !== lookId) return;
+      this.touch.lookX += e.clientX - lx;
+      this.touch.lookY += e.clientY - ly;
+      lx = e.clientX;
+      ly = e.clientY;
+    });
+    const endLook = (e) => { if (e.pointerId === lookId) lookId = null; };
+    look.addEventListener('pointerup', endLook);
+    look.addEventListener('pointercancel', endLook);
+
+    document.querySelectorAll('.tbtn').forEach((b) => {
+      const act = b.dataset.act;
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault();
+        b.classList.add('down');
+        try { b.setPointerCapture(e.pointerId); } catch (err) { /* ok */ }
+        if (act === 'jump') { this.jumpPressed = true; this.touch.jumpHeld = true; }
+        else if (act === 'power') this.emit('power');
+        else if (act === 'rescue') this.emit('rescue');
+        else if (act === 'interact') this.emit('interact');
+        else if (act === 'sprint') { this.touch.sprint = !this.touch.sprint; b.classList.toggle('on', this.touch.sprint); }
+        else if (act === 'pause') this.emit('pause');
+      });
+      const up = () => {
+        b.classList.remove('down');
+        if (act === 'jump') this.touch.jumpHeld = false;
+      };
+      b.addEventListener('pointerup', up);
+      b.addEventListener('pointercancel', up);
+    });
+    ['gesturestart', 'gesturechange', 'contextmenu', 'dblclick'].forEach((n) => document.addEventListener(n, (e) => e.preventDefault()));
+  }
+
   requestLock() {
     if (!this.canLock) return;
     try {
@@ -128,13 +213,13 @@ export class Input {
     const k = this.keys;
     let x = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);
     let y = (k.has('KeyW') ? 1 : 0) - (k.has('KeyS') ? 1 : 0);
-    x += this.pad.x;
-    y += this.pad.y;
-    const jump = k.has('Space') || this.pad.jump;
+    x += this.pad.x + this.touch.x;
+    y += this.pad.y + this.touch.y;
+    const jump = k.has('Space') || this.pad.jump || this.touch.jumpHeld;
     const out = {
       x: Math.max(-1, Math.min(1, x)),
       y: Math.max(-1, Math.min(1, y)),
-      sprint: k.has('ShiftLeft') || k.has('ShiftRight') || this.pad.sprint,
+      sprint: k.has('ShiftLeft') || k.has('ShiftRight') || this.pad.sprint || this.touch.sprint || this.touch.run,
       jump,
       jumpPressed: this.jumpPressed,
     };
@@ -149,6 +234,9 @@ export class Input {
     this.lookX = this.lookY = 0;
     dx += ((k.has('ArrowRight') ? 1 : 0) - (k.has('ArrowLeft') ? 1 : 0)) * dt * 2.0;
     dy += ((k.has('ArrowDown') ? 1 : 0) - (k.has('ArrowUp') ? 1 : 0)) * dt * 1.4;
+    dx += this.touch.lookX * 0.0055;
+    dy += this.touch.lookY * 0.0045;
+    this.touch.lookX = this.touch.lookY = 0;
     dx += this.pad.lx * dt * 2.6;
     dy += this.pad.ly * dt * 1.8;
     const zoom = this.wheel * 0.7;

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { HEROES, ELEMENTS } from './heroes.js';
 import { makeCanvas } from './utils.js';
 import { MISSIONS, bestStars } from './missions.js';
+import { IS_TOUCH } from './platform.js';
 
 const $ = (id) => document.getElementById(id);
 export const HERO_ICON = { yagua: '🐆', ambar: '🦅', vorak: '🦎', nerea: '🐈', coral: '🦦', aurora: '🦊' };
@@ -191,6 +192,7 @@ export const ui = {
   },
   hud(on) {
     $('hud').classList.toggle('show', on);
+    $('touch').classList.toggle('show', on && IS_TOUCH);
   },
   loadingMsg(t) {
     $('loading-msg').textContent = t;

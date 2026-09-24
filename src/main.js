@@ -16,17 +16,19 @@ import { ui } from './ui.js';
 import { Audio3D as audio } from './audio.js';
 import { clamp, damp } from './utils.js';
 import { MISSIONS } from './missions.js';
+import { IS_TOUCH } from './platform.js';
 
 const $ = (id) => document.getElementById(id);
 const stage = $('stage');
 let quality = 'high';
 try { quality = localStorage.getItem('gs_quality') || 'high'; } catch (e) { /* sin almacenamiento */ }
+if (IS_TOUCH) quality = 'low';
 
 /* ---------- renderer y composer ---------- */
 const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'high-performance' });
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.95;
-renderer.shadowMap.enabled = true;
+renderer.shadowMap.enabled = !IS_TOUCH;
 renderer.shadowMap.type = THREE.PCFShadowMap;
 stage.appendChild(renderer.domElement);
 let scene = new THREE.Scene();
@@ -46,7 +48,7 @@ const GradeShader = {
 };
 
 function pixelRatio() {
-  return quality === 'high' ? Math.min(window.devicePixelRatio || 1, 1.75) : 1;
+  return quality === 'high' ? Math.min(window.devicePixelRatio || 1, 1.75) : IS_TOUCH ? Math.min(window.devicePixelRatio || 1, 1.25) : 1;
 }
 const URLQ = new URLSearchParams(location.search);
 function buildComposer(w, h) {
@@ -207,9 +209,19 @@ function beginMission() {
   scene.remove(pedestal);
   if (showcase) scene.remove(showcase.root);
   audio.init();
+  goFullscreen();
   mode = 'playing';
   game.start(curHero, currentMission);
   input.requestLock();
+}
+function goFullscreen() {
+  if (!IS_TOUCH) return;
+  try {
+    const el = document.documentElement;
+    if (!document.fullscreenElement && el.requestFullscreen) {
+      el.requestFullscreen().then(() => screen.orientation && screen.orientation.lock && screen.orientation.lock('landscape').catch(() => {})).catch(() => {});
+    }
+  } catch (e) { /* no disponible (p. ej. iOS) */ }
 }
 function pauseGame() {
   if (mode !== 'playing' || game.state === 'ending' || game.state === 'done') return;
@@ -409,7 +421,7 @@ function toggleSound() {
 
 function bindUi() {
   setQuality(quality);
-  $('btn-play').onclick = () => { audio.init(); audio.click(); enterMissions(); };
+  $('btn-play').onclick = () => { audio.init(); audio.click(); goFullscreen(); enterMissions(); };
   $('btn-back-m').onclick = () => { audio.click(); enterTitle(); };
   $('btn-missions').onclick = () => enterMissions();
   $('btn-missions2').onclick = () => enterMissions();
@@ -426,6 +438,7 @@ function bindUi() {
   $('btn-how-close').onclick = () => ui.showOverlay('how', false);
   $('btn-quality').onclick = () => setQuality(quality === 'high' ? 'low' : 'high');
   $('btn-quality2').onclick = () => setQuality(quality === 'high' ? 'low' : 'high');
+  if (IS_TOUCH) { $('btn-quality').style.display = 'none'; $('btn-quality2').style.display = 'none'; }
   $('btn-sound').onclick = toggleSound;
   $('btn-sound2').onclick = toggleSound;
   $('btn-back').onclick = () => { audio.click(); enterMissions(); };
@@ -467,6 +480,7 @@ function bindUi() {
     }
   });
   window.addEventListener('resize', () => (curW = 0));
+  document.addEventListener('visibilitychange', () => { if (document.hidden) pauseGame(); });
 }
 
 boot().catch((e) => {

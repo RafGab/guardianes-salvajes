@@ -2,7 +2,10 @@
 <html lang="es">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="theme-color" content="#0b1018" />
   <title>Guardianes Salvajes — Rescate en la tormenta</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet" />
@@ -123,6 +126,19 @@
       <div id="click-hint" class="click-hint">Haz clic en la pantalla para controlar la cámara con el ratón</div>
     </section>
 
+    <!-- Controles táctiles -->
+    <div id="touch">
+      <div id="look-zone"></div>
+      <div id="stick-zone"><div id="stick-base"><div id="stick-knob"></div></div></div>
+      <div class="tbtn t-jump" data-act="jump">⬆</div>
+      <div class="tbtn t-power" data-act="power">⚡</div>
+      <div class="tbtn t-rescue" data-act="rescue">🐾</div>
+      <div class="tbtn t-interact" data-act="interact">💡</div>
+      <div class="tbtn t-sprint" data-act="sprint">»</div>
+      <div class="tbtn t-pause" data-act="pause">⏸</div>
+    </div>
+    <div id="rotate"><div><div class="rot-ico">📱↻</div><p>Gira el móvil en horizontal para jugar</p></div></div>
+
     <!-- Pausa -->
     <section id="pause" class="screen">
       <div class="modal panel">
@@ -156,6 +172,7 @@
           <div><kbd>Rueda</kbd> Acercar / alejar cámara</div>
           <div><kbd>Esc</kbd> Pausa · <kbd>M</kbd> Sonido</div>
         </div>
+        <p class="how-touch">📱 <b>En el móvil:</b> arrastra a la izquierda para moverte (empuja al máximo para correr), arrastra a la derecha para mover la cámara y usa los botones: ⬆ saltar, ⚡ poder, 🐾 rescatar, 💡 interactuar, » correr, ⏸ pausa.</p>
         <p class="how-note">Trepa a coches, contenedores, cajas y balcones tocándolos mientras avanzas. Con mando: stick izquierdo mover, derecho cámara, A saltar, X poder, B rescatar, Y interactuar.</p>
         <button id="btn-how-close" class="btn primary">Entendido</button>
       </div>

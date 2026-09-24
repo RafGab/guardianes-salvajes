@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { makeRng, clamp, damp, smoothstep, lerp, TAU } from './utils.js';
 import { CFG, terrainH, buildCity, buildTerrain, bakeHeightMap, paintGround, M4 } from './city.js';
 import { createSky, createWater, createRain, Ripples, createBirds } from './env.js';
+import { IS_TOUCH } from './platform.js';
 
 const unitBox = new THREE.BoxGeometry(1, 1, 1);
 unitBox.translate(0, 0.5, 0);
@@ -105,7 +106,7 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
   scene.add(hemi);
   const sun = new THREE.DirectionalLight(look.sun[0], look.sun[1]);
   sun.position.set(60, 90, 40);
-  sun.castShadow = true;
+  sun.castShadow = !IS_TOUCH;
   const ss = quality === 'high' ? 2048 : 1024;
   sun.shadow.mapSize.set(ss, ss);
   const sc = sun.shadow.camera;
@@ -152,7 +153,7 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
   water.uniforms.uFogColor.value.set(look.fog);
   water.uniforms.uFogDensity.value = look.fogD;
   W.water = water;
-  const rain = createRain(scene, quality === 'high' ? 4200 : 2200);
+  const rain = createRain(scene, quality === 'high' ? 4200 : IS_TOUCH ? 1400 : 2200);
   if (look.precip) {
     const pr = look.precip;
     rain.uniforms.uColor.value.setRGB(...pr.color);

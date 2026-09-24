@@ -7,6 +7,8 @@ import { ui } from './ui.js';
 import { clamp, smoothstep, damp, TAU, makeCanvas, texFromCanvas } from './utils.js';
 import { MISSIONS, MISSION_TIPS, saveStars } from './missions.js';
 import { createHazards } from './hazards.js';
+import { IS_TOUCH } from './platform.js';
+const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
 
 export const TIPS = {
   start: 'Cuando llueve mucho, sube a lugares altos y aléjate de los ríos y de las calles inundadas.',
@@ -498,7 +500,7 @@ export class Game {
     // entrada
     const move = input.getMove();
     const look = input.getLook(real);
-    if (!input.locked && !introLocked && Math.abs(move.x) > 0.1 && Math.abs(look.dx) < 0.001) look.dx += move.x * 1.0 * real;
+    if (!IS_TOUCH && !input.locked && !introLocked && Math.abs(move.x) > 0.1 && Math.abs(look.dx) < 0.001) look.dx += move.x * 1.0 * real;
 
     const wasCele = player.celebrate;
     if (player.celebrateTimer > 0) {
@@ -631,12 +633,12 @@ export class Game {
     const { v, d } = this.nearestRescuable();
     if (v && d < 3.4) {
       if (player.carrying.length >= player.capacity) ui.prompt('🎒 Vas al completo · ¡Llévalos al refugio!');
-      else ui.prompt(`<kbd>F</kbd> Rescatar · ${v.info.label}`);
+      else ui.prompt(`${KEY('F', '🐾')} Rescatar · ${v.info.label}`);
       return;
     }
     for (const s of this.world.signs) {
       if (Math.hypot(s.x - player.pos.x, s.z - player.pos.z) < 3.6 && Math.abs(s.y - player.pos.y) < 4) {
-        ui.prompt('<kbd>E</kbd> Leer cartel');
+        ui.prompt(`${KEY('E', '💡')} Leer cartel`);
         return;
       }
     }
