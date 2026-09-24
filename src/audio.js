@@ -1,0 +1,160 @@
+// Audio sintetizado con WebAudio (sin archivos externos).
+let ctx = null;
+let master = null;
+let rainGain = null;
+let windGain = null;
+let muted = false;
+let started = false;
+
+function noiseBuffer(seconds = 2, color = 'white') {
+  const len = ctx.sampleRate * seconds;
+  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+  const d = buf.getChannelData(0);
+  let last = 0;
+  for (let i = 0; i < len; i++) {
+    const w = Math.random() * 2 - 1;
+    if (color === 'brown') {
+      last = (last + 0.02 * w) / 1.02;
+      d[i] = last * 3.5;
+    } else d[i] = w;
+  }
+  return buf;
+}
+
+export const Audio3D = {
+  init() {
+    if (started) {
+      if (ctx.state === 'suspended') ctx.resume();
+      return;
+    }
+    try {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+    } catch (e) {
+      return;
+    }
+    started = true;
+    master = ctx.createGain();
+    master.gain.value = muted ? 0 : 0.7;
+    master.connect(ctx.destination);
+
+    const rain = ctx.createBufferSource();
+    rain.buffer = noiseBuffer(3, 'white');
+    rain.loop = true;
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 1200;
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.value = 7000;
+    rainGain = ctx.createGain();
+    rainGain.gain.value = 0.10;
+    rain.connect(hp).connect(lp).connect(rainGain).connect(master);
+    rain.start();
+
+    const wind = ctx.createBufferSource();
+    wind.buffer = noiseBuffer(4, 'brown');
+    wind.loop = true;
+    const wl = ctx.createBiquadFilter();
+    wl.type = 'lowpass';
+    wl.frequency.value = 500;
+    windGain = ctx.createGain();
+    windGain.gain.value = 0.25;
+    wind.connect(wl).connect(windGain).connect(master);
+    wind.start();
+  },
+  setMuted(m) {
+    muted = m;
+    if (master) master.gain.value = m ? 0 : 0.7;
+  },
+  get muted() {
+    return muted;
+  },
+  setIntensity(rain, wind) {
+    if (!ctx) return;
+    rainGain.gain.setTargetAtTime(0.04 + rain * 0.16, ctx.currentTime, 0.5);
+    windGain.gain.setTargetAtTime(0.1 + wind * 0.4, ctx.currentTime, 0.5);
+  },
+  tone(freq, dur = 0.15, type = 'sine', vol = 0.2, slide = 0, delay = 0) {
+    if (!ctx || muted) return;
+    const t = ctx.currentTime + delay;
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, t);
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t + dur);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    o.connect(g).connect(master);
+    o.start(t);
+    o.stop(t + dur + 0.05);
+  },
+  noiseBurst(dur = 0.4, freq = 800, vol = 0.3, type = 'lowpass', delay = 0) {
+    if (!ctx || muted) return;
+    const t = ctx.currentTime + delay;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer(1, 'white');
+    const f = ctx.createBiquadFilter();
+    f.type = type;
+    f.frequency.value = freq;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(vol, t);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(f).connect(g).connect(master);
+    src.start(t);
+    src.stop(t + dur + 0.05);
+  },
+  thunder() {
+    if (!ctx || muted) return;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource();
+    src.buffer = noiseBuffer(3, 'brown');
+    const f = ctx.createBiquadFilter();
+    f.type = 'lowpass';
+    f.frequency.setValueAtTime(700, t);
+    f.frequency.exponentialRampToValueAtTime(90, t + 2.6);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.9, t + 0.08);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.8);
+    src.connect(f).connect(g).connect(master);
+    src.start(t);
+    src.stop(t + 3);
+  },
+  rumble() {
+    this.noiseBurst(2.5, 140, 0.6, 'lowpass');
+  },
+  splash() {
+    this.noiseBurst(0.25, 1400, 0.12, 'bandpass');
+  },
+  whoosh() {
+    this.noiseBurst(0.35, 1800, 0.18, 'bandpass');
+  },
+  click() {
+    this.tone(660, 0.07, 'triangle', 0.12);
+  },
+  found() {
+    this.tone(523, 0.12, 'triangle', 0.18);
+    this.tone(784, 0.18, 'triangle', 0.18, 0, 0.11);
+  },
+  pick() {
+    this.tone(392, 0.12, 'sine', 0.2);
+    this.tone(587, 0.2, 'sine', 0.2, 0, 0.1);
+  },
+  success() {
+    [523, 659, 784, 1047].forEach((f, i) => this.tone(f, 0.28, 'triangle', 0.2, 0, i * 0.1));
+  },
+  alert() {
+    for (let i = 0; i < 3; i++) this.tone(440, 0.22, 'sawtooth', 0.14, -120, i * 0.3);
+  },
+  power(type) {
+    if (type === 'ice') this.tone(1400, 0.6, 'sine', 0.14, -900);
+    else if (type === 'pillar') this.noiseBurst(0.6, 220, 0.6, 'lowpass');
+    else if (type === 'surf') this.tone(300, 0.5, 'sine', 0.14, 500);
+    else this.tone(220, 0.45, 'sawtooth', 0.12, 600);
+    this.whoosh();
+  },
+  tip() {
+    this.tone(880, 0.1, 'sine', 0.1);
+  },
+};

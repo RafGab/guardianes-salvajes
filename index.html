@@ -1,0 +1,177 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Guardianes Salvajes — Rescate en la tormenta</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/src/style.css" />
+</head>
+<body>
+  <div id="app">
+    <div id="stage"></div>
+    <div id="lightning"></div>
+
+    <!-- Carga -->
+    <section id="loading" class="screen show">
+      <div class="loading-box">
+        <div class="spinner"></div>
+        <h2>Preparando la tormenta…</h2>
+        <p id="loading-msg">Construyendo la ciudad en 3D</p>
+      </div>
+    </section>
+
+    <!-- Título -->
+    <section id="title" class="screen">
+      <div class="title-wrap">
+        <div class="logo-kicker">ALERTA CLIMÁTICA</div>
+        <h1>GUARDIANES <span>SALVAJES</span></h1>
+        <p class="tagline">Héroes animales que protegen a las personas, a los animales y al planeta durante las catástrofes naturales.</p>
+        <div class="menu">
+          <button id="btn-play" class="btn primary">▶ &nbsp;JUGAR</button>
+          <button id="btn-how" class="btn">🎮 &nbsp;Cómo jugar</button>
+          <div class="row">
+            <button id="btn-quality" class="btn small">⚙ Calidad: Alta</button>
+            <button id="btn-sound" class="btn small">🔊 Sonido: Sí</button>
+          </div>
+        </div>
+      </div>
+      <div class="title-foot">Prototipo 3D · Misión 1: Inundación en Ciudad Ribera</div>
+    </section>
+
+    <!-- Selección de héroe -->
+    <section id="select" class="screen">
+      <div class="sel-left panel">
+        <div class="sel-kicker">ELIGE A TU HÉROE</div>
+        <h2 id="sel-name">Yagua</h2>
+        <div class="sel-species"><span id="sel-species">Jaglión</span><span id="sel-element" class="el-badge">🔥 Fuego</span></div>
+        <p id="sel-bio" class="sel-bio"></p>
+        <div class="power-card">
+          <div class="power-title">⚡ <span id="sel-power-name">Poder</span> <kbd>Q</kbd></div>
+          <p id="sel-power-desc"></p>
+        </div>
+        <div class="stats" id="sel-stats"></div>
+      </div>
+      <div class="sel-hint">Arrastra para girar al héroe · ← → para cambiar</div>
+      <div class="sel-bottom">
+        <div id="hero-cards" class="cards"></div>
+        <div class="sel-actions">
+          <button id="btn-back" class="btn">← Volver</button>
+          <button id="btn-start" class="btn primary">COMENZAR MISIÓN ▶</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- HUD -->
+    <section id="hud">
+      <div id="hud-hero" class="panel hud-hero">
+        <div class="hero-badge"><span id="hud-icon">🐆</span></div>
+        <div class="hero-info">
+          <div id="hud-name" class="hero-name">Yagua</div>
+          <div id="hud-el" class="hero-el">🔥 Fuego</div>
+        </div>
+        <div id="power-btn" class="power-btn">
+          <svg viewBox="0 0 44 44"><circle class="bg" cx="22" cy="22" r="19"/><circle id="power-ring" class="fg" cx="22" cy="22" r="19"/></svg>
+          <span id="power-key">Q</span>
+        </div>
+      </div>
+      <div id="hud-power-name" class="hud-power-name">Impulso Ígneo</div>
+
+      <div class="hud-top panel">
+        <div class="mission-title">RESCATES</div>
+        <div id="hud-rescued" class="mission-count">0<span>/10</span></div>
+        <div class="sep"></div>
+        <div class="mission-title">TIEMPO</div>
+        <div id="hud-time" class="mission-time">6:00</div>
+      </div>
+
+      <div id="hud-gauge" class="panel gauge">
+        <div class="gauge-title">AGUA</div>
+        <div class="gauge-bar"><div id="gauge-fill"></div><div id="gauge-ticks"></div></div>
+        <div id="gauge-val" class="gauge-val">0.1 m</div>
+      </div>
+
+      <div class="minimap-wrap panel">
+        <canvas id="minimap" width="176" height="176"></canvas>
+        <div class="mm-n">N</div>
+      </div>
+
+      <div id="hud-score" class="panel hud-score">
+        <div class="score-line"><span>PUNTOS</span><b id="score-val">0</b></div>
+        <div id="carry-row" class="carry-row"></div>
+      </div>
+
+      <div id="prompt" class="prompt"></div>
+      <div id="banner" class="banner"></div>
+      <div id="alert" class="alert"></div>
+      <div id="tip" class="tip"><div class="tip-head">💡 CONSEJO</div><div id="tip-text"></div><div class="tip-bar"><i id="tip-progress"></i></div></div>
+      <div id="edge-markers"></div>
+      <div class="controls-hint">WASD mover · ESPACIO saltar · SHIFT correr · Q poder · F rescatar · E interactuar · C cámara · ESC pausa</div>
+      <div id="click-hint" class="click-hint">Haz clic en la pantalla para controlar la cámara con el ratón</div>
+    </section>
+
+    <!-- Pausa -->
+    <section id="pause" class="screen">
+      <div class="modal panel">
+        <h2>Pausa</h2>
+        <button id="btn-resume" class="btn primary">Continuar</button>
+        <button id="btn-restart" class="btn">↻ Reiniciar misión</button>
+        <button id="btn-change" class="btn">Cambiar de héroe</button>
+        <div class="row">
+          <button id="btn-quality2" class="btn small">⚙ Calidad: Alta</button>
+          <button id="btn-sound2" class="btn small">🔊 Sonido: Sí</button>
+        </div>
+        <button id="btn-menu" class="btn small">Salir al menú</button>
+      </div>
+    </section>
+
+    <!-- Cómo jugar -->
+    <section id="how" class="screen">
+      <div class="modal panel wide">
+        <h2>Cómo jugar</h2>
+        <p class="how-goal"><b>Objetivo:</b> una inundación cubre la ciudad. Encuentra a las personas y animales atrapados, <b>llévalos al refugio</b> de la colina y aprende cómo protegerte. ¡El agua sube cada segundo!</p>
+        <div class="how-grid">
+          <div><kbd>W A S D</kbd> Mover</div>
+          <div><kbd>Ratón</kbd> Cámara libre (clic para activar)</div>
+          <div><kbd>Espacio</kbd> Saltar / salir del agua</div>
+          <div><kbd>Shift</kbd> Correr más rápido</div>
+          <div><kbd>Q</kbd> Poder del héroe</div>
+          <div><kbd>F</kbd> Rescatar a quien tengas cerca</div>
+          <div><kbd>E</kbd> Interactuar / leer carteles</div>
+          <div><kbd>C</kbd> Centrar la cámara</div>
+          <div><kbd>Rueda</kbd> Acercar / alejar cámara</div>
+          <div><kbd>Esc</kbd> Pausa · <kbd>M</kbd> Sonido</div>
+        </div>
+        <p class="how-note">Trepa a coches, contenedores, cajas y balcones tocándolos mientras avanzas. Con mando: stick izquierdo mover, derecho cámara, A saltar, X poder, B rescatar, Y interactuar.</p>
+        <button id="btn-how-close" class="btn primary">Entendido</button>
+      </div>
+    </section>
+
+    <!-- Fin de misión -->
+    <section id="end" class="screen">
+      <div class="modal panel wide end">
+        <div id="end-kicker" class="end-kicker">MISIÓN COMPLETADA</div>
+        <h2 id="end-title">¡Buen trabajo, héroe!</h2>
+        <div id="end-stars" class="end-stars"></div>
+        <div class="end-stats">
+          <div><span>Rescatados</span><b id="end-rescued">0/10</b></div>
+          <div><span>Puntuación</span><b id="end-score">0</b></div>
+          <div><span>Tiempo</span><b id="end-time">0:00</b></div>
+          <div><span>Consejos</span><b id="end-tips">0</b></div>
+        </div>
+        <div class="end-learn">
+          <div class="learn-title">💡 LO QUE HAS APRENDIDO</div>
+          <ul id="end-learn"></ul>
+        </div>
+        <div class="end-actions">
+          <button id="btn-again" class="btn primary">↻ Jugar de nuevo</button>
+          <button id="btn-change2" class="btn">Cambiar de héroe</button>
+          <button id="btn-menu2" class="btn">Menú</button>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
