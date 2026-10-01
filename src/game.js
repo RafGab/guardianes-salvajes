@@ -10,6 +10,7 @@ import { Save } from './save.js';
 import { ITEMS, heroPowerItem } from './items.js';
 import { useTool } from './tools.js';
 import { createHazards } from './hazards.js';
+import { createBoss } from './bosses.js';
 import { IS_TOUCH } from './platform.js';
 const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
 
@@ -240,7 +241,11 @@ export class Game {
     if (this.state !== 'playing' || this.player.locked || this.player.scripted) return false;
     const a = this.abilities[this.abIndex];
     if (!a) return false;
-    if (a.id === 'power') return this.player.usePower(this.fx);
+    if (a.id === 'power') {
+      const used = this.player.usePower(this.fx);
+      if (used && this.boss) this.boss.onPlayerAttack(this.player.pos);
+      return used;
+    }
     if ((this.toolCd[a.id] || 0) > 0) {
       ui.banner('find', a.icon, 'Recargando…');
       return false;
@@ -317,10 +322,14 @@ export class Game {
     this.slowT = 0;
     this.pingT = 0;
     this.pingCd = 0;
+    this.playerHitT = 0;
     this.deliverT = 0;
     this.gaugeAcc = 0;
     this.goggleT = 0;
     this.rope = null;
+    if (this.boss) this.boss.dispose();
+    this.boss = null;
+    this.bossDone = false;
     this.scheduled = new Set();
     this.shownMoves = new Set();
     this.fxAcc = { ember: 0, rain: 0, spray: 0, ripple: 0, snow: 0, trail: 0 };
@@ -569,7 +578,41 @@ export class Game {
     this.chase.shake(0.06);
     player.celebrateTimer = 1.4;
     player.celebrate = true;
-    if (this.delivered >= this.total) this.end(true);
+    if (this.delivered >= this.total) {
+      if (this.mission.boss && !this.bossDone) this.startBoss();
+      else this.end(true);
+    }
+  }
+
+  /* ---------- combate contra el jefe de nivel ---------- */
+  startBoss() {
+    const { scene, world, player, chase, camera } = this;
+    const arena = world.sc.bossArena || { x: CFG.SAFE.x, z: CFG.SAFE.z - 18, r: 16 };
+    player.pos.set(arena.x, terrainH(arena.x, arena.z + arena.r * 0.7) + 0.5, arena.z + arena.r * 0.7);
+    player.vx = 0; player.vz = 0; player.vy = 0;
+    player.facing = Math.PI;
+    this.boss = createBoss(this.mission.boss, { scene, world, player, chase, camera, fx: this.fx, audio, ui, game: this }, arena);
+    ui.setGaugeMode(this.mission);
+  }
+  hitPlayer(dmg, fromPos) {
+    if (this.playerHitT > 0) return;
+    this.playerHitT = 0.9;
+    this.score = Math.max(0, this.score - 10);
+    ui.setScore(this.score);
+    this.chase.shake(0.22);
+    this.slowT = Math.max(this.slowT, 0.35);
+    ui.setOverlay('heat', 1);
+    setTimeout(() => ui.setOverlay('heat', 0), 220);
+    audio.noiseBurst(0.3, 180, 0.4, 'lowpass');
+    ui.banner('find', '💥 ¡Golpe recibido!', 'Aléjate y busca el momento para contraatacar');
+  }
+  finishBoss() {
+    this.bossDone = true;
+    this.addScore(300);
+    ui.banner('good', `🏆 ¡${this.boss.name} derrotado!`, '+300 puntos de bonus');
+    if (this.boss) this.boss.dispose();
+    this.boss = null;
+    this.end(true);
   }
 
   /* ---------- consejos ---------- */
@@ -674,6 +717,11 @@ export class Game {
     player.update(dtg, move, chase.yaw);
     this.handlePlayerEvents();
     if (this.hazards && (this.state === 'playing' || this.state === 'ending')) this.hazards.update(dtg, this.t);
+    if (this.playerHitT > 0) this.playerHitT = Math.max(0, this.playerHitT - real);
+    if (this.boss && this.state === 'playing') {
+      this.boss.update(dtg);
+      if (this.boss.state === 'dead' && this.boss.deathT > 1.1 && !this.bossDone) this.finishBoss();
+    }
     world.update(dtg, performance.now() / 1000, camera.position, player.pos, missionT, true);
     const p = player.pos;
 
@@ -975,7 +1023,7 @@ export class Game {
     this.gaugeAcc += real;
     if (this.gaugeAcc > 0.25) {
       this.gaugeAcc = 0;
-      const gg = this.hazards ? this.hazards.gauge() : null;
+      const gg = this.boss ? this.boss.gauge() : this.hazards ? this.hazards.gauge() : null;
       if (gg) ui.setGauge(gg);
       else ui.setWater(world.waterY, 8, this.victims);
       ui.setCarry(player.carrying, player.capacity);

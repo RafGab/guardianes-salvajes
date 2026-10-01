@@ -23,6 +23,7 @@ export const LEVELS = [
     gauge: 'SISMO', intro: '🏚️ ¡TERREMOTO!', introSub: 'Cuidado con los escombros y las réplicas',
     failTitle: 'Las réplicas han bloqueado el pueblo', reward: 'flashlight',
     mechanic: 'Las réplicas hacen caer escombros y bloquean calles.',
+    boss: 'minotauro', bossName: 'Minotauro', bossTitle: 'Guardián de la Tierra',
   },
   {
     n: 4, id: 'volcano', scenario: 'volcano', icon: '🌋', kicker: 'NIVEL 4', name: 'Erupción del Monte Ceniza', place: 'Volcán y pueblo al pie de la montaña',

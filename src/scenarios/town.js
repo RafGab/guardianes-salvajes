@@ -190,5 +190,5 @@ export function build(K, { scene }) {
     },
   });
 
-  return makeDescriptor(K, scene, { id: 'quake', look, paint, refugeStyle: 'quake', mapView: { cx: 0, cz: -15, half: 100 }, extra: { rubbleSites, canalC } });
+  return makeDescriptor(K, scene, { id: 'quake', look, paint, refugeStyle: 'quake', mapView: { cx: 0, cz: -15, half: 100 }, extra: { rubbleSites, canalC, bossArena: { x: 0, z: pz, r: 15 } } });
 }
