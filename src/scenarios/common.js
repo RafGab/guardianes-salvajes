@@ -93,7 +93,14 @@ export function makeDescriptor(K, scene, o) {
     safeObj, signs: K.signs, cands: K.cands, sites: K.sites, paint: o.paint, terrainTint: false, bounds: 112,
     mapView: o.mapView || { cx: 0, cz: -15, half: 105 },
     water: o.water || { mode: 'none' }, allowObstacles: o.allowObstacles !== false, windCover: !!o.windCover, coverKind: o.coverKind,
-    windAmp: o.windAmp ?? 1, hazard: o.hazard || o.id, ...(o.extra || {}),
+    windAmp: o.windAmp ?? 1, hazard: o.hazard || o.id,
+    // arena por defecto para el combate final contra el jefe: un poco antes del refugio,
+    // sobre la ruta ya recorrida (los escenarios evitan poner sólidos cerca de SAFE/START)
+    bossArena: (() => {
+      const dx = CFG.START.x - CFG.SAFE.x, dz = CFG.START.z - CFG.SAFE.z, dl = Math.hypot(dx, dz) || 1;
+      return { x: CFG.SAFE.x + (dx / dl) * 16, z: CFG.SAFE.z + (dz / dl) * 16, r: 13 };
+    })(),
+    ...(o.extra || {}),
   };
 }
 

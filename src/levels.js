@@ -7,6 +7,7 @@ export const LEVELS = [
     gauge: 'AGUA', intro: '🌧️ ¡ALERTA DE INUNDACIÓN!', introSub: 'El río se ha desbordado: sube a lugares altos y rescata a todos',
     failTitle: 'El agua ha cubierto la ciudad', reward: 'axe',
     mechanic: 'El agua sube sin parar y crea corrientes en las calles.',
+    boss: 'kraken', bossName: 'Kraken', bossTitle: 'Fuerza del Océano',
   },
   {
     n: 2, id: 'fire', scenario: 'fire', icon: '🔥', kicker: 'NIVEL 2', name: 'Incendio en el Bosque Ámbar', place: 'Bosque de montaña con refugios de animales',
@@ -15,6 +16,7 @@ export const LEVELS = [
     gauge: 'FUEGO', intro: '🔥 ¡INCENDIO FORESTAL!', introSub: 'Evita las llamas y saca a todos del bosque',
     failTitle: 'El fuego ha devorado el bosque', reward: 'rope',
     mechanic: 'El fuego se propaga con el viento; el calor te empuja lejos de las llamas.',
+    boss: 'kerberos', bossName: 'Kerberos', bossTitle: 'Guardián del Inframundo',
   },
   {
     n: 3, id: 'quake', scenario: 'quake', icon: '🏚️', kicker: 'NIVEL 3', name: 'Terremoto en Villa Roca', place: 'Pueblo histórico dañado con canal y puente',
@@ -32,6 +34,7 @@ export const LEVELS = [
     gauge: 'LAVA', intro: '🌋 ¡ERUPCIÓN VOLCÁNICA!', introSub: 'La lava avanza: busca rutas seguras',
     failTitle: 'La lava ha cerrado todos los caminos', reward: 'shield',
     mechanic: 'La lava avanza por los valles y cae ceniza con rocas ardientes.',
+    boss: 'medusa', bossName: 'Medusa', bossTitle: 'Guardiana de la Roca',
   },
   {
     n: 5, id: 'hurricane', scenario: 'hurricane', icon: '🌀', kicker: 'NIVEL 5', name: 'Huracán en Bahía Palma', place: 'Ciudad costera tropical con muelle y faro',
@@ -40,6 +43,7 @@ export const LEVELS = [
     gauge: 'VIENTO', intro: '🌀 ¡HURACÁN!', introSub: 'El viento te empuja y la marejada sube',
     failTitle: 'El huracán ha arrasado la bahía', reward: 'wind',
     mechanic: 'El viento empuja al héroe, caen árboles y la marejada inunda la costa.',
+    boss: 'long', bossName: 'Long', bossTitle: 'Dragón de la Mitología China',
   },
   {
     n: 6, id: 'sandstorm', scenario: 'sandstorm', icon: '🏜️', kicker: 'NIVEL 6', name: 'Tormenta de arena en Oasis Rojo', place: 'Desierto con dunas, pueblo de adobe y oasis',
@@ -48,6 +52,7 @@ export const LEVELS = [
     gauge: 'ARENA', intro: '🏜️ ¡TORMENTA DE ARENA!', introSub: 'Casi no se ve nada: guíate por las balizas',
     failTitle: 'La arena ha borrado los caminos', reward: 'goggles',
     mechanic: 'La visibilidad se reduce a oleadas y la arena frena tu avance.',
+    boss: 'basilisco', bossName: 'Basilisco', bossTitle: 'Señor de la Arena',
   },
   {
     n: 7, id: 'ice', scenario: 'ice', icon: '🧊', kicker: 'NIVEL 7', name: 'Tormenta de hielo en Monte Blanco', place: 'Montañas nevadas, lago helado y refugio',
@@ -56,6 +61,7 @@ export const LEVELS = [
     gauge: 'FRÍO', intro: '🧊 ¡TORMENTA DE HIELO!', introSub: 'Calienta junto a las hogueras y rescata a todos',
     failTitle: 'La ventisca ha cubierto la montaña', reward: 'piolet',
     mechanic: 'El suelo resbala, la ventisca nubla la vista y el frío se acumula.',
+    boss: 'fenrir', bossName: 'Fenrir', bossTitle: 'Hielo Eterno',
   },
   {
     n: 8, id: 'drought', scenario: 'drought', icon: '🌱', kicker: 'NIVEL 8', name: 'Sequía extrema en Valle Seco', place: 'Zona rural con embalse casi vacío',

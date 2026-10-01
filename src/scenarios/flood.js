@@ -74,7 +74,7 @@ export function build(K, { scene, quality }) {
   return {
     id: 'flood', look, seed, city, batches: [city.batch, K.batch], solids: [...city.solids, ...K.solids], buildings: [...city.buildings, ...K.buildings],
     facade: city.facade, safeObj: city.safeObj, signs: city.signs, cands: K.cands, sites: K.sites, paint,
-    terrainTint: true, bounds: 112, mapView: { cx: 5, cz: -15, half: 105 },
+    terrainTint: true, bounds: 112, mapView: { cx: 5, cz: -15, half: 105 }, bossArena: { x: 5, z: -15, r: 14 },
     water: { mode: 'rise', base: 0.1, max: 6.2, surgeAt: 120, surge: 1.25, colors: { shallow: 0x4b8f8a, deep: 0x0f3a4a, mud: 0x6f6a4a }, amp: 1 },
     allowObstacles: true, windCover: false, hazard: 'flood',
     flowAt(x, z, W, out) {

@@ -1,9 +1,9 @@
 import * as THREE from 'three';
-import { clamp, damp, lerp, TAU } from './utils.js';
+import { clamp, damp, TAU } from './utils.js';
 
 /* ------------------------------------------------------------------ */
-/*  Modelos procedurales de jefes (sencillos: sin rig de animación     */
-/*  completo, solo grupos que se rotan/escala directamente)            */
+/*  Helpers de geometría/material para los modelos de jefes            */
+/*  (sin rig de animación completo: grupos que se rotan directamente)  */
 /* ------------------------------------------------------------------ */
 const std = (color, o = {}) => new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0.05, ...o });
 const glow = (hex, k = 2.4) => new THREE.MeshBasicMaterial({ color: new THREE.Color(hex).multiplyScalar(k) });
@@ -11,6 +11,7 @@ const box = (w, h, d) => new THREE.BoxGeometry(w, h, d);
 const cap = (r, l) => new THREE.CapsuleGeometry(r, l, 4, 10);
 const cone = (r, h) => new THREE.ConeGeometry(r, h, 8);
 const sph = (r) => new THREE.SphereGeometry(r, 16, 12);
+const rnd = (a, b) => a + Math.random() * (b - a);
 const M = (geo, mat, parent, o = {}) => {
   const m = new THREE.Mesh(geo, mat);
   m.position.set(o.x || 0, o.y || 0, o.z || 0);
@@ -22,14 +23,15 @@ const M = (geo, mat, parent, o = {}) => {
   return m;
 };
 
-/* ---- Minotauro: guardián de la tierra ---- */
+/* ------------------------------------------------------------------ */
+/*  Modelos procedurales de los 7 jefes de CATAC 7                     */
+/* ------------------------------------------------------------------ */
 function buildMinotauroModel() {
   const stone = std(0x8a7c5a, { roughness: 0.95 });
   const moss = std(0x4a6a34, { roughness: 1 });
   const dark = std(0x2a2420, { roughness: 0.8 });
   const horn = std(0xd8c8a0, { roughness: 0.5, metalness: 0.1 });
   const eye = glow(0xff8a1a, 2.6);
-
   const root = new THREE.Group();
   const body = new THREE.Group();
   root.add(body);
@@ -43,22 +45,15 @@ function buildMinotauroModel() {
   hips.add(torso);
   M(cap(0.85, 1.1), stone, torso, { y: 0.2 });
   M(sph(0.5), moss, torso, { y: 0.7, sz: 1.2 });
-
   const head = new THREE.Group();
   head.position.y = 1.55;
   torso.add(head);
-  M(box(0.85, 0.75, 0.75), stone, head, { y: 0 });
+  M(box(0.85, 0.75, 0.75), stone, head);
   M(box(0.5, 0.3, 0.25), dark, head, { y: -0.1, z: 0.45 });
   M(sph(0.1), eye, head, { x: 0.22, y: 0.08, z: 0.4 });
   M(sph(0.1), eye, head, { x: -0.22, y: 0.08, z: 0.4 });
-  for (const s of [-1, 1]) {
-    const h = new THREE.Mesh(cone(0.14, 0.95), horn);
-    h.position.set(s * 0.32, 0.45, -0.05);
-    h.rotation.set(0.3, 0, s * 0.55);
-    h.castShadow = true;
-    head.add(h);
-  }
-  const arms = [];
+  for (const s of [-1, 1]) { const h = new THREE.Mesh(cone(0.14, 0.95), horn); h.position.set(s * 0.32, 0.45, -0.05); h.rotation.set(0.3, 0, s * 0.55); h.castShadow = true; head.add(h); }
+  const limbs = [];
   for (const s of [-1, 1]) {
     const sh = new THREE.Group();
     sh.position.set(s * 0.95, 0.55, 0);
@@ -68,10 +63,9 @@ function buildMinotauroModel() {
     el.position.y = -0.85;
     sh.add(el);
     M(cap(0.22, 0.7), moss, el, { y: -0.38 });
-    const fist = M(sph(0.3), dark, el, { y: -0.78 });
-    arms.push({ sh, el, fist, side: s });
+    M(sph(0.3), dark, el, { y: -0.78 });
+    limbs.push({ sh });
   }
-  const legs = [];
   for (const s of [-1, 1]) {
     const hj = new THREE.Group();
     hj.position.set(s * 0.4, -0.3, 0);
@@ -82,31 +76,236 @@ function buildMinotauroModel() {
     hj.add(kj);
     M(cap(0.26, 0.75), moss, kj, { y: -0.4 });
     M(box(0.45, 0.22, 0.6), dark, kj, { y: -0.84, z: 0.1 });
-    legs.push({ hj, kj, side: s });
   }
   const tail = new THREE.Group();
   tail.position.set(0, 0.4, -0.7);
   hips.add(tail);
   M(cap(0.14, 0.6), moss, tail, { y: -0.3, rx: 0.6 });
-
   root.scale.setScalar(1.55);
-  return { root, body, head, arms, legs, hips, torso, mats: { stone, moss, eye } };
+  return { root, body, limbs, mats: [stone, moss] };
 }
 
-/* ------------------------------------------------------------------ */
-/*  Clase genérica de jefe: máquina de estados + combate               */
-/* ------------------------------------------------------------------ */
-const rnd = (a, b) => a + Math.random() * (b - a);
+function buildKerberosModel() {
+  const fur = std(0x2a2422, { roughness: 1 });
+  const ember = std(0x4a2210, { roughness: 0.9 });
+  const dark = std(0x120e0c, { roughness: 0.7 });
+  const eye = glow(0x2aff6a, 2.8);
+  const flame = glow(0xff6a1a, 2.2);
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  M(cap(0.75, 1.9), fur, body, { y: 1.1, rx: Math.PI / 2 });
+  for (let i = 0; i < 5; i++) M(cone(0.16, 0.5), flame, body, { x: rnd(-0.5, 0.5), y: 1.5 + rnd(-0.1, 0.3), z: rnd(-0.7, 0.7), rx: rnd(-0.4, 0.4) });
+  const heads = [];
+  for (const s of [-1, 0, 1]) {
+    const hg = new THREE.Group();
+    hg.position.set(s * 0.55, 1.5, s === 0 ? 1.05 : 0.8);
+    hg.rotation.y = s * 0.35;
+    body.add(hg);
+    M(box(0.55, 0.5, 0.65), fur, hg);
+    M(box(0.3, 0.26, 0.4), dark, hg, { y: -0.05, z: 0.42 });
+    M(sph(0.07), eye, hg, { x: 0.14, y: 0.12, z: 0.3 });
+    M(sph(0.07), eye, hg, { x: -0.14, y: 0.12, z: 0.3 });
+    for (const es of [-1, 1]) M(cone(0.1, 0.3), fur, hg, { x: es * 0.2, y: 0.32, rz: es * 0.3 });
+    heads.push(hg);
+  }
+  const legs = [];
+  for (const s of [-1, 1]) for (const f of [-1, 1]) {
+    const lg = new THREE.Group();
+    lg.position.set(s * 0.45, 0.65, f * 0.75);
+    body.add(lg);
+    M(cap(0.17, 0.75), fur, lg, { y: -0.3 });
+    M(box(0.2, 0.18, 0.3), dark, lg, { y: -0.68, z: 0.08 });
+    legs.push({ sh: lg });
+  }
+  const tail = new THREE.Group();
+  tail.position.set(0, 1.3, -1.0);
+  body.add(tail);
+  M(cone(0.14, 0.7), flame, tail, { y: -0.2, rx: Math.PI });
+  root.scale.setScalar(1.3);
+  return { root, body, heads, limbs: legs, mats: [fur, ember] };
+}
 
-export class Minotauro {
-  constructor(ctx, arena) {
-    this.kind = 'minotauro';
-    this.name = 'Minotauro';
+function buildMedusaModel() {
+  const skin = std(0x6a8a62, { roughness: 0.6 });
+  const scale = std(0x3a5a34, { roughness: 0.8 });
+  const gold = std(0xc8a84a, { metalness: 0.7, roughness: 0.3 });
+  const eye = glow(0x7aff5a, 2.6);
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  M(cone(0.6, 1.8), scale, body, { y: 0.9 });
+  M(cap(0.34, 0.6), skin, body, { y: 1.95 });
+  const head = new THREE.Group();
+  head.position.y = 2.5;
+  body.add(head);
+  M(sph(0.32), skin, head);
+  M(sph(0.045), eye, head, { x: 0.13, y: 0.04, z: 0.26 });
+  M(sph(0.045), eye, head, { x: -0.13, y: 0.04, z: 0.26 });
+  const snakes = [];
+  for (let i = 0; i < 9; i++) {
+    const a = (i / 9) * TAU;
+    const sg = new THREE.Group();
+    sg.position.set(Math.cos(a) * 0.22, 0.18, Math.sin(a) * 0.22);
+    head.add(sg);
+    M(cap(0.05, 0.4), scale, sg, { y: 0.2, rx: 0.5 });
+    M(cone(0.04, 0.15), gold, sg, { y: 0.42 });
+    snakes.push(sg);
+  }
+  const arms = [];
+  for (const s of [-1, 1]) {
+    const sh = new THREE.Group();
+    sh.position.set(s * 0.45, 2.0, 0);
+    body.add(sh);
+    M(cap(0.1, 0.55), skin, sh, { y: -0.3 });
+    M(sph(0.1), gold, sh, { y: -0.58 });
+    arms.push({ sh });
+  }
+  root.scale.setScalar(1.1);
+  return { root, body, snakes, limbs: arms, mats: [skin, scale] };
+}
+
+function buildBasiliscoModel() {
+  const gold = std(0xc89a3a, { roughness: 0.6, metalness: 0.3 });
+  const dark = std(0x5a4018, { roughness: 0.7 });
+  const eye = glow(0xff2a2a, 2.8);
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  const segs = [];
+  let z = 0;
+  for (let i = 0; i < 6; i++) {
+    const s = new THREE.Group();
+    s.position.set(0, 0.9 - i * 0.05, z);
+    body.add(s);
+    const r = 0.55 - i * 0.055;
+    M(sph(r), i % 2 ? gold : dark, s, { sz: 1.3 });
+    segs.push(s);
+    z -= r * 1.5;
+  }
+  const head = new THREE.Group();
+  head.position.set(0, 1.0, 0.9);
+  body.add(head);
+  M(cone(0.42, 1.0), gold, head, { rx: Math.PI / 2, y: 0, z: 0.1 });
+  M(sph(0.09), eye, head, { x: 0.16, y: 0.1, z: 0.5 });
+  M(sph(0.09), eye, head, { x: -0.16, y: 0.1, z: 0.5 });
+  for (const s of [-1, 1]) M(cone(0.08, 0.4), dark, head, { x: s * 0.2, y: 0.26, rz: s * 0.3 });
+  root.scale.setScalar(1.3);
+  return { root, body, limbs: [], mats: [gold, dark] };
+}
+
+function buildKrakenModel() {
+  const skin = std(0x16305a, { roughness: 0.5, metalness: 0.15 });
+  const purple = std(0x3a2a6a, { roughness: 0.55 });
+  const eye = glow(0xffcc22, 2.6);
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  M(sph(0.85), skin, body, { y: 1.5, sy: 1.1 });
+  const head = new THREE.Group();
+  head.position.y = 2.1;
+  body.add(head);
+  M(sph(0.5), skin, head);
+  M(sph(0.1), eye, head, { x: 0.22, y: 0.05, z: 0.38 });
+  M(sph(0.1), eye, head, { x: -0.22, y: 0.05, z: 0.38 });
+  const tentacles = [];
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * TAU;
+    const tg = new THREE.Group();
+    tg.position.set(Math.cos(a) * 0.5, 0.9, Math.sin(a) * 0.5);
+    body.add(tg);
+    const segA = new THREE.Group();
+    tg.add(segA);
+    M(cap(0.14, 0.7), purple, segA, { y: -0.3, rx: 0.3 });
+    const segB = new THREE.Group();
+    segB.position.y = -0.7;
+    segA.add(segB);
+    M(cap(0.1, 0.6), purple, segB, { y: -0.28, rx: 0.4 });
+    tentacles.push(tg);
+  }
+  root.scale.setScalar(1.25);
+  return { root, body, tentacles, limbs: [], mats: [skin, purple] };
+}
+
+function buildFenrirModel() {
+  const fur = std(0x1a1e28, { roughness: 1 });
+  const ice = glow(0x7ad8ff, 2.2);
+  const eye = glow(0xb060ff, 2.8);
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  M(cap(0.7, 1.8), fur, body, { y: 1.1, rx: Math.PI / 2 });
+  for (let i = 0; i < 4; i++) M(cone(0.1, 0.35), ice, body, { x: rnd(-0.4, 0.4), y: 1.35 + rnd(0, 0.3), z: rnd(-0.6, 0.6), rx: rnd(-0.5, 0.5) });
+  const head = new THREE.Group();
+  head.position.set(0, 1.45, 0.95);
+  body.add(head);
+  M(box(0.5, 0.42, 0.6), fur, head);
+  M(box(0.28, 0.22, 0.34), new THREE.MeshStandardMaterial({ color: 0x0a0c10 }), head, { y: -0.04, z: 0.38 });
+  M(sph(0.065), eye, head, { x: 0.13, y: 0.1, z: 0.27 });
+  M(sph(0.065), eye, head, { x: -0.13, y: 0.1, z: 0.27 });
+  for (const s of [-1, 1]) M(cone(0.1, 0.3), fur, head, { x: s * 0.18, y: 0.3, rz: s * 0.3 });
+  const legs = [];
+  for (const s of [-1, 1]) for (const f of [-1, 1]) {
+    const lg = new THREE.Group();
+    lg.position.set(s * 0.42, 0.65, f * 0.7);
+    body.add(lg);
+    M(cap(0.16, 0.7), fur, lg, { y: -0.28 });
+    M(cone(0.12, 0.3), ice, lg, { y: -0.68 });
+    legs.push({ sh: lg });
+  }
+  const tail = new THREE.Group();
+  tail.position.set(0, 1.25, -0.9);
+  body.add(tail);
+  M(cone(0.13, 0.65), ice, tail, { y: -0.2, rx: Math.PI });
+  root.scale.setScalar(1.35);
+  return { root, body, limbs: legs, mats: [fur] };
+}
+
+function buildLongModel() {
+  const scale = std(0x7a1a28, { roughness: 0.4, metalness: 0.3 });
+  const mane = std(0xe8e0d0, { roughness: 0.8 });
+  const eye = glow(0x6ad0ff, 2.8);
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  const segs = [];
+  for (let i = 0; i < 7; i++) {
+    const s = new THREE.Group();
+    const a = i * 0.55;
+    s.position.set(Math.sin(a) * 0.8, 1.6 + i * 0.12, -i * 0.65);
+    body.add(s);
+    M(sph(0.45 - i * 0.02), scale, s, { sz: 1.4 });
+    M(cap(0.08, 0.5), mane, s, { y: 0.3, rx: 0.4 });
+    segs.push(s);
+  }
+  const head = new THREE.Group();
+  head.position.set(0, 1.6, 0.65);
+  body.add(head);
+  M(cone(0.35, 0.9), scale, head, { rx: Math.PI / 2, z: 0.1 });
+  M(sph(0.08), eye, head, { x: 0.15, y: 0.08, z: 0.42 });
+  M(sph(0.08), eye, head, { x: -0.15, y: 0.08, z: 0.42 });
+  for (const s of [-1, 1]) M(cap(0.04, 0.4), mane, head, { x: s * 0.12, y: 0.22, rx: -0.6 });
+  root.scale.setScalar(1.2);
+  return { root, body, segs, limbs: [], mats: [scale, mane], flies: true };
+}
+
+const MODEL_BUILDERS = { minotauro: buildMinotauroModel, kerberos: buildKerberosModel, medusa: buildMedusaModel, basilisco: buildBasiliscoModel, kraken: buildKrakenModel, fenrir: buildFenrirModel, long: buildLongModel };
+
+/* ------------------------------------------------------------------ */
+/*  Clase base: máquina de estados y combate, compartida por los 7     */
+/*  jefes. Cada subclase solo define nombre, modelo, color y ritmo.    */
+/* ------------------------------------------------------------------ */
+export class BossBase {
+  constructor(kind, ctx, arena, flavor) {
+    this.kind = kind;
     this.ctx = ctx;
     this.arena = arena; // { x, z, r }
-    this.model = buildMinotauroModel();
+    this.name = flavor.name; this.icon = flavor.icon; this.color = flavor.color; this.cssColor = flavor.cssColor;
+    this.chargeName = flavor.chargeName; this.slamName = flavor.slamName; this.baseScale = flavor.scale;
+    this.model = MODEL_BUILDERS[kind]();
     ctx.scene.add(this.model.root);
-    this.pos = new THREE.Vector3(arena.x, this.groundY(arena.x, arena.z), arena.z - arena.r * 0.6);
+    this.flyHeight = this.model.flies ? 5.5 : 0;
+    this.pos = new THREE.Vector3(arena.x, this.groundY(arena.x, arena.z) + this.flyHeight, arena.z - arena.r * 0.6);
     this.facing = 0;
     this.hpMax = 100;
     this.hp = this.hpMax;
@@ -117,55 +316,47 @@ export class Minotauro {
     this.cd = 1.6;
     this.invuln = 0.6;
     this.hitFlash = 0;
-    this.telegraph = null; // { kind, group }
     this.deathT = 0;
-    this.ring = null;
 
     const ringGeo = new THREE.RingGeometry(0.1, 1, 40);
-    this.ringMesh = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: 0xff4a1a, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
+    this.ringMesh = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
     this.ringMesh.rotation.x = -Math.PI / 2;
     ctx.scene.add(this.ringMesh);
     this.ringMesh.visible = false;
-
     const arrowGeo = new THREE.ConeGeometry(0.6, 1.8, 4);
-    this.arrowMesh = new THREE.Mesh(arrowGeo, new THREE.MeshBasicMaterial({ color: 0xff3a1a, transparent: true, opacity: 0.8 }));
+    this.arrowMesh = new THREE.Mesh(arrowGeo, new THREE.MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0.8 }));
     this.arrowMesh.rotation.x = Math.PI / 2;
     ctx.scene.add(this.arrowMesh);
     this.arrowMesh.visible = false;
 
-    ctx.ui.alert('👹 ¡El Minotauro bloquea la salida!', 4000);
-    ctx.ui.banner('find', '👹 Usa tu poder (Q) cerca de él para golpearlo', 'Esquiva sus embestidas y evita sus golpes de tierra');
+    ctx.ui.alert(`${this.icon} ¡${this.name} aparece!`, 4000);
+    ctx.ui.banner('find', `${this.icon} Usa tu poder (Q) cerca de él para golpearlo`, `Esquiva su ${this.chargeName.toLowerCase()} y su ${this.slamName.toLowerCase()}`);
   }
 
   groundY(x, z) {
     return this.ctx.world.groundY ? this.ctx.world.groundY(x, z) : 0;
   }
-
-  urgentAt() {
-    return false;
-  }
-
+  urgentAt() { return false; }
   gauge() {
-    return { label: this.name.toUpperCase(), pct: clamp(this.hp / this.hpMax, 0, 1), text: this.state === 'dead' ? 'Derrotado' : `${Math.ceil((this.hp / this.hpMax) * 100)}%`, danger: this.state !== 'dead', color: '#ff8a1a', isBoss: true };
+    return { label: this.name.toUpperCase(), pct: clamp(this.hp / this.hpMax, 0, 1), text: this.state === 'dead' ? 'Derrotado' : `${Math.ceil((this.hp / this.hpMax) * 100)}%`, danger: this.state !== 'dead', color: this.cssColor, isBoss: true };
   }
 
   onPlayerAttack(ppos) {
     if (this.state === 'dead' || this.state === 'enter' || this.invuln > 0) return false;
     const d = Math.hypot(ppos.x - this.pos.x, ppos.z - this.pos.z);
-    if (d > 4.6) return false;
-    this.takeDamage(12, ppos);
+    if (d > 4.8) return false;
+    this.takeDamage(12);
     return true;
   }
 
-  takeDamage(n, fromPos) {
+  takeDamage(n) {
     if (this.state === 'dead') return;
     this.hp = Math.max(0, this.hp - n);
     this.hitFlash = 0.25;
     this.invuln = 0.35;
     this.ctx.chase.shake(0.18);
     this.ctx.audio.noiseBurst(0.2, 260, 0.35, 'lowpass');
-    for (let i = 0; i < 10; i++) this.ctx.fx.dustPuff(this.pos.x + rnd(-0.6, 0.6), this.pos.y + 1.2, this.pos.z + rnd(-0.6, 0.6), 1.4);
-    this.ctx.fx.rock(this.pos.x, this.pos.y + 1.4, this.pos.z);
+    for (let i = 0; i < 10; i++) this.ctx.fx.sparkle(this.pos.x + rnd(-0.6, 0.6), this.pos.y + 1.2, this.pos.z + rnd(-0.6, 0.6), this.color, 1.6);
     this.ctx.game.addScore(15);
     const newPhase = this.hp <= this.hpMax * 0.33 ? 3 : this.hp <= this.hpMax * 0.66 ? 2 : 1;
     if (newPhase !== this.phase) {
@@ -173,21 +364,19 @@ export class Minotauro {
       this.state = 'enrage';
       this.stateT = 0;
       this.invuln = 1.0;
-      this.ctx.ui.alert(newPhase === 3 ? '👹 ¡El Minotauro ruge con furia final!' : '👹 ¡El Minotauro se enfurece!', 2600);
+      this.ctx.ui.alert(newPhase === 3 ? `${this.icon} ¡${this.name} desata su furia final!` : `${this.icon} ¡${this.name} se enfurece!`, 2600);
       this.ctx.audio.alert();
     }
     if (this.hp <= 0) {
       this.state = 'dead';
       this.deathT = 0;
-      this.ctx.ui.banner('good', '🏆 ¡Minotauro derrotado!', 'El camino está libre');
+      this.ctx.ui.banner('good', `🏆 ¡${this.name} derrotado!`, 'El camino está libre');
       this.ctx.audio.success();
     }
   }
 
-  // Elige al azar el siguiente ataque según la fase
   pickAttack() {
-    const r = Math.random();
-    return r < 0.55 ? 'charge' : 'slam';
+    return Math.random() < 0.55 ? 'charge' : 'slam';
   }
 
   update(dt) {
@@ -198,21 +387,17 @@ export class Minotauro {
     this.invuln = Math.max(0, this.invuln - dt);
     this.hitFlash = Math.max(0, this.hitFlash - dt * 3);
     const speedMul = 0.85 + (this.phase - 1) * 0.22;
-
-    const faceTo = (x, z) => {
-      this.facing = damp(this.facing, Math.atan2(x - this.pos.x, z - this.pos.z), 6, dt);
-    };
+    const faceTo = (x, z) => { this.facing = damp(this.facing, Math.atan2(x - this.pos.x, z - this.pos.z), 6, dt); };
 
     if (this.state === 'dead') {
       this.deathT += dt;
-      this.model.root.position.y = -Math.min(1.6, this.deathT * 0.6);
+      this.model.root.position.y = this.groundY(this.pos.x, this.pos.z) + this.flyHeight * Math.max(0, 1 - this.deathT * 0.8) - Math.min(1.6, this.deathT * 0.6);
       this.model.root.rotation.z = Math.min(1.1, this.deathT * 0.9);
       this.ringMesh.visible = false;
       this.arrowMesh.visible = false;
-      this.syncTransform();
+      this.syncTransform(true);
       return;
     }
-
     if (this.state === 'enter') {
       const tz = this.arena.z - this.arena.r * 0.15;
       this.pos.z = damp(this.pos.z, tz, 2.4, dt);
@@ -221,17 +406,14 @@ export class Minotauro {
       this.syncTransform();
       return;
     }
-
     if (this.state === 'enrage') {
       if (this.stateT > 0.9) { this.state = 'idle'; this.stateT = 0; this.cd = 0.6; }
       faceTo(player.pos.x, player.pos.z);
       this.syncTransform();
       return;
     }
-
     if (this.state === 'idle') {
       faceTo(player.pos.x, player.pos.z);
-      // deambula ligeramente hacia el jugador sin salir del arena
       const d = Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z);
       if (d > 7) {
         const nx = (player.pos.x - this.pos.x) / d, nz = (player.pos.z - this.pos.z) / d;
@@ -248,7 +430,6 @@ export class Minotauro {
       this.syncTransform();
       return;
     }
-
     if (this.state === 'tg_charge') {
       faceTo(this.targetPos.x, this.targetPos.z);
       const dur = 1.1 - (this.phase - 1) * 0.15;
@@ -268,32 +449,27 @@ export class Minotauro {
       this.syncTransform();
       return;
     }
-
     if (this.state === 'charge') {
-      const speed = (14 + (this.phase - 1) * 1.6);
+      const speed = 14 + (this.phase - 1) * 1.6;
       this.pos.x += this.chargeDir.x * speed * dt;
       this.pos.z += this.chargeDir.z * speed * dt;
-      // límites del arena
       const d0 = Math.hypot(this.pos.x - this.arena.x, this.pos.z - this.arena.z);
       if (d0 > this.arena.r) {
         const nx = (this.pos.x - this.arena.x) / d0, nz = (this.pos.z - this.arena.z) / d0;
         this.pos.x = this.arena.x + nx * this.arena.r;
         this.pos.z = this.arena.z + nz * this.arena.r;
-        this.state = 'recover';
-        this.stateT = 0;
+        this.state = 'recover'; this.stateT = 0;
       }
       const dp = Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z);
       if (dp < 2.1 && this.stateT > 0.08) {
         ctx.game.hitPlayer(1, this.pos);
-        this.state = 'recover';
-        this.stateT = 0;
+        this.state = 'recover'; this.stateT = 0;
       }
       if (this.stateT > 1.3) { this.state = 'recover'; this.stateT = 0; }
-      for (let i = 0; i < 2; i++) this.ctx.fx.dustPuff(this.pos.x + rnd(-0.5, 0.5), this.groundY(this.pos.x, this.pos.z) + 0.2, this.pos.z + rnd(-0.5, 0.5), 1.1);
+      if (!this.model.flies) for (let i = 0; i < 2; i++) this.ctx.fx.dustPuff(this.pos.x + rnd(-0.5, 0.5), this.groundY(this.pos.x, this.pos.z) + 0.2, this.pos.z + rnd(-0.5, 0.5), 1.1);
       this.syncTransform();
       return;
     }
-
     if (this.state === 'tg_slam') {
       faceTo(player.pos.x, player.pos.z);
       const dur = 0.9 - (this.phase - 1) * 0.1;
@@ -302,15 +478,10 @@ export class Minotauro {
       this.ringMesh.position.set(this.pos.x, this.groundY(this.pos.x, this.pos.z) + 0.08, this.pos.z);
       this.ringMesh.scale.setScalar(radius);
       this.ringMesh.material.opacity = 0.18 + 0.35 * (this.stateT / dur);
-      if (this.stateT >= dur) {
-        this.state = 'slam';
-        this.stateT = 0;
-        this.slamRadius = radius;
-      }
+      if (this.stateT >= dur) { this.state = 'slam'; this.stateT = 0; this.slamRadius = radius; }
       this.syncTransform();
       return;
     }
-
     if (this.state === 'slam') {
       this.ringMesh.visible = false;
       if (this.stateT < 0.12) {
@@ -321,9 +492,9 @@ export class Minotauro {
           player.vx = nx * 10; player.vz = nz * 10;
         }
         ctx.chase.shake(0.3);
-        for (let i = 0; i < 18; i++) {
+        for (let i = 0; i < 16; i++) {
           const a = Math.random() * TAU, r = Math.random() * this.slamRadius;
-          this.ctx.fx.dustPuff(this.pos.x + Math.cos(a) * r, this.groundY(this.pos.x + Math.cos(a) * r, this.pos.z + Math.sin(a) * r) + 0.1, this.pos.z + Math.sin(a) * r, 1.6);
+          this.ctx.fx.sparkle(this.pos.x + Math.cos(a) * r, this.groundY(this.pos.x, this.pos.z) + 0.6, this.pos.z + Math.sin(a) * r, this.color, 1.8);
         }
         this.ctx.audio.noiseBurst(0.4, 100, 0.5, 'lowpass');
       }
@@ -331,30 +502,28 @@ export class Minotauro {
       this.syncTransform();
       return;
     }
-
     if (this.state === 'recover') {
       if (this.stateT > 0.7) { this.state = 'idle'; this.stateT = 0; this.cd = rnd(1.4, 2.4) - (this.phase - 1) * 0.3; }
       this.syncTransform();
       return;
     }
-
     this.syncTransform();
   }
 
   syncTransform() {
-    const gy = this.groundY(this.pos.x, this.pos.z);
+    const gy = this.groundY(this.pos.x, this.pos.z) + this.flyHeight;
     this.model.root.position.set(this.pos.x, gy, this.pos.z);
     this.model.root.rotation.y = this.facing;
     const bob = this.state === 'idle' ? Math.sin(this.t * 2.2) * 0.04 : 0;
-    this.model.body.position.y = bob;
+    this.model.body.position.y = bob + (this.model.flies ? Math.sin(this.t * 1.4) * 0.3 : 0);
     const windup = this.state === 'tg_charge' || this.state === 'tg_slam';
     const kScale = 1 + (windup ? Math.sin(this.stateT * 14) * 0.04 : 0) + (this.state === 'charge' ? 0.06 : 0);
-    this.model.root.scale.setScalar(1.55 * kScale);
-    for (const arm of this.model.arms) {
-      const raise = this.state === 'tg_slam' || this.state === 'slam' ? -2.4 : this.state === 'charge' ? -0.6 : -0.2;
-      arm.sh.rotation.x = damp(arm.sh.rotation.x, raise, 8, 0.016);
+    this.model.root.scale.setScalar(this.baseScale * kScale);
+    for (const limb of this.model.limbs || []) {
+      const raise = this.state === 'tg_slam' || this.state === 'slam' ? -2.2 : this.state === 'charge' ? -0.6 : -0.2;
+      limb.sh.rotation.x = damp(limb.sh.rotation.x, raise, 8, 0.016);
     }
-    for (const mesh of [this.model.mats.stone, this.model.mats.moss]) {
+    for (const mesh of this.model.mats || []) {
       mesh.emissive = mesh.emissive || new THREE.Color(0);
       mesh.emissive.setRGB(this.hitFlash, this.hitFlash * 0.3, 0);
       mesh.emissiveIntensity = 1;
@@ -368,7 +537,23 @@ export class Minotauro {
   }
 }
 
-const BOSSES = { minotauro: Minotauro };
+function defineBoss(kind, flavor) {
+  return class extends BossBase {
+    constructor(ctx, arena) {
+      super(kind, ctx, arena, { scale: 1.3, ...flavor });
+    }
+  };
+}
+
+export const Minotauro = defineBoss('minotauro', { name: 'Minotauro', icon: '👹', color: 0xff6a1a, cssColor: '#ff8a1a', chargeName: 'Embestida', slamName: 'Golpe sísmico', scale: 1.55 });
+export const Kerberos = defineBoss('kerberos', { name: 'Kerberos', icon: '🐕‍🦺', color: 0xff4a1a, cssColor: '#ff5a1a', chargeName: 'Mordisco en carga', slamName: 'Aliento de fuego', scale: 1.3 });
+export const Medusa = defineBoss('medusa', { name: 'Medusa', icon: '🐍', color: 0x3aff6a, cssColor: '#4aff7a', chargeName: 'Zarpazo de serpientes', slamName: 'Mirada petrificante', scale: 1.1 });
+export const Basilisco = defineBoss('basilisco', { name: 'Basilisco', icon: '🐉', color: 0xd8b020, cssColor: '#e0b830', chargeName: 'Embestida desde la arena', slamName: 'Tormenta de arena', scale: 1.3 });
+export const Kraken = defineBoss('kraken', { name: 'Kraken', icon: '🐙', color: 0x2a6aff, cssColor: '#3a8aff', chargeName: 'Golpe de tentáculo', slamName: 'Ola gigante', scale: 1.25 });
+export const Fenrir = defineBoss('fenrir', { name: 'Fenrir', icon: '🐺', color: 0x8ad0ff, cssColor: '#9ad8ff', chargeName: 'Embestida helada', slamName: 'Aullido de hielo', scale: 1.35 });
+export const Long = defineBoss('long', { name: 'Long', icon: '🐲', color: 0x5ac8ff, cssColor: '#6ad0ff', chargeName: 'Picado aéreo', slamName: 'Tormenta de rayos', scale: 1.2 });
+
+const BOSSES = { minotauro: Minotauro, kerberos: Kerberos, medusa: Medusa, basilisco: Basilisco, kraken: Kraken, fenrir: Fenrir, long: Long };
 
 export function createBoss(kind, ctx, arena) {
   const C = BOSSES[kind];
