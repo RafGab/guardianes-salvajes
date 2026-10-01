@@ -137,7 +137,7 @@ export class Player {
     } else if (type === 'ice') {
       const tx = this.pos.x + (dx / len) * 3.6, tz = this.pos.z + (dz / len) * 3.6;
       if (w.waterY - terrainH(tx, tz) < 0.15 && depthHere < 0.15) {
-        this.events.push({ type: 'fail', msg: 'Aurora necesita agua para congelar. Acércate a la inundación.' });
+        this.events.push({ type: 'fail', msg: `${this.hero.name} necesita agua para congelar. Acércate a la inundación.` });
         return false;
       }
       w.spawnIce(tx, tz);
@@ -146,7 +146,7 @@ export class Player {
         this.events.push({ type: 'fail', msg: 'Este poder funciona sobre el agua. Acércate a la inundación.' });
         return false;
       }
-      this.surfT = type === 'surf' && this.hero.id === 'coral' ? 6.5 : 6;
+      this.surfT = type === 'surf' && this.hero.id === 'nilo' ? 6.5 : 6;
     }
     this.cd = this.cdMax * this.cdMul;
     this.powerAnim = 1;
@@ -236,7 +236,7 @@ export class Player {
     let maxSpeed = st.speed * (inp.sprint ? 1.3 : 1);
     if (this.swimming) maxSpeed = st.swim * (inp.sprint ? 1.25 : 1);
     else if (this.wading) maxSpeed *= 0.72;
-    if (surfing) maxSpeed = st.speed * (this.hero.id === 'nerea' ? 1.8 : 1.55);
+    if (surfing) maxSpeed = st.speed * (this.hero.id === 'halley' ? 1.8 : 1.55);
     if (this.carrying.length) maxSpeed *= 1 - Math.min(0.08 * this.carrying.length, 0.2);
     maxSpeed *= this.env.speedMul * (this.boostT > 0 ? 1.5 : 1);
     if (w.slowAt && this.grounded) maxSpeed *= w.slowAt(pos.x, pos.z);

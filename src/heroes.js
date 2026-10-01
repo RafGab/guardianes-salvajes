@@ -12,44 +12,54 @@ export const ELEMENTS = {
   hielo: { name: 'Hielo', icon: '🧊', color: 0x9fe8ff, css: '#a5ecff' },
   tierra: { name: 'Tierra', icon: '🌎', color: 0x3ddc84, css: '#4be08b' },
   aire: { name: 'Aire', icon: '💨', color: 0xbfe6ff, css: '#c6e9ff' },
+  roca: { name: 'Roca', icon: '🪨', color: 0xb08a5a, css: '#c29a68' },
+  arena: { name: 'Arena', icon: '🏜️', color: 0xe0b870, css: '#e8c078' },
 };
 
+// Los 7 guardianes de CATAC 7 (canon: nombre, especie, elemento y poder fijados
+// por las fichas de personaje proporcionadas — no inventar ni reasignar sin indicación).
 export const HEROES = [
   {
-    id: 'yagua', name: 'Yagua', species: 'Jaglión', element: 'tierra', scale: 0.8,
-    power: { type: 'pillar', name: 'Pilar de Roca', cd: 5, desc: 'Hace brotar una columna de roca bajo sus pies: una plataforma segura por encima del agua.' },
-    stats: { speed: 7.6, jump: 9.0, swim: 3.9, carry: 2 },
-    bio: 'Híbrida de leona y jaguar. Ágil, valiente y siempre la primera en llegar cuando alguien pide ayuda.',
-  },
-  {
-    id: 'ambar', name: 'Ámbar', species: 'Halcón arpía', element: 'aire', scale: 0.8,
-    power: { type: 'glide', name: 'Ráfaga Celeste', cd: 6, desc: 'Una corriente de aire la lanza hacia el cielo y planea sobre el agua. Mantén SALTAR para seguir planeando.' },
-    stats: { speed: 7.2, jump: 9.4, swim: 3.4, carry: 1 },
-    bio: 'Exploradora aérea. Ve la catástrofe desde arriba y llega donde nadie más puede.',
-  },
-  {
-    id: 'vorak', name: 'Vorak', species: 'Dragón esmeralda', element: 'fuego', scale: 0.84,
-    power: { type: 'dash', name: 'Carga Volcánica', cd: 3.5, desc: 'Se lanza como un meteoro de fuego: gran salto adelante para alcanzar tejados y cruzar huecos.' },
-    stats: { speed: 6.2, jump: 8.4, swim: 3.6, carry: 3 },
-    bio: 'Dragón guardián de los volcanes. Lento pero imparable: puede cargar con tres rescatados a la vez.',
-  },
-  {
-    id: 'nerea', name: 'Nerea', species: 'Lince eléctrico', element: 'agua', scale: 0.8,
-    power: { type: 'surf', name: 'Corriente Veloz', cd: 8, desc: 'Convierte el agua en una autopista: corre sobre la superficie a gran velocidad durante unos segundos.' },
+    id: 'lira', name: 'Lira', species: 'Lince', element: 'tierra', scale: 0.8,
+    power: { type: 'pillar', name: 'Pilar de Tierra', cd: 5, desc: 'Su guadaña canaliza la energía de la tierra: hace brotar una columna de roca bajo sus pies, una plataforma segura sobre el peligro.' },
     stats: { speed: 7.3, jump: 8.8, swim: 4.6, carry: 2 },
-    bio: 'Rápida como un rayo y experta en mareas. Su guadaña de energía corta las corrientes.',
+    bio: 'Lince valiente, fuerte, ágil y leal. Su guadaña de energía manipula el terreno, crea barreras y aumenta su fuerza en combate. "La fuerza de la tierra también habita en la agilidad."',
   },
   {
-    id: 'coral', name: 'Coral', species: 'Nutria y ajolote', element: 'agua', scale: 0.74,
-    power: { type: 'surf', name: 'Marea Amiga', cd: 7, desc: 'Su ajolote calma las aguas: durante unos segundos corre sobre el agua sin que la corriente la arrastre.' },
+    id: 'kairo', name: 'Kairo', species: 'Komodo', element: 'fuego', scale: 0.84,
+    power: { type: 'dash', name: 'Carga de Lava', cd: 3.5, desc: 'Se lanza como un meteoro ardiente con su martillo de fuego: gran salto adelante para alcanzar tejados y cruzar huecos.' },
+    stats: { speed: 6.2, jump: 8.4, swim: 3.6, carry: 3 },
+    bio: 'Komodo valiente, fuerte, leal, estratégico e indomable. Su piel es casi impenetrable y su aliento puede encender lo que toca. "El fuego también es una forma de sobrevivir."',
+  },
+  {
+    id: 'jago', name: 'Jago', species: 'Jaglión', element: 'roca', scale: 0.8,
+    power: { type: 'dash', name: 'Impulso de Roca', cd: 4, desc: 'Usa su cola como cuerda natural y su ala deslizadora para lanzarse con fuerza: un gran salto para trepar riscos y cruzar huecos.' },
+    stats: { speed: 7.6, jump: 9.0, swim: 3.9, carry: 2 },
+    bio: 'Jaglión valiente, leal, audaz, resistente y explorador. Su cola es su herramienta principal para escalar, trepar y moverse en terrenos difíciles. "La montaña no es un límite… es mi hogar."',
+  },
+  {
+    id: 'halley', name: 'Halley', species: 'Fénec', element: 'arena', scale: 0.72,
+    power: { type: 'surf', name: 'Carrera de Arena', cd: 6, desc: 'Controla la arena a su alrededor: corre sobre dunas y terreno inestable a gran velocidad durante unos segundos.' },
+    stats: { speed: 7.8, jump: 8.6, swim: 3.0, carry: 1 },
+    bio: 'Fénec siniestra, inteligente, manipuladora, ambiciosa y vengativa. Controla la arena a su alrededor y lee el terreno del desierto. "Pequeña en tamaño… gigante en espíritu."',
+  },
+  {
+    id: 'nilo', name: 'Nilo', species: 'Nutria', element: 'agua', scale: 0.74,
+    power: { type: 'surf', name: 'Impulso Acuático', cd: 7, desc: 'Su cola con tecnología y su flyboard calman la corriente: durante unos segundos corre sobre el agua sin que lo arrastre.' },
     stats: { speed: 6.6, jump: 8.4, swim: 5.0, carry: 3 },
-    bio: 'Nadadora nata. Su mochila de rescate le permite ayudar a tres personas en cada viaje.',
+    bio: 'Nutria valiente, curiosa, amigable, leal y cariñosa. "La emoción de descubrir el mundo… también se vive en el agua."',
   },
   {
-    id: 'aurora', name: 'Aurora', species: 'Zorra ártica', element: 'hielo', scale: 0.8,
-    power: { type: 'ice', name: 'Puente de Hielo', cd: 6, desc: 'Congela el agua a su alrededor y crea una plataforma de hielo que sube con la inundación.' },
+    id: 'kyra', name: 'Kyra', species: 'Zorro ártico', element: 'hielo', scale: 0.8,
+    power: { type: 'ice', name: 'Hacha de Hielo', cd: 6, desc: 'Su hacha de hielo cristalino congela el agua a su alrededor y crea una plataforma que sube con la inundación.' },
     stats: { speed: 7.0, jump: 8.8, swim: 3.8, carry: 2 },
-    bio: 'Nacida en la aurora boreal. Su cola brilla con luz de hielo y su hacha congela lo que toca.',
+    bio: 'Zorro ártico valiente, curiosa, amigable, leal, inteligente y resistente. Su hacha de hielo cristalino puede crear o manipular el hielo. "El hielo también tiene un corazón."',
+  },
+  {
+    id: 'ambar', name: 'Ámbar', species: 'Águila', element: 'aire', scale: 0.8,
+    power: { type: 'glide', name: 'Ráfaga Celeste', cd: 6, desc: 'Una corriente de aire la lanza hacia el cielo y planea con sus discos de viento. Mantén SALTAR para seguir planeando.' },
+    stats: { speed: 7.2, jump: 9.4, swim: 3.4, carry: 1 },
+    bio: 'Águila valiente, curiosa, ágil, estratégica y libre. Sus discos de viento y su módulo de alas le permiten volar a grandes alturas. "El viento no me detiene… me lleva más alto."',
   },
 ];
 
@@ -385,7 +395,7 @@ function baseBiped(o) {
 /* ------------------------------------------------------------------ */
 /*  1. YAGUA — Jaglión (Fuego)                                         */
 /* ------------------------------------------------------------------ */
-function buildYagua() {
+function buildJago() {
   const tex = furTex({ base: '#d98a2c', dark: '#a85a18', light: '#f0b458', spots: 'rosette', spotCol: '#1c0e06', seed: 11 });
   const fur = furMat(tex);
   const cream = furMat(furTex({ base: '#f3dfb8', dark: '#d8bd8c', light: '#fff4dc', seed: 12 }), 0xffffff, 0xffffff);
@@ -634,13 +644,13 @@ function buildAmbar() {
 /* ------------------------------------------------------------------ */
 /*  3. VORAK — Reptil esmeralda (Tierra)                               */
 /* ------------------------------------------------------------------ */
-function buildVorak() {
-  const stex = scaleTex({ base: '#101317', hi: '#36463f', seed: 31 });
+function buildKairo() {
+  const stex = scaleTex({ base: '#1a1210', hi: '#4a2e1c', seed: 31 });
   const skin = new THREE.MeshStandardMaterial({ map: stex, bumpMap: stex.userData.bump, bumpScale: 3, roughness: 0.45, metalness: 0.15 });
-  const gtex = scaleTex({ base: '#0f3a22', hi: '#2f8a4c', seed: 32, cell: 56 });
-  const greenScale = new THREE.MeshStandardMaterial({ map: gtex, bumpMap: gtex.userData.bump, bumpScale: 3, roughness: 0.4, metalness: 0.3 });
+  const gtex = scaleTex({ base: '#3a0f0a', hi: '#ff6a1a', seed: 32, cell: 56 });
+  const greenScale = new THREE.MeshStandardMaterial({ map: gtex, bumpMap: gtex.userData.bump, bumpScale: 3, roughness: 0.4, metalness: 0.3, emissive: 0xff4a10, emissiveIntensity: 0.25 });
   const gold = std(0xd9a441, { metalness: 0.9, roughness: 0.3 });
-  const emerald = crystalMat(0x19e070, 1.1);
+  const emerald = crystalMat(0xff5a1a, 1.3);
   const leather = std(0x4a2a1a, { roughness: 0.8 });
   const dark = std(0x0a0c0e, { roughness: 0.5 });
   const mats = { skin, suit: skin, thigh: greenScale, shin: greenScale, upperArm: skin, foreArm: skin, hand: skin, boot: greenScale, sole: gold, chest: skin, abdomen: skin, pelvis: greenScale };
@@ -766,7 +776,7 @@ function buildVorak() {
 /* ------------------------------------------------------------------ */
 /*  4. NEREA — Lince eléctrico (Agua)                                  */
 /* ------------------------------------------------------------------ */
-function buildNerea() {
+function buildLira() {
   const tex = furTex({ base: '#ff6d1a', dark: '#c94a08', light: '#ff9440', spots: 'dots', spotCol: '#2a0e04', seed: 41 });
   const fur = furMat(tex, 0xffffff, 0xffb070);
   const cream = furMat(furTex({ base: '#f6d9b0', dark: '#dcb888', light: '#fff0d8', seed: 42 }), 0xffffff, 0xffffff);
@@ -852,7 +862,7 @@ function buildNerea() {
 /* ------------------------------------------------------------------ */
 /*  5. CORAL — Nutria + ajolote (Agua)                                 */
 /* ------------------------------------------------------------------ */
-function buildCoral() {
+function buildNilo() {
   const fur = furMat(furTex({ base: '#7b5238', dark: '#4e3020', light: '#a4744e', seed: 51 }), 0xffffff, 0xe0b890);
   const cream = furMat(furTex({ base: '#e9cdaa', dark: '#c9a880', light: '#fff0da', seed: 52 }), 0xffffff, 0xffffff);
   const red = std(0xd4141c, { roughness: 0.4, metalness: 0.15 });
@@ -938,10 +948,10 @@ function buildCoral() {
 /* ------------------------------------------------------------------ */
 /*  6. AURORA — Zorra ártica (Hielo)                                   */
 /* ------------------------------------------------------------------ */
-function buildAurora() {
+function buildKyra() {
   const fur = furMat(furTex({ base: '#e8eef8', dark: '#b8c8e4', light: '#ffffff', seed: 61 }), 0xffffff, 0xcfe4ff);
-  const red = std(0xd8141c, { roughness: 0.4, metalness: 0.15 });
-  const red2 = std(0xa00c14, { roughness: 0.5 });
+  const red = std(0xe0229a, { roughness: 0.4, metalness: 0.15 });
+  const red2 = std(0xa8106e, { roughness: 0.5 });
   const black = std(0x101014, { roughness: 0.5, metalness: 0.2 });
   const ice = glow(0x7ad8ff, 2.4);
   const mats = { skin: fur, suit: red, thigh: black, shin: black, upperArm: red, foreArm: red, hand: red, boot: red, sole: black, chest: red, abdomen: red, pelvis: black };
@@ -1043,7 +1053,95 @@ function buildAurora() {
   return rig;
 }
 
-const BUILDERS = { yagua: buildYagua, ambar: buildAmbar, vorak: buildVorak, nerea: buildNerea, coral: buildCoral, aurora: buildAurora };
+/* ------------------------------------------------------------------ */
+/*  7. HALLEY — Fénec (Arena)                                          */
+/* ------------------------------------------------------------------ */
+function buildHalley() {
+  const fur = furMat(furTex({ base: '#e0a868', dark: '#b87838', light: '#f6d4a0', seed: 71 }), 0xffffff, 0xffd8a0);
+  const cream = furMat(furTex({ base: '#f8e8cc', dark: '#dcc094', light: '#fff6e4', seed: 72 }), 0xffffff, 0xffffff);
+  const purple = std(0x5a1c8a, { roughness: 0.4, metalness: 0.2 });
+  const purple2 = std(0x37115a, { roughness: 0.5 });
+  const black = std(0x120a14, { roughness: 0.55, metalness: 0.2 });
+  const violet = glow(0x9a3cff, 2.4);
+  const mats = { skin: fur, suit: purple, thigh: black, shin: black, upperArm: purple, foreArm: purple, hand: purple, boot: purple, sole: black, chest: purple, abdomen: purple, pelvis: black };
+  const rig = baseBiped({ mats, bulk: 0.92 });
+  const { torso, head, hips } = rig;
+
+  // Cabeza de fénec: hocico fino, mejillas claras
+  M(sph(0.29, 22, 16), fur, head, { y: 0.3, sx: 1.04, sy: 0.92, sz: 0.96 });
+  M(sph(0.1, 14, 12), cream, head, { y: 0.17, z: 0.28, sx: 0.85, sy: 0.65, sz: 1.5 });
+  M(sph(0.032, 10, 8), std(0x1a0e10), head, { y: 0.2, z: 0.45, sx: 1.3, sy: 0.75 });
+  M(box(0.09, 0.007, 0.01), black, head, { x: 0.045, y: 0.145, z: 0.44, rz: -0.35 });
+  M(box(0.09, 0.007, 0.01), black, head, { x: -0.045, y: 0.145, z: 0.44, rz: 0.35 });
+  for (const s of [-1, 1]) {
+    eye(head, { x: s * 0.125, y: 0.33, z: 0.25, r: 0.1, iris: '#9a3cff', side: s, lash: true, glowIris: 0.7 });
+    M(box(0.12, 0.028, 0.035), std(0x6a4a2a), head, { x: s * 0.13, y: 0.43, z: 0.27, rz: s * 0.22 });
+    // orejas enormes de fénec (su rasgo distintivo)
+    const ear = new THREE.Group();
+    ear.position.set(s * 0.2, 0.58, -0.01);
+    ear.rotation.z = -s * 0.22;
+    ear.rotation.x = -0.08;
+    head.add(ear);
+    M(cone(0.19, 0.92, 9), fur, ear, { y: 0.42, sz: 0.42 });
+    M(cone(0.13, 0.76, 9), cream, ear, { y: 0.4, z: 0.045, sz: 0.24 });
+    M(cone(0.035, 0.16, 6), std(0x2a1a14), ear, { y: 0.86 });
+    // mechón violeta en la punta
+    M(cone(0.045, 0.14, 6), purple2, ear, { y: 0.8, sz: 0.4 });
+  }
+  for (let i = 0; i < 5; i++) {
+    const a = (i - 2) * 0.17;
+    const c = new THREE.Mesh(cone(0.045, 0.2, 6), i % 2 ? fur : cream);
+    c.position.set(Math.sin(a) * 0.15, 0.6, 0.1);
+    c.rotation.set(-0.9, 0, -a);
+    head.add(c);
+  }
+  goggles(head, { y: 0.56, z: 0.22, spread: 0.1, glass: std(0x6a1038, { metalness: 0.9, roughness: 0.06, emissive: 0xc81858, emissiveIntensity: 0.5 }), strap: purple2, rim: std(0xc08a3a, { metalness: 0.7, roughness: 0.3 }) });
+
+  // Traje violeta con detalles dorados y bufanda
+  M(rbox(0.28, 0.28, 0.06, 0.03), purple2, torso, { y: 0.44, z: 0.215 });
+  M(box(0.2, 0.025, 0.01), violet, torso, { y: 0.5, z: 0.248 });
+  M(tor(0.16, 0.05, 6, 18), std(0xc08a3a, { roughness: 0.6 }), torso, { y: 0.64, rx: Math.PI / 2 });
+  for (const s of [-1, 1]) {
+    const i = s < 0 ? 0 : 1;
+    M(box(0.045, 0.5, 0.025), black, torso, { x: s * 0.14, y: 0.44, z: 0.232, rz: s * 0.07 });
+    M(box(0.012, 0.42, 0.028), violet, torso, { x: s * 0.14, y: 0.44, z: 0.238, rz: s * 0.07 });
+    M(sph(0.115, 12, 10), purple2, rig.sh[i], { y: 0.03, sx: 1.2, sy: 0.72, sz: 1.05 });
+    M(rbox(0.16, 0.17, 0.16, 0.03), purple2, rig.el[i], { y: -0.13 });
+    M(box(0.02, 0.1, 0.01), violet, rig.el[i], { y: -0.13, z: 0.09 });
+    M(rbox(0.17, 0.16, 0.08, 0.03), black, rig.knee[i], { z: 0.08, y: 0.05 });
+    M(tor(0.085, 0.01, 6, 14), violet, rig.knee[i], { z: 0.12, y: 0.05 });
+    M(rbox(0.14, 0.1, 0.17, 0.03), purple, rig.ankle[i], { y: -0.03, z: 0.05 });
+  }
+  M(tor(0.21, 0.03, 6, 26), black, hips, { rx: Math.PI / 2, y: 0.06, sz: 0.95 });
+  M(rbox(0.1, 0.06, 0.03, 0.015), std(0xc08a3a, { metalness: 0.7, roughness: 0.3 }), hips, { y: 0.06, z: 0.2 });
+  // mochila táctica pequeña
+  const pack = new THREE.Group();
+  pack.position.set(0, 0.44, -0.26);
+  torso.add(pack);
+  M(rbox(0.3, 0.32, 0.12, 0.04), purple2, pack);
+  M(cyl(0.05, 0.05, 0.16, 8), violet, pack, { x: 0, y: 0.02, z: -0.07 });
+
+  // Cola esponjosa con punta oscura
+  addTail(rig, {
+    segs: 7, len: 0.2, r0: 0.1, r1: 0.1, mat: (i) => (i > 4 ? std(0x1a0e10, { roughness: 0.95 }) : fur), base: 0.3, curve: -0.08, pos: [0, -0.01, -0.2],
+    last: (p) => M(sph(0.1, 10, 8), std(0x1a0e10, { roughness: 0.95 }), p, { z: -0.1, sz: 1.3 }),
+  });
+
+  // Lanza de energía (proyectiles de arena)
+  const spear = new THREE.Group();
+  spear.position.set(0, -0.04, 0.02);
+  rig.wr[0].add(spear);
+  M(cyl(0.025, 0.028, 1.3, 8), std(0x3a2418, { roughness: 0.6 }), spear, { y: 0.4 });
+  for (let i = 0; i < 3; i++) M(tor(0.038, 0.009, 6, 10), std(0xc08a3a, { metalness: 0.7, roughness: 0.3 }), spear, { y: 0.05 + i * 0.3, rx: Math.PI / 2 });
+  const tip = new THREE.Mesh(cone(0.045, 0.32, 8), violet);
+  tip.position.set(0, 1.08, 0);
+  spear.add(tip);
+  M(new THREE.OctahedronGeometry(0.06), violet, spear, { y: 0.9 });
+  rig.ex.weapon = spear;
+  return rig;
+}
+
+const BUILDERS = { jago: buildJago, kairo: buildKairo, lira: buildLira, halley: buildHalley, nilo: buildNilo, kyra: buildKyra, ambar: buildAmbar };
 
 /* ------------------------------------------------------------------ */
 /*  Modelo animable                                                    */

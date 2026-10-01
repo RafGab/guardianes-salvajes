@@ -7,7 +7,7 @@ const DEFAULT = () => ({
   completed: 0, // niveles completados en orden (0..9)
   stars: {}, // estrellas por nivel
   items: [], // ids de herramientas obtenidas (en orden de desbloqueo)
-  hero: 'yagua',
+  hero: 'jago',
   score: 0,
   people: 0,
   animals: 0,

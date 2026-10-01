@@ -7,7 +7,7 @@ import { ITEMS, heroPowerItem } from './items.js';
 import { IS_TOUCH } from './platform.js';
 
 const $ = (id) => document.getElementById(id);
-export const HERO_ICON = { yagua: '🐆', ambar: '🦅', vorak: '🦎', nerea: '🐈', coral: '🦦', aurora: '🦊' };
+export const HERO_ICON = { jago: '🐆', kairo: '🦎', lira: '🐈', halley: '🦊', nilo: '🦦', kyra: '❄️', ambar: '🦅' };
 
 const SCREENS = ['loading', 'title', 'missions', 'select', 'pause', 'how', 'end', 'reveal', 'inventory', 'levelintro'];
 

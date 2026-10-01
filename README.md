@@ -1,6 +1,6 @@
-# Guardianes Salvajes
+# CATAC 7
 
-Videojuego 3D (Three.js + Vite): héroes animales rescatan a personas y animales durante catástrofes naturales.
+Videojuego 3D (Three.js + Vite): 7 guardianes animales elementales rescatan a personas y animales durante catástrofes naturales.
 
 ## Campaña (9 niveles, cada uno con su propio escenario 3D)
 | Nivel | Catástrofe | Escenario | Recompensa |
@@ -20,8 +20,8 @@ Videojuego 3D (Three.js + Vite): héroes animales rescatan a personas y animales
 - Las herramientas son habilidades **adicionales**: nunca sustituyen el poder del héroe. Cambia de habilidad con `1`-`9`, `Tab` o la barra táctil; `Q`/⚡ usa la seleccionada.
 - La dificultad sube con las condiciones del entorno (velocidad del fenómeno, obstáculos, distancias, tiempo), no solo con más enemigos.
 
-## Héroes
-Yagua (Tierra), Vorak (Fuego), Coral y Nerea (Agua), Aurora (Hielo), Ámbar (Aire).
+## Héroes — CATAC 7
+Lira (Lince · Tierra), Kairo (Komodo · Fuego), Jago (Jaglión · Roca), Halley (Fénec · Arena), Nilo (Nutria · Agua), Kyra (Zorro ártico · Hielo), Ámbar (Águila · Aire).
 
 ## Ejecutar
     npm install

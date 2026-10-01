@@ -767,7 +767,11 @@ export class Game {
 
     this.updateHud(real, dSafe);
 
-    if (this.state === 'playing' && this.t >= this.missionTime && !this.ended) this.end(this.delivered >= Math.ceil(this.total * 0.7));
+    if (this.state === 'playing' && this.t >= this.missionTime && !this.ended) {
+      // a más dificultad (hz), más margen para aprobar: los niveles suben de dificultad pero siguen siendo superables
+      const need = clamp(0.7 - ((this.mission.hz || 1) - 1) * 0.06, 0.52, 0.7);
+      this.end(this.delivered >= Math.ceil(this.total * need));
+    }
     if (this.state === 'ending') {
       this.endT += real;
       if (this.endT > 3.4) this.finish();

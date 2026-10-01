@@ -51,7 +51,7 @@ export const LEVELS = [
   {
     n: 7, id: 'ice', scenario: 'ice', icon: '🧊', kicker: 'NIVEL 7', name: 'Tormenta de hielo en Monte Blanco', place: 'Montañas nevadas, lago helado y refugio',
     desc: 'Nieve, viento y frío extremo en una estación de montaña con lago helado, bosque nevado y carreteras congeladas.',
-    time: 340, victims: 12, animalRatio: 0.45, minSep: 19, minStart: 38, hz: 1.9, obstacles: 5, best: ['fuego', 'hielo'],
+    time: 365, victims: 12, animalRatio: 0.45, minSep: 19, minStart: 38, hz: 1.9, obstacles: 5, best: ['fuego', 'hielo'],
     gauge: 'FRÍO', intro: '🧊 ¡TORMENTA DE HIELO!', introSub: 'Calienta junto a las hogueras y rescata a todos',
     failTitle: 'La ventisca ha cubierto la montaña', reward: 'piolet',
     mechanic: 'El suelo resbala, la ventisca nubla la vista y el frío se acumula.',
@@ -59,7 +59,7 @@ export const LEVELS = [
   {
     n: 8, id: 'drought', scenario: 'drought', icon: '🌱', kicker: 'NIVEL 8', name: 'Sequía extrema en Valle Seco', place: 'Zona rural con embalse casi vacío',
     desc: 'Campos secos, un embalse con muy poca agua y animales buscando agua. El calor aprieta y el suelo se agrieta.',
-    time: 350, victims: 12, animalRatio: 0.55, minSep: 20, minStart: 40, hz: 2.0, obstacles: 6, best: ['agua', 'hielo'],
+    time: 380, victims: 12, animalRatio: 0.55, minSep: 20, minStart: 40, hz: 2.0, obstacles: 6, best: ['agua', 'hielo'],
     gauge: 'CALOR', intro: '🌱 ¡SEQUÍA EXTREMA!', introSub: 'Busca sombra y agua, y ayuda a los animales sedientos',
     failTitle: 'El calor ha secado el valle', reward: 'canteen',
     mechanic: 'El calor sube al sol; la sombra y el agua te refrescan.',
@@ -67,7 +67,7 @@ export const LEVELS = [
   {
     n: 9, id: 'extreme', scenario: 'extreme', icon: '🌪️', kicker: 'NIVEL 9', name: 'Catástrofe extrema en Valle Titán', place: 'Valle con río, volcán lejano y ciudad en ladera',
     desc: 'Todo a la vez: terremotos, lluvia con crecida del río, ceniza y viento. La prueba final para un verdadero guardián.',
-    time: 420, victims: 14, animalRatio: 0.45, minSep: 22, minStart: 44, hz: 2.3, obstacles: 7, best: ['aire', 'agua', 'tierra', 'fuego', 'hielo'],
+    time: 460, victims: 14, animalRatio: 0.45, minSep: 22, minStart: 44, hz: 2.3, obstacles: 7, best: ['aire', 'agua', 'tierra', 'fuego', 'hielo'],
     gauge: 'PELIGRO', intro: '🌪️ ¡CATÁSTROFE EXTREMA!', introSub: 'Terremoto, crecida, ceniza y viento: ¡todo a la vez!',
     failTitle: 'La catástrofe ha sido demasiado grande', reward: 'star',
     mechanic: 'Varias catástrofes se suman: usa todas tus herramientas.',
