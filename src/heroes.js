@@ -38,7 +38,7 @@ export const HEROES = [
     bio: 'Jaglión valiente, leal, audaz, resistente y explorador. Su cola es su herramienta principal para escalar, trepar y moverse en terrenos difíciles. "La montaña no es un límite… es mi hogar."',
   },
   {
-    id: 'halley', name: 'Halley', species: 'Fénec', element: 'arena', scale: 0.72,
+    id: 'halley', name: 'Halley', species: 'Fénec', element: 'arena', scale: 0.56,
     power: { type: 'surf', name: 'Carrera de Arena', cd: 6, desc: 'Controla la arena a su alrededor: corre sobre dunas y terreno inestable a gran velocidad durante unos segundos.' },
     stats: { speed: 7.8, jump: 8.6, swim: 3.0, carry: 1 },
     bio: 'Fénec siniestra, inteligente, manipuladora, ambiciosa y vengativa. Controla la arena a su alrededor y lee el terreno del desierto. "Pequeña en tamaño… gigante en espíritu."',

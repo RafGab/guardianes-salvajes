@@ -72,7 +72,8 @@ kbd { display: inline-block; min-width: 26px; padding: 2px 8px; border-radius: 7
 .card { width: 108px; padding: 10px 6px 9px; text-align: center; border-radius: 16px; cursor: pointer; background: var(--bg); border: 2px solid var(--line); transition: transform .15s, border-color .15s, box-shadow .15s; backdrop-filter: blur(8px); }
 .card:hover { transform: translateY(-4px); }
 .card.sel { border-color: var(--cel); box-shadow: 0 0 22px var(--cel), inset 0 0 18px rgba(255,255,255,.06); transform: translateY(-8px); }
-.card .em { font-size: 34px; line-height: 1.1; }
+.card .em { font-size: 34px; line-height: 1.1; width: 56px; height: 56px; margin: 0 auto; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; }
+.card .em img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; display: block; }
 .card .nm { font-weight: 700; font-size: 16px; }
 .card .sp { font-size: 11.5px; color: var(--muted); }
 .card .el { margin-top: 3px; font-size: 11px; font-weight: 700; color: var(--cel); }
@@ -82,7 +83,8 @@ kbd { display: inline-block; min-width: 26px; padding: 2px 8px; border-radius: 7
 #hud { position: absolute; inset: 0; pointer-events: none; display: none; z-index: 10; }
 #hud.show { display: block; }
 .hud-hero { position: absolute; left: 18px; top: 18px; display: flex; align-items: center; gap: 12px; padding: 10px 14px 10px 10px; }
-.hero-badge { width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff3, #0006); border: 3px solid var(--el); box-shadow: 0 0 16px var(--el); display: grid; place-items: center; font-size: 28px; }
+.hero-badge { width: 54px; height: 54px; border-radius: 50%; background: radial-gradient(circle at 35% 30%, #fff3, #0006); border: 3px solid var(--el); box-shadow: 0 0 16px var(--el); display: grid; place-items: center; font-size: 28px; overflow: hidden; }
+.hero-badge img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; display: block; }
 .hero-name { font-weight: 700; font-size: 20px; line-height: 1; }
 .hero-el { color: var(--el); font-size: 13px; font-weight: 600; margin-top: 3px; }
 .power-btn { position: relative; width: 52px; height: 52px; margin-left: 6px; }

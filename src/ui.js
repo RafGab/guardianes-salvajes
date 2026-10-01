@@ -8,6 +8,7 @@ import { IS_TOUCH } from './platform.js';
 
 const $ = (id) => document.getElementById(id);
 export const HERO_ICON = { jago: '🐆', kairo: '🦎', lira: '🐈', halley: '🦊', nilo: '🦦', kyra: '❄️', ambar: '🦅' };
+export const HERO_FACE = (id) => `/img/heroes/${id}.jpg`;
 
 const SCREENS = ['loading', 'title', 'missions', 'select', 'pause', 'how', 'end', 'reveal', 'inventory', 'levelintro'];
 
@@ -217,7 +218,7 @@ export const ui = {
       const c = document.createElement('div');
       c.className = 'card';
       c.style.setProperty('--cel', el.css);
-      c.innerHTML = `<div class="em">${HERO_ICON[h.id]}</div><div class="nm">${h.name}</div><div class="sp">${h.species}</div><div class="el">${el.icon} ${el.name}</div>`;
+      c.innerHTML = `<div class="em"><img src="${HERO_FACE(h.id)}" alt="${h.name}" /></div><div class="nm">${h.name}</div><div class="sp">${h.species}</div><div class="el">${el.icon} ${el.name}</div>`;
       c.addEventListener('click', () => onPick(i));
       box.appendChild(c);
     });
@@ -297,7 +298,7 @@ export const ui = {
   setHero(h) {
     const el = ELEMENTS[h.element];
     this.setElementColor(el.css);
-    $('hud-icon').textContent = HERO_ICON[h.id];
+    $('hud-icon').innerHTML = `<img src="${HERO_FACE(h.id)}" alt="${h.name}" />`;
     $('hud-name').textContent = h.name;
     $('hud-el').textContent = `${el.icon} ${el.name}`;
     $('hud-power-name').textContent = `Q · ${h.power.name}`;
