@@ -2,18 +2,18 @@
 
 Videojuego 3D (Three.js + Vite): 7 guardianes animales elementales rescatan a personas y animales durante catástrofes naturales.
 
-## Campaña (9 niveles, cada uno con su propio escenario 3D)
-| Nivel | Catástrofe | Escenario | Recompensa |
-|---|---|---|---|
-| 1 | Inundación | Puerto Ribera: ciudad costera con río, puentes y puerto | 🪓 Hacha |
-| 2 | Incendio forestal | Bosque Ámbar: montaña, caminos, zonas quemadas, refugios | 🪢 Cuerda |
-| 3 | Terremoto | Villa Roca: pueblo dañado, canal seco, iglesia | 🔦 Linterna |
-| 4 | Erupción | Monte Ceniza: volcán, pueblo, ríos de lava | 🛡️ Escudo |
-| 5 | Huracán | Bahía Palma: costa, muelle, marejada, palmeras | 🌀 Viento |
-| 6 | Tormenta de arena | Oasis Rojo: dunas, pueblo de adobe, oasis | 🥽 Gafas |
-| 7 | Tormenta de hielo | Monte Blanco: lago helado, chalets, riscos | ⛏️ Piolet |
-| 8 | Sequía | Valle Seco: embalse casi vacío, granjas | 💧 Cantimplora |
-| 9 | Catástrofe extrema | Valle Titán: sismos + fuego + viento + crecida | ⭐ Estrella |
+## Campaña (9 niveles, cada uno con su propio escenario 3D, territorio y jefe de CATAC 7)
+| Nivel | Territorio | Catástrofe y ciudad | Jefe | Recompensa |
+|---|---|---|---|---|
+| 1 | 💧 Agua | Inundación en Náufora | 🐙 Kraken | 🪓 Hacha |
+| 2 | 🔥 Fuego | Incendio en Cenizara | 🐕‍🦺 Kerberos | 🪢 Cuerda |
+| 3 | 🌍 Tierra | Terremoto en Sismara | 👹 Minotauro | 🔦 Linterna |
+| 4 | 🪨 Roca | Erupción en Rocavara | 🐍 Medusa | 🛡️ Escudo |
+| 5 | 💨 Aire | Huracán en Huravela | 🐲 Long | 🌀 Viento |
+| 6 | 🏜️ Arena | Haboob en Haboura | 🐉 Basilisco | 🥽 Gafas |
+| 7 | ❄️ Hielo | Avalancha en Nivoria | 🐺 Fenrir | ⛏️ Piolet |
+| 8 | 💧 Agua | Sequía extrema en Aridalia | — | 💧 Cantimplora |
+| 9 | ☄️ Apocalia | Valle Titán: todos los elementos a la vez | ☄️ El Cataclismo (+ 🦁 Voya) | ⭐ Estrella |
 
 - Cada nivel se desbloquea al completar el anterior. El progreso (niveles, héroe, herramientas, puntos, insignias) se guarda en `localStorage`.
 - Los rescates se generan al azar en cada partida (zonas, puntos válidos, sin colisiones y alcanzables).

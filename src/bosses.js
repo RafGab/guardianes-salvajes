@@ -289,7 +289,37 @@ function buildLongModel() {
   return { root, body, segs, limbs: [], mats: [scale, mane], flies: true };
 }
 
-const MODEL_BUILDERS = { minotauro: buildMinotauroModel, kerberos: buildKerberosModel, medusa: buildMedusaModel, basilisco: buildBasiliscoModel, kraken: buildKrakenModel, fenrir: buildFenrirModel, long: buildLongModel };
+function buildCataclismoModel() {
+  const core = new THREE.MeshStandardMaterial({ color: 0x2a1a2a, roughness: 0.4, metalness: 0.4, emissive: 0x6a1aff, emissiveIntensity: 0.5 });
+  const fireMat = glow(0xff6a1a, 2.4);
+  const iceMat = glow(0x7ad8ff, 2.4);
+  const rockMat = std(0x7a6a52, { roughness: 0.95 });
+  const eye = glow(0xffffff, 3);
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  M(sph(0.95), core, body, { y: 1.8 });
+  const head = new THREE.Group();
+  head.position.y = 2.95;
+  body.add(head);
+  M(sph(0.5), core, head);
+  M(sph(0.1), eye, head, { x: 0.2, y: 0.05, z: 0.4 });
+  M(sph(0.1), eye, head, { x: -0.2, y: 0.05, z: 0.4 });
+  const shards = [];
+  const mats = [fireMat, iceMat, rockMat];
+  for (let i = 0; i < 10; i++) {
+    const a = (i / 10) * TAU;
+    const sg = new THREE.Group();
+    sg.position.set(Math.cos(a) * 1.5, 1.8 + Math.sin(i * 2) * 0.5, Math.sin(a) * 1.5);
+    body.add(sg);
+    M(cone(0.18, 0.6), mats[i % 3], sg, { rx: rnd(0, 3.14), rz: rnd(0, 3.14) });
+    shards.push(sg);
+  }
+  root.scale.setScalar(1.7);
+  return { root, body, shards, limbs: [], mats: [core], fireMat, iceMat, rockMat };
+}
+
+const MODEL_BUILDERS = { minotauro: buildMinotauroModel, kerberos: buildKerberosModel, medusa: buildMedusaModel, basilisco: buildBasiliscoModel, kraken: buildKrakenModel, fenrir: buildFenrirModel, long: buildLongModel, cataclismo: buildCataclismoModel };
 
 /* ------------------------------------------------------------------ */
 /*  Clase base: máquina de estados y combate, compartida por los 7     */
@@ -307,7 +337,7 @@ export class BossBase {
     this.flyHeight = this.model.flies ? 5.5 : 0;
     this.pos = new THREE.Vector3(arena.x, this.groundY(arena.x, arena.z) + this.flyHeight, arena.z - arena.r * 0.6);
     this.facing = 0;
-    this.hpMax = 100;
+    this.hpMax = flavor.hpMax || 100;
     this.hp = this.hpMax;
     this.phase = 1;
     this.state = 'enter';
@@ -528,6 +558,13 @@ export class BossBase {
       mesh.emissive.setRGB(this.hitFlash, this.hitFlash * 0.3, 0);
       mesh.emissiveIntensity = 1;
     }
+    if (this.model.shards) {
+      this.model.shards.forEach((sg, i) => {
+        const a = (i / this.model.shards.length) * TAU + this.t * 0.8;
+        sg.position.set(Math.cos(a) * 1.5, 1.8 + Math.sin(this.t + i * 2) * 0.5, Math.sin(a) * 1.5);
+        sg.rotation.y += 0.04;
+      });
+    }
   }
 
   dispose() {
@@ -552,11 +589,95 @@ export const Basilisco = defineBoss('basilisco', { name: 'Basilisco', icon: '�
 export const Kraken = defineBoss('kraken', { name: 'Kraken', icon: '🐙', color: 0x2a6aff, cssColor: '#3a8aff', chargeName: 'Golpe de tentáculo', slamName: 'Ola gigante', scale: 1.25 });
 export const Fenrir = defineBoss('fenrir', { name: 'Fenrir', icon: '🐺', color: 0x8ad0ff, cssColor: '#9ad8ff', chargeName: 'Embestida helada', slamName: 'Aullido de hielo', scale: 1.35 });
 export const Long = defineBoss('long', { name: 'Long', icon: '🐲', color: 0x5ac8ff, cssColor: '#6ad0ff', chargeName: 'Picado aéreo', slamName: 'Tormenta de rayos', scale: 1.2 });
+// El jefe final de Apocalia no es un monstruo más: es el propio Cataclismo que ha conectado
+// todas las catástrofes de la campaña. Más vida y más ritmo que el resto (mismo framework).
+export const Cataclismo = defineBoss('cataclismo', { name: 'El Cataclismo', icon: '☄️', color: 0x9a3cff, cssColor: '#b05aff', chargeName: 'Embestida del vacío', slamName: 'Onda elemental', scale: 1.7, hpMax: 190 });
 
-const BOSSES = { minotauro: Minotauro, kerberos: Kerberos, medusa: Medusa, basilisco: Basilisco, kraken: Kraken, fenrir: Fenrir, long: Long };
+const BOSSES = { minotauro: Minotauro, kerberos: Kerberos, medusa: Medusa, basilisco: Basilisco, kraken: Kraken, fenrir: Fenrir, long: Long, cataclismo: Cataclismo };
 
 export function createBoss(kind, ctx, arena) {
   const C = BOSSES[kind];
   if (!C) return null;
   return new C(ctx, arena);
+}
+
+/* ------------------------------------------------------------------ */
+/*  VOYA — aliada no jugable (León Blanco + Éter)                      */
+/*  No es un protagonista jugable ni combate directamente al jefe:     */
+/*  aparece en Apocalia y protege al jugador con escudos de Éter,      */
+/*  coherente con su ficha ("la verdadera fuerza... es la protección") */
+/* ------------------------------------------------------------------ */
+function buildVoyaModel() {
+  const fur = std(0xe8e8ec, { roughness: 0.7 });
+  const armor = std(0x9aa0ac, { roughness: 0.3, metalness: 0.75 });
+  const ether = glow(0x5ad0ff, 2.6);
+  const eye = glow(0x5ad0ff, 3);
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  root.add(body);
+  M(cap(0.34, 0.6), armor, body, { y: 1.15 });
+  M(sph(0.42), fur, body, { y: 1.75, sy: 0.9 });
+  const head = new THREE.Group();
+  head.position.y = 2.25;
+  body.add(head);
+  M(sph(0.28), fur, head);
+  M(sph(0.045), eye, head, { x: 0.12, y: 0.04, z: 0.24 });
+  M(sph(0.045), eye, head, { x: -0.12, y: 0.04, z: 0.24 });
+  for (let i = 0; i < 16; i++) {
+    const a = rnd(0, TAU);
+    M(cone(0.03, 0.3), fur, head, { x: Math.cos(a) * 0.3, y: 0.1 + rnd(-0.1, 0.2), z: Math.sin(a) * 0.3, rx: rnd(-0.3, 0.3), rz: rnd(-0.3, 0.3) });
+  }
+  const shieldArm = new THREE.Group();
+  shieldArm.position.set(-0.5, 1.3, 0.1);
+  body.add(shieldArm);
+  M(new THREE.CircleGeometry(0.42, 24), armor, shieldArm, { ry: Math.PI / 2 });
+  M(new THREE.RingGeometry(0.3, 0.36, 24), ether, shieldArm, { ry: Math.PI / 2 });
+  const rings = [];
+  for (let i = 0; i < 3; i++) {
+    const r = new THREE.Mesh(new THREE.TorusGeometry(0.75 + i * 0.22, 0.02, 6, 24), ether);
+    r.rotation.x = Math.PI / 2 + i * 0.5;
+    body.add(r);
+    rings.push(r);
+  }
+  root.scale.setScalar(1.25);
+  return { root, body, rings, mats: [fur, armor] };
+}
+
+export class Voya {
+  constructor(ctx) {
+    this.ctx = ctx;
+    this.model = buildVoyaModel();
+    ctx.scene.add(this.model.root);
+    this.t = 0;
+    this.shieldCd = 4; // primer escudo pronto tras aparecer
+    ctx.ui.alert('🦁 ¡Voya acude a proteger a los guardianes!', 4200);
+    ctx.ui.banner('good', '🦁 Voya', '"La verdadera fuerza no está en el ataque, sino en la protección." Te protegerá con escudos de Éter durante el combate.');
+  }
+  update(dt) {
+    const { ctx } = this;
+    const { player } = ctx;
+    this.t += dt;
+    const ang = this.t * 0.5;
+    const ox = Math.cos(ang) * 3.2, oz = Math.sin(ang) * 3.2;
+    const gy = this.ctx.world.groundY ? this.ctx.world.groundY(player.pos.x + ox, player.pos.z + oz) : player.pos.y;
+    this.model.root.position.set(player.pos.x + ox, gy + 0.3 + Math.sin(this.t * 1.4) * 0.15, player.pos.z + oz);
+    this.model.root.rotation.y = -ang + Math.PI / 2;
+    for (const r of this.model.rings) r.rotation.z += dt * 0.6;
+    this.shieldCd -= dt;
+    if (this.shieldCd <= 0 && player.shieldT < 1) {
+      this.shieldCd = rnd(13, 17);
+      player.shieldT = Math.max(player.shieldT, 5);
+      for (let i = 0; i < 20; i++) ctx.fx.sparkle(player.pos.x + rnd(-1, 1), player.pos.y + rnd(0.5, 1.8), player.pos.z + rnd(-1, 1), 0x5ad0ff, 2);
+      ctx.audio.power('surf');
+      ctx.ui.banner('good', '🦁 ¡Escudo de Éter!', 'Voya te protege unos segundos');
+    }
+  }
+  dispose() {
+    this.ctx.scene.remove(this.model.root);
+  }
+}
+
+export function createAlly(kind, ctx) {
+  if (kind === 'voya') return new Voya(ctx);
+  return null;
 }

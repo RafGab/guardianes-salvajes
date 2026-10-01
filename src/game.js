@@ -10,7 +10,7 @@ import { Save } from './save.js';
 import { ITEMS, heroPowerItem } from './items.js';
 import { useTool } from './tools.js';
 import { createHazards } from './hazards.js';
-import { createBoss } from './bosses.js';
+import { createBoss, createAlly } from './bosses.js';
 import { IS_TOUCH } from './platform.js';
 const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
 
@@ -330,6 +330,8 @@ export class Game {
     if (this.boss) this.boss.dispose();
     this.boss = null;
     this.bossDone = false;
+    if (this.ally) this.ally.dispose();
+    this.ally = null;
     this.scheduled = new Set();
     this.shownMoves = new Set();
     this.fxAcc = { ember: 0, rain: 0, spray: 0, ripple: 0, snow: 0, trail: 0 };
@@ -592,6 +594,7 @@ export class Game {
     player.vx = 0; player.vz = 0; player.vy = 0;
     player.facing = Math.PI;
     this.boss = createBoss(this.mission.boss, { scene, world, player, chase, camera, fx: this.fx, audio, ui, game: this }, arena);
+    if (this.mission.ally) this.ally = createAlly(this.mission.ally, { scene, world, player, chase, camera, fx: this.fx, audio, ui, game: this });
     ui.setGaugeMode(this.mission);
   }
   hitPlayer(dmg, fromPos) {
@@ -612,6 +615,8 @@ export class Game {
     ui.banner('good', `🏆 ¡${this.boss.name} derrotado!`, '+300 puntos de bonus');
     if (this.boss) this.boss.dispose();
     this.boss = null;
+    if (this.ally) this.ally.dispose();
+    this.ally = null;
     this.end(true);
   }
 
@@ -722,6 +727,7 @@ export class Game {
       this.boss.update(dtg);
       if (this.boss.state === 'dead' && this.boss.deathT > 1.1 && !this.bossDone) this.finishBoss();
     }
+    if (this.ally && this.state === 'playing') this.ally.update(dtg);
     world.update(dtg, performance.now() / 1000, camera.position, player.pos, missionT, true);
     const p = player.pos;
 
