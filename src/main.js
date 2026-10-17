@@ -456,7 +456,19 @@ function toggleSound() {
   $('btn-sound2').textContent = label;
 }
 
+// La música del juego (intro y todos los niveles) arranca con el primer gesto del usuario,
+// porque el navegador no permite audio automático antes de una interacción.
+function armMusic() {
+  const events = ['pointerdown', 'keydown', 'touchend', 'click'];
+  const go = () => {
+    audio.startMusic();
+    events.forEach((e) => window.removeEventListener(e, go, true));
+  };
+  events.forEach((e) => window.addEventListener(e, go, true));
+}
+
 function bindUi() {
+  armMusic();
   setQuality(quality);
   $('btn-play').onclick = () => { audio.init(); audio.click(); goFullscreen(); enterMissions(); };
   $('btn-back-m').onclick = () => { audio.click(); enterTitle(); };

@@ -5,6 +5,32 @@ let rainGain = null;
 let windGain = null;
 let muted = false;
 let started = false;
+let musicGain = null;
+let musicBuf = null;
+let musicSrc = null;
+let musicLoading = false;
+const MUSIC_URL = '/audio/melodia.mp3';
+const MUSIC_VOL = 0.4; // por debajo de los efectos para no taparlos
+
+// Crea el contexto y el volumen maestro (idempotente). Se llama desde un gesto del usuario.
+function ensureCtx() {
+  if (ctx) {
+    if (ctx.state === 'suspended') ctx.resume();
+    return true;
+  }
+  try {
+    ctx = new (window.AudioContext || window.webkitAudioContext)();
+  } catch (e) {
+    return false;
+  }
+  master = ctx.createGain();
+  master.gain.value = muted ? 0 : 0.7;
+  master.connect(ctx.destination);
+  musicGain = ctx.createGain();
+  musicGain.gain.value = 0;
+  musicGain.connect(master);
+  return true;
+}
 
 function noiseBuffer(seconds = 2, color = 'white') {
   const len = ctx.sampleRate * seconds;
@@ -22,20 +48,30 @@ function noiseBuffer(seconds = 2, color = 'white') {
 }
 
 export const Audio3D = {
+  // Melodía de fondo en bucle (intro y todos los niveles). Idempotente: se puede llamar en cada gesto.
+  startMusic() {
+    if (!ensureCtx() || musicSrc || musicLoading) return;
+    const play = () => {
+      if (musicSrc) return;
+      musicSrc = ctx.createBufferSource();
+      musicSrc.buffer = musicBuf;
+      musicSrc.loop = true;
+      musicSrc.connect(musicGain);
+      musicSrc.start();
+      musicGain.gain.setTargetAtTime(MUSIC_VOL, ctx.currentTime, 1.2); // entrada suave
+    };
+    if (musicBuf) return play();
+    musicLoading = true;
+    fetch(MUSIC_URL)
+      .then((r) => r.arrayBuffer())
+      .then((ab) => ctx.decodeAudioData(ab))
+      .then((buf) => { musicBuf = buf; musicLoading = false; play(); })
+      .catch(() => { musicLoading = false; });
+  },
   init() {
-    if (started) {
-      if (ctx.state === 'suspended') ctx.resume();
-      return;
-    }
-    try {
-      ctx = new (window.AudioContext || window.webkitAudioContext)();
-    } catch (e) {
-      return;
-    }
+    if (!ensureCtx()) return;
+    if (started) return;
     started = true;
-    master = ctx.createGain();
-    master.gain.value = muted ? 0 : 0.7;
-    master.connect(ctx.destination);
 
     const rain = ctx.createBufferSource();
     rain.buffer = noiseBuffer(3, 'white');
@@ -69,8 +105,11 @@ export const Audio3D = {
   get muted() {
     return muted;
   },
+  get musicPlaying() {
+    return !!musicSrc && !!ctx && ctx.state === 'running';
+  },
   setIntensity(rain, wind) {
-    if (!ctx) return;
+    if (!ctx || !rainGain) return;
     rainGain.gain.setTargetAtTime(0.04 + rain * 0.16, ctx.currentTime, 0.5);
     windGain.gain.setTargetAtTime(0.1 + wind * 0.4, ctx.currentTime, 0.5);
   },
