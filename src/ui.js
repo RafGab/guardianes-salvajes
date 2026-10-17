@@ -323,7 +323,7 @@ export const ui = {
     list.forEach((a, i) => {
       const b = document.createElement('button');
       b.className = 'skill' + (i === index ? ' sel' : '');
-      b.innerHTML = `<span class="sk">${i + 1}</span><span class="ic">${a.icon}</span><i class="cdo"></i>`;
+      b.innerHTML = `<span class="sk">${i < 9 ? i + 1 : i === 9 ? 0 : ''}</span><span class="ic">${a.icon}</span><i class="cdo"></i>`;
       b.title = a.name;
       b.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); onPick(i); });
       bar.appendChild(b);

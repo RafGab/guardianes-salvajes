@@ -52,7 +52,7 @@ export class Input {
         case 'Tab': this.emit('abilityNext'); break;
         case 'KeyP': this.emit('pause'); break;
         default:
-          if (/^Digit[1-9]$/.test(e.code)) this.emit('ability', Number(e.code.slice(5)) - 1);
+          if (/^Digit[0-9]$/.test(e.code)) this.emit('ability', (Number(e.code.slice(5)) + 9) % 10); // 1-9 → huecos 1-9, 0 → hueco 10
           break;
       }
     });

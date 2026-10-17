@@ -63,6 +63,13 @@ export class Player {
     this.shieldT = 0;
     this.torchT = 0;
     this.swingT = 0;
+    this.petrifyT = 0; this.petrifyFade = 1; // petrificado (Basilisco, Medusa)
+    this.slowT = 0; this.slowF = 1;           // ralentizado (hielo de Cerbero y Fenrir...)
+    this.speedBuff = 1;                       // bonus de velocidad (Ojo Lunar del Lince)
+    this.driftX = 0; this.driftZ = 0;         // tirón externo por fotograma (remolino del Kraken, vientos del Dragón Long)
+    this.evadeT = 0;                          // esquiva (Ojo Lunar del Lince): ignora los golpes
+    this.pose = { rx: 0, rz: 0, sy: 1, dy: 0, spin: 0, hidden: false }; // pose extra de las habilidades (skills/hero.js)
+    this._wasHidden = false;
     this.capBonus = 0;
     this.cdMul = 1;
   }
@@ -103,7 +110,24 @@ export class Player {
     this.shieldT = 0;
     this.torchT = 0;
     this.swingT = 0;
+    this.petrifyT = 0; this.slowT = 0; this.slowF = 1; this.speedBuff = 1; this.evadeT = 0;
+    this.driftX = this.driftZ = 0;
     this.env = { slip: 1, wind: { x: 0, z: 0 }, speedMul: 1 };
+  }
+
+  // Superpone la pose de una habilidad (inclinación, aplastamiento, giro, desaparición) sobre la animación del modelo
+  applyPose() {
+    const m = this.model;
+    if (!m) return;
+    const k = this.pose;
+    m.root.rotation.order = 'YXZ';
+    m.root.rotation.y = this.facing + k.spin;
+    m.root.rotation.x = k.rx;
+    m.root.rotation.z = k.rz;
+    m.root.position.y += k.dy;
+    const xz = 1 / Math.sqrt(Math.max(0.2, k.sy)); // conserva el volumen al aplastar o estirar
+    m.root.scale.set(xz, k.sy, xz);
+    if (k.hidden || this._wasHidden) { m.root.visible = !k.hidden; this._wasHidden = k.hidden; }
   }
 
   get capacity() {
@@ -175,6 +199,10 @@ export class Player {
     const st = this.stats;
     const pos = this.pos;
     this.events.length = 0;
+    this.petrifyT = Math.max(0, this.petrifyT - dt);
+    this.slowT = Math.max(0, this.slowT - dt);
+    if (this.slowT <= 0) this.slowF = 1;
+    if (this.petrifyT > 0) inp = { ...inp, x: 0, y: 0, jump: false, jumpPressed: false, sprint: false }; // piedra: no se mueve ni salta
     this.cd = Math.max(0, this.cd - dt);
     this.mantleCd = Math.max(0, this.mantleCd - dt);
     this.mantling = Math.max(0, this.mantling - dt);
@@ -184,6 +212,7 @@ export class Player {
     this.boostT = Math.max(0, this.boostT - dt);
     this.climbT = Math.max(0, this.climbT - dt);
     this.shieldT = Math.max(0, this.shieldT - dt);
+    this.evadeT = Math.max(0, this.evadeT - dt);
     this.torchT = Math.max(0, this.torchT - dt);
     this.swingT = Math.max(0, this.swingT - dt);
     if (this.boostT <= 0) this.grip = false;
@@ -197,6 +226,7 @@ export class Player {
         this.model.root.position.copy(pos);
         this.model.root.rotation.y = this.facing;
         this.model.update(dt, { speed: 0, grounded: false, vy: 4, power: 0.6, carrying: this.carrying.length });
+        this.applyPose();
       }
       return;
     }
@@ -246,11 +276,12 @@ export class Player {
     else if (this.wading) maxSpeed *= 0.72;
     if (surfing) maxSpeed = st.speed * (this.hero.id === 'halley' ? 1.8 : 1.55);
     if (this.carrying.length) maxSpeed *= 1 - Math.min(0.08 * this.carrying.length, 0.2);
-    maxSpeed *= this.env.speedMul * (this.boostT > 0 ? 1.5 : 1);
+    maxSpeed *= this.env.speedMul * (this.boostT > 0 ? 1.5 : 1) * (this.slowT > 0 ? this.slowF : 1) * this.speedBuff;
     if (w.slowAt && this.grounded) maxSpeed *= w.slowAt(pos.x, pos.z);
     if (this.dashT > 0) maxSpeed = 20;
     if (this.gliding) maxSpeed = st.speed * 1.6;
-    const tvx = dx * maxSpeed, tvz = dz * maxSpeed;
+    const tvx = dx * maxSpeed + this.driftX, tvz = dz * maxSpeed + this.driftZ; // drift: tirón externo (remolino, viento) que se aplica cada fotograma
+    this.driftX = this.driftZ = 0;
     const slip = this.grip || this.climbT > 0 ? 1 : this.env.slip;
     const accel = this.dashT > 0 ? 0 : this.grounded ? 16 * slip : this.swimming ? 5 : 4.5;
     if (this.dashT <= 0) {
@@ -347,6 +378,7 @@ export class Player {
         power: Math.max(this.powerAnim, this.swingT > 0 ? 0.5 : 0),
         celebrate: this.celebrate,
       });
+      this.applyPose();
     }
   }
 

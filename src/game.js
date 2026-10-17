@@ -12,6 +12,9 @@ import { useTool } from './tools.js';
 import { createHazards } from './hazards.js';
 import { createBoss, createAlly, preloadBoss, preloadAlly } from './bosses.js';
 import { bossScale, bossCameraFor } from './scale.js';
+import { Vfx } from './skills/vfx.js';
+import { Combat } from './combat.js';
+import { HeroSkills } from './skills/hero.js';
 import { IS_TOUCH } from './platform.js';
 const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
 
@@ -81,6 +84,10 @@ export class Game {
     this.abilities = [];
     this.abIndex = 0;
     this.toolCd = {};
+    // habilidades de héroe y ataques de jefe: capa visual, combate compartido y gestor de habilidades
+    this.vfx = new Vfx(scene, fx);
+    this.combat = new Combat(this);
+    this.skills = new HeroSkills(this);
     this.markerTex = { warn: markerTexture('#ffb020'), urgent: markerTexture('#ff3030'), blocked: markerTexture('#9a6bff', '🔒') };
     this.buildSigns();
     this.buildToolVisuals();
@@ -220,6 +227,7 @@ export class Game {
   buildAbilities() {
     const base = heroPowerItem(this.hero);
     this.abilities = [{ id: 'power', icon: base.icon, name: base.name, cd: this.hero.power.cd }];
+    this.abilities.push(...this.skills.entries(this.hero.id)); // habilidad propia del héroe (y especial, si la tiene)
     for (const id of Save.items) {
       const it = ITEMS[id];
       if (it && !it.passive) this.abilities.push({ id: it.id, icon: it.icon, name: it.name, cd: it.cd });
@@ -257,6 +265,12 @@ export class Game {
     if ((this.toolCd[a.id] || 0) > 0) {
       ui.banner('find', a.icon, 'Recargando…');
       return false;
+    }
+    if (a.hs) { // habilidad propia del héroe (skills/hero.js)
+      const res = this.skills.use(a.key);
+      if (!res) return false;
+      this.toolCd[a.id] = a.cd * this.player.cdMul * res.cdFactor;
+      return true;
     }
     if (useTool(a.id, this)) {
       this.toolCd[a.id] = a.cd * this.player.cdMul;
@@ -348,6 +362,9 @@ export class Game {
     this.rope = null;
     if (this.boss) this.boss.dispose();
     this.boss = null;
+    this.skills.reset(); // limpia habilidades, esbirros, proyectiles y efectos de la partida anterior
+    this.combat.reset();
+    this.vfx.clear();
     this.bossDone = false;
     if (this.ally) this.ally.dispose();
     this.ally = null;
@@ -623,6 +640,7 @@ export class Game {
   }
   hitPlayer(dmg, fromPos) {
     if (this.playerHitT > 0) return;
+    if (this.player.shieldT > 0 || this.player.evadeT > 0) return; // el escudo y la esquiva lunar anulan el golpe
     this.playerHitT = 0.9;
     this.score = Math.max(0, this.score - 10);
     ui.setScore(this.score);
@@ -743,6 +761,7 @@ export class Game {
       if (this.ropeShow <= 0 && !this.rope) this.ropeLine.visible = false;
     }
 
+    if (this.state === 'playing') this.skills.update(dtg); // habilidades del héroe (mueven al héroe antes de su actualización)
     player.update(dtg, move, chase.yaw);
     this.handlePlayerEvents();
     if (this.hazards && (this.state === 'playing' || this.state === 'ending')) this.hazards.update(dtg, this.t);
@@ -752,6 +771,8 @@ export class Game {
       if (this.boss.state === 'dead' && this.boss.deathT > 1.1 && !this.bossDone) this.finishBoss();
     }
     if (this.ally && this.state === 'playing') this.ally.update(dtg);
+    this.combat.update(dtg);
+    this.vfx.update(dtg);
     world.update(dtg, performance.now() / 1000, camera.position, player.pos, missionT, true);
     const p = player.pos;
 
@@ -1084,6 +1105,7 @@ export class Game {
     this.success = success;
     this.state = 'ending';
     this.endT = 0;
+    this.skills.reset();
     this.player.locked = true;
     this.player.celebrate = success;
     this.player.celebrateTimer = 0;

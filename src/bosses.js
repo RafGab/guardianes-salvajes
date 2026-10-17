@@ -2,6 +2,9 @@ import * as THREE from 'three';
 import { clamp, damp, TAU } from './utils.js';
 import { loadGLB, cachedGLB, normalizeModel, prepareMeshes, measure } from './glb.js';
 import { bossScale, ALLY_SCALE, modelUrl } from './scale.js';
+import { newStatus, tickStatus } from './combat.js';
+import { BOSS_ATTACKS } from './skills/config.js';
+import { SIGS } from './skills/bossatk.js';
 
 /* ------------------------------------------------------------------ */
 /*  Helpers de geometría/material para los modelos de jefes            */
@@ -378,6 +381,11 @@ export class BossBase {
     this.chargeName = flavor.chargeName; this.slamName = flavor.slamName; this.S = bossScale(kind); // dimensiones objetivo (scale.js)
     this.model = makeBossModel(kind);
     this.baseScale = this.model.unit;
+    this.heavy = true; // los jefes casi no se empujan ni se atraen
+    this.st = newStatus(); // ralentizado / inmovilizado / cegado / marcado
+    this.kbx = 0; this.kbz = 0;
+    this.sig = null; this.sigCd = 6; // habilidad de firma (skills/bossatk.js)
+    this.anim = { dy: 0, rx: 0, sy: 1, spin: 0 }; // poses que usan las habilidades
     this.reach = Math.max(4.6, this.S.radius + 3.6); // alcance del golpe del héroe, medido desde el centro del jefe
     this.hitDist = this.S.radius + 0.9; // contacto de la embestida con el héroe
     this.slamBase = Math.max(6, this.S.radius * 1.8 + 3.5); // radio base de la onda
@@ -411,6 +419,19 @@ export class BossBase {
     ctx.ui.banner('find', `${this.icon} Usa tu poder (Q) cerca de él para golpearlo`, `Esquiva su ${this.chargeName.toLowerCase()} y su ${this.slamName.toLowerCase()}`);
   }
 
+  get radius() { return this.S.radius; }
+
+  // Punto al que apunta: el héroe, o un punto cercano si está cegado
+  aimPoint() {
+    const p = this.ctx.player.pos;
+    const j = this.st.blind > 0 ? 5.5 : 0;
+    return new THREE.Vector3(p.x + rnd(-j, j), p.y, p.z + rnd(-j, j));
+  }
+
+  cancelSig() {
+    if (this.sig) { this.sig.dispose(); this.sig = null; }
+  }
+
   groundY(x, z) {
     return this.ctx.world.groundY ? this.ctx.world.groundY(x, z) : 0;
   }
@@ -423,29 +444,36 @@ export class BossBase {
     if (this.state === 'dead' || this.state === 'enter' || this.invuln > 0) return false;
     const d = Math.hypot(ppos.x - this.pos.x, ppos.z - this.pos.z);
     if (d > this.reach) return false;
-    this.takeDamage(12);
+    this.ctx.game.combat.damage(this, 12);
     return true;
   }
 
-  takeDamage(n) {
+  // quiet: daño continuo (zonas, estados): sin sacudida, sonido, puntos ni invulnerabilidad
+  takeDamage(n, quiet = false) {
     if (this.state === 'dead') return;
     this.hp = Math.max(0, this.hp - n);
-    this.hitFlash = 0.25;
-    this.invuln = 0.35;
-    this.ctx.chase.shake(0.18);
-    this.ctx.audio.noiseBurst(0.2, 260, 0.35, 'lowpass');
-    for (let i = 0; i < 10; i++) this.ctx.fx.sparkle(this.pos.x + rnd(-0.6, 0.6), this.pos.y + 1.2, this.pos.z + rnd(-0.6, 0.6), this.color, 1.6);
-    this.ctx.game.addScore(15);
+    this.hitFlash = quiet ? Math.max(this.hitFlash, 0.1) : 0.25;
+    if (!quiet) {
+      this.invuln = 0.35;
+      this.ctx.chase.shake(0.18);
+      this.ctx.audio.noiseBurst(0.2, 260, 0.35, 'lowpass');
+      for (let i = 0; i < 10; i++) this.ctx.fx.sparkle(this.pos.x + rnd(-0.6, 0.6), this.pos.y + 1.2, this.pos.z + rnd(-0.6, 0.6), this.color, 1.6);
+      this.ctx.game.addScore(15);
+    }
     const newPhase = this.hp <= this.hpMax * 0.33 ? 3 : this.hp <= this.hpMax * 0.66 ? 2 : 1;
     if (newPhase !== this.phase) {
       this.phase = newPhase;
+      this.cancelSig();
       this.state = 'enrage';
       this.stateT = 0;
       this.invuln = 1.0;
+      this.ctx.game.combat.spawnMinions(newPhase === 2 ? 2 : 3, this.pos); // refuerzos ligeros
       this.ctx.ui.alert(newPhase === 3 ? `${this.icon} ¡${this.name} desata su furia final!` : `${this.icon} ¡${this.name} se enfurece!`, 2600);
       this.ctx.audio.alert();
     }
     if (this.hp <= 0) {
+      this.cancelSig();
+      this.ctx.game.combat.clearLingering(); // muros, estatuas y demás desaparecen con el jefe
       this.state = 'dead';
       this.deathT = 0;
       this.ctx.ui.banner('good', `🏆 ¡${this.name} derrotado!`, 'El camino está libre');
@@ -457,9 +485,19 @@ export class BossBase {
     return Math.random() < 0.55 ? 'charge' : 'slam';
   }
 
-  update(dt) {
+  update(dtRaw) {
     const { ctx } = this;
     const { player } = ctx;
+    tickStatus(this.st, dtRaw);
+    const dt = dtRaw * (this.st.slow > 0 ? this.st.slowF : 1); // ralentizado: todo va más lento
+    const rooted = this.st.root > 0; // inmovilizado: no se desplaza
+    if (this.kbx || this.kbz) { // empuje residual (pequeño: son pesados)
+      this.pos.x += this.kbx * dt * 3; this.pos.z += this.kbz * dt * 3;
+      this.kbx *= Math.max(0, 1 - 5 * dt); this.kbz *= Math.max(0, 1 - 5 * dt);
+      const d0 = Math.hypot(this.pos.x - this.arena.x, this.pos.z - this.arena.z);
+      if (d0 > this.arena.r) { this.pos.x = this.arena.x + ((this.pos.x - this.arena.x) / d0) * this.arena.r; this.pos.z = this.arena.z + ((this.pos.z - this.arena.z) / d0) * this.arena.r; }
+    }
+    this.sigCd -= dt;
     this.t += dt;
     this.stateT += dt;
     this.invuln = Math.max(0, this.invuln - dt);
@@ -493,17 +531,38 @@ export class BossBase {
     if (this.state === 'idle') {
       faceTo(player.pos.x, player.pos.z);
       const d = Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z);
-      if (d > Math.max(7, this.reach + 2.5)) {
+      if (!rooted && d > Math.max(7, this.reach + 2.5)) {
         const nx = (player.pos.x - this.pos.x) / d, nz = (player.pos.z - this.pos.z) / d;
         this.pos.x += nx * 2.2 * speedMul * dt;
         this.pos.z += nz * 2.2 * speedMul * dt;
       }
       this.cd -= dt;
       if (this.cd <= 0) {
+        const sigKind = SIGS[this.kind];
+        if (sigKind && this.sigCd <= 0 && Math.random() < BOSS_ATTACKS.common.sigChance[this.phase - 1]) {
+          this.sig = new sigKind(this);
+          this.sig.start();
+          this.state = 'sig';
+          this.stateT = 0;
+          this.syncTransform();
+          return;
+        }
         const kind = this.pickAttack();
         this.state = kind === 'charge' ? 'tg_charge' : 'tg_slam';
         this.stateT = 0;
-        this.targetPos = new THREE.Vector3(player.pos.x, 0, player.pos.z);
+        const aim = this.aimPoint();
+        this.targetPos = new THREE.Vector3(aim.x, 0, aim.z);
+      }
+      this.syncTransform();
+      return;
+    }
+    if (this.state === 'sig') { // habilidad de firma: TELEGRAFIADO → ATAQUE → IMPACTO → RECUPERACIÓN
+      if (this.sig && this.sig.update(dt)) {
+        this.sig.dispose();
+        this.sig = null;
+        this.state = 'recover';
+        this.stateT = 0;
+        this.sigCd = BOSS_ATTACKS.common.sigCd[this.phase - 1];
       }
       this.syncTransform();
       return;
@@ -528,7 +587,7 @@ export class BossBase {
       return;
     }
     if (this.state === 'charge') {
-      const speed = 14 + (this.phase - 1) * 1.6;
+      const speed = rooted ? 0 : 14 + (this.phase - 1) * 1.6;
       this.pos.x += this.chargeDir.x * speed * dt;
       this.pos.z += this.chargeDir.z * speed * dt;
       const d0 = Math.hypot(this.pos.x - this.arena.x, this.pos.z - this.arena.z);
@@ -593,10 +652,12 @@ export class BossBase {
     this.model.root.position.set(this.pos.x, gy, this.pos.z);
     this.model.root.rotation.y = this.facing;
     const bob = this.state === 'idle' ? Math.sin(this.t * 2.2) * 0.04 : 0;
-    this.model.body.position.y = bob + (this.model.flies ? Math.sin(this.t * 1.4) * 0.3 : 0);
+    this.model.body.position.y = bob + (this.model.flies ? Math.sin(this.t * 1.4) * 0.3 : 0) + this.anim.dy;
+    this.model.body.rotation.x = this.anim.rx;
+    this.model.body.rotation.y = this.anim.spin;
     const windup = this.state === 'tg_charge' || this.state === 'tg_slam';
     const kScale = 1 + (windup ? Math.sin(this.stateT * 14) * 0.04 : 0) + (this.state === 'charge' ? 0.06 : 0);
-    this.model.root.scale.setScalar(this.baseScale * kScale);
+    this.model.root.scale.set(this.baseScale * kScale, this.baseScale * kScale * this.anim.sy, this.baseScale * kScale);
     for (const limb of this.model.limbs || []) {
       const raise = this.state === 'tg_slam' || this.state === 'slam' ? -2.2 : this.state === 'charge' ? -0.6 : -0.2;
       limb.sh.rotation.x = damp(limb.sh.rotation.x, raise, 8, 0.016);
@@ -616,6 +677,7 @@ export class BossBase {
   }
 
   dispose() {
+    this.cancelSig();
     this.ctx.scene.remove(this.model.root);
     this.ctx.scene.remove(this.ringMesh);
     this.ctx.scene.remove(this.arrowMesh);
