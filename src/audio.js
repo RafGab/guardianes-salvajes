@@ -8,7 +8,7 @@ let musicBuf = null;
 let musicSrc = null;
 let musicLoading = false;
 const MUSIC_URL = '/audio/melodia.mp3';
-const MUSIC_VOL = 0.4; // por debajo de los efectos para no taparlos
+const MUSIC_VOL = 0.6; // única fuente de sonido
 
 // Crea el contexto y el volumen maestro (idempotente). Se llama desde un gesto del usuario.
 function ensureCtx() {
@@ -28,21 +28,6 @@ function ensureCtx() {
   musicGain.gain.value = 0;
   musicGain.connect(master);
   return true;
-}
-
-function noiseBuffer(seconds = 2, color = 'white') {
-  const len = ctx.sampleRate * seconds;
-  const buf = ctx.createBuffer(1, len, ctx.sampleRate);
-  const d = buf.getChannelData(0);
-  let last = 0;
-  for (let i = 0; i < len; i++) {
-    const w = Math.random() * 2 - 1;
-    if (color === 'brown') {
-      last = (last + 0.02 * w) / 1.02;
-      d[i] = last * 3.5;
-    } else d[i] = w;
-  }
-  return buf;
 }
 
 export const Audio3D = {
@@ -86,53 +71,11 @@ export const Audio3D = {
   setIntensity() {
     // sin ambiente que regular (se quitaron la lluvia y el viento)
   },
-  tone(freq, dur = 0.15, type = 'sine', vol = 0.2, slide = 0, delay = 0) {
-    if (!ctx || muted) return;
-    const t = ctx.currentTime + delay;
-    const o = ctx.createOscillator();
-    const g = ctx.createGain();
-    o.type = type;
-    o.frequency.setValueAtTime(freq, t);
-    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(30, freq + slide), t + dur);
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(vol, t + 0.02);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    o.connect(g).connect(master);
-    o.start(t);
-    o.stop(t + dur + 0.05);
-  },
-  noiseBurst(dur = 0.4, freq = 800, vol = 0.3, type = 'lowpass', delay = 0) {
-    if (!ctx || muted) return;
-    const t = ctx.currentTime + delay;
-    const src = ctx.createBufferSource();
-    src.buffer = noiseBuffer(1, 'white');
-    const f = ctx.createBiquadFilter();
-    f.type = type;
-    f.frequency.value = freq;
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(vol, t);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-    src.connect(f).connect(g).connect(master);
-    src.start(t);
-    src.stop(t + dur + 0.05);
-  },
-  thunder() {
-    if (!ctx || muted) return;
-    const t = ctx.currentTime;
-    const src = ctx.createBufferSource();
-    src.buffer = noiseBuffer(3, 'brown');
-    const f = ctx.createBiquadFilter();
-    f.type = 'lowpass';
-    f.frequency.setValueAtTime(700, t);
-    f.frequency.exponentialRampToValueAtTime(90, t + 2.6);
-    const g = ctx.createGain();
-    g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.9, t + 0.08);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 2.8);
-    src.connect(f).connect(g).connect(master);
-    src.start(t);
-    src.stop(t + 3);
-  },
+  // Efectos de sonido eliminados: solo suena la melodía. Se conservan las funciones (las llama el juego)
+  // como no-ops para no tocar el resto del código; para devolver un efecto basta con reimplementar tone/noiseBurst.
+  tone() {},
+  noiseBurst() {},
+  thunder() {},
   rumble() {
     this.noiseBurst(2.5, 140, 0.6, 'lowpass');
   },
