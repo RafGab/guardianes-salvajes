@@ -461,8 +461,8 @@ function toggleSound() {
 function armMusic() {
   const events = ['pointerdown', 'keydown', 'touchend', 'click'];
   const go = () => {
-    audio.startMusic();
-    events.forEach((e) => window.removeEventListener(e, go, true));
+    audio.startMusic(); // idempotente; reintenta reanudar el audio en cada gesto hasta que suene
+    if (audio.musicPlaying) events.forEach((e) => window.removeEventListener(e, go, true));
   };
   events.forEach((e) => window.addEventListener(e, go, true));
 }

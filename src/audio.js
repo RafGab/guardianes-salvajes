@@ -1,7 +1,6 @@
 // Audio sintetizado con WebAudio (sin archivos externos).
 let ctx = null;
 let master = null;
-let rainGain = null;
 let windGain = null;
 let muted = false;
 let started = false;
@@ -66,26 +65,14 @@ export const Audio3D = {
       .then((r) => r.arrayBuffer())
       .then((ab) => ctx.decodeAudioData(ab))
       .then((buf) => { musicBuf = buf; musicLoading = false; play(); })
-      .catch(() => { musicLoading = false; });
+      .catch((e) => { musicLoading = false; console.warn('[música]', e); });
   },
   init() {
     if (!ensureCtx()) return;
     if (started) return;
     started = true;
 
-    const rain = ctx.createBufferSource();
-    rain.buffer = noiseBuffer(3, 'white');
-    rain.loop = true;
-    const hp = ctx.createBiquadFilter();
-    hp.type = 'highpass';
-    hp.frequency.value = 1200;
-    const lp = ctx.createBiquadFilter();
-    lp.type = 'lowpass';
-    lp.frequency.value = 7000;
-    rainGain = ctx.createGain();
-    rainGain.gain.value = 0.10;
-    rain.connect(hp).connect(lp).connect(rainGain).connect(master);
-    rain.start();
+    // (se quitó el ruido blanco de la lluvia del ambiente a petición del usuario)
 
     const wind = ctx.createBufferSource();
     wind.buffer = noiseBuffer(4, 'brown');
@@ -109,8 +96,7 @@ export const Audio3D = {
     return !!musicSrc && !!ctx && ctx.state === 'running';
   },
   setIntensity(rain, wind) {
-    if (!ctx || !rainGain) return;
-    rainGain.gain.setTargetAtTime(0.04 + rain * 0.16, ctx.currentTime, 0.5);
+    if (!ctx || !windGain) return;
     windGain.gain.setTargetAtTime(0.1 + wind * 0.4, ctx.currentTime, 0.5);
   },
   tone(freq, dur = 0.15, type = 'sine', vol = 0.2, slide = 0, delay = 0) {
