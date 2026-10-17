@@ -1,38 +1,26 @@
-MODELOS 3D REALISTAS (opcional)
-================================
-El juego usa modelos procedurales por defecto (capsulas/esferas). Para que
-los heroes se vean con el acabado de las fichas de personaje, hace falta
-reemplazarlos por modelos .glb reales:
+MODELOS 3D DE CATAC 7
+=====================
+Aquí están los .glb de los personajes, ya aligerados para la web
+(mallas ~18-35 mil triángulos, texturas WebP, compresión meshopt):
 
-1. Sube la imagen de referencia de cada heroe a una herramienta de
-   imagen->3D (Tripo3D, Meshy, Hunyuan3D, Rodin...). Tripo3D y Meshy
-   tienen nivel gratis. Usa la pose de cuerpo entero, de frente, sin
-   otros personajes en la imagen (las fichas completas con varias poses
-   confunden a estas herramientas: recorta solo la pose principal).
-   Pide la opcion "Smart Mesh" / lista para videojuego, con rigging
-   automatico si esta disponible, y exporta como .glb.
-2. Copia los .glb en esta carpeta (public/models), con el nombre del
-   heroe: jago.glb, kairo.glb, lira.glb, halley.glb, nilo.glb, kyra.glb,
-   ambar.glb.
-3. Edita manifest.json. Ejemplo:
+  Héroes: jago, kairo, lira, halley, nilo, kyra, ambar
+  Jefes:  minotauro, kerberos, medusa, basilisco, kraken, fenrir, long
+  Aliada: voya
 
-{
-  "jago":   { "file": "jago.glb",   "height": 1.85, "yaw": 0 },
-  "kairo":  { "file": "kairo.glb",  "height": 2.0,  "yaw": 0 },
-  "lira":   { "file": "lira.glb",   "height": 1.7 },
-  "halley": { "file": "halley.glb", "height": 1.3 },
-  "nilo":   { "file": "nilo.glb",   "height": 1.6 },
-  "kyra":   { "file": "kyra.glb",   "height": 1.85 },
-  "ambar":  { "file": "ambar.glb",  "height": 1.9 }
-}
+TAMAÑOS: se definen en UN solo sitio, src/scale.js (1 unidad = 1 metro).
+Cada modelo se normaliza (pies en el suelo, centrado, altura 1) y se escala
+a la altura de esa tabla. Para cambiar el tamaño de un personaje, edita
+solo su `height` (y `radius` si cambia su colisión) en scale.js.
+Si un modelo mira hacia otro lado, ajusta su `yaw` (radianes) en scale.js.
 
-No hace falta poner los 7 a la vez: el que no tenga entrada en el
-manifiesto sigue usando el modelo procedural normalmente.
+Para reemplazar un modelo: copia el nuevo .glb con el mismo nombre. Si lo
+generas en Tripo/Meshy con ~500 mil triángulos, aligéralo antes con:
 
-- height: altura del modelo en metros (por defecto 1.85). Halley (fenec)
-  es el heroe mas bajo del grupo: usa una altura menor para que se note.
-- yaw: giro en radianes si el modelo mira hacia otro lado (3.1416 = media vuelta).
-- Si el GLB trae animaciones, se eligen por nombre (idle, run/walk, swim,
-  jump, celebrate, power). Si no, el juego anade inclinacion y rebote
-  automaticamente, asi que funciona igual sin animaciones.
-Recarga la pagina y el heroe aparece con el modelo nuevo.
+  npx @gltf-transform/cli optimize ENTRADA.glb SALIDA.glb --compress meshopt \
+      --simplify true --simplify-ratio 0.04 --simplify-error 0.02 \
+      --texture-compress webp --texture-size 1024
+
+(ratio = triángulos deseados / triángulos originales; 2048 de textura para jefes).
+
+PRUEBA DE ESCALA: abre /escala.html (maniquí de 1,80 m, héroes, jefes,
+cuadrícula métrica y tabla de medidas).

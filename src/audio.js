@@ -1,7 +1,6 @@
 // Audio sintetizado con WebAudio (sin archivos externos).
 let ctx = null;
 let master = null;
-let windGain = null;
 let muted = false;
 let started = false;
 let musicGain = null;
@@ -72,18 +71,7 @@ export const Audio3D = {
     if (started) return;
     started = true;
 
-    // (se quitó el ruido blanco de la lluvia del ambiente a petición del usuario)
-
-    const wind = ctx.createBufferSource();
-    wind.buffer = noiseBuffer(4, 'brown');
-    wind.loop = true;
-    const wl = ctx.createBiquadFilter();
-    wl.type = 'lowpass';
-    wl.frequency.value = 500;
-    windGain = ctx.createGain();
-    windGain.gain.value = 0.25;
-    wind.connect(wl).connect(windGain).connect(master);
-    wind.start();
+    // Sin sonido ambiente (ni lluvia ni viento): el fondo sonoro es solo la melodía (startMusic).
   },
   setMuted(m) {
     muted = m;
@@ -95,9 +83,8 @@ export const Audio3D = {
   get musicPlaying() {
     return !!musicSrc && !!ctx && ctx.state === 'running';
   },
-  setIntensity(rain, wind) {
-    if (!ctx || !windGain) return;
-    windGain.gain.setTargetAtTime(0.1 + wind * 0.4, ctx.currentTime, 0.5);
+  setIntensity() {
+    // sin ambiente que regular (se quitaron la lluvia y el viento)
   },
   tone(freq, dur = 0.15, type = 'sine', vol = 0.2, slide = 0, delay = 0) {
     if (!ctx || muted) return;

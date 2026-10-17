@@ -317,8 +317,9 @@ function updateMenu(dt) {
     // showcase del héroe: cámara frontal con la ciudad de fondo
     const y = terrainH(SHOW.x, SHOW.z) + 0.8;
     const sway = Math.sin(clockT * 0.4) * 0.35;
-    camera.position.set(3.3 + sway * 0.6, y + 1.35, SHOW.z + 5.3);
-    camera.lookAt(SHOW.x - 0.9, y + 1.25, SHOW.z);
+    const hh = showcase.height || 1.8; // encuadre a la medida de cada héroe (el pequeño no se pierde, el grande cabe)
+    camera.position.set(3.3 + sway * 0.6, y + 0.5 + hh * 0.45, SHOW.z + 3.2 + hh * 1.1);
+    camera.lookAt(SHOW.x - 0.9, y + hh * 0.67, SHOW.z);
     if (!dragSel.active) showcase.root.rotation.y += dt * 0.35;
     showcase.update(dt, { speed: 0, grounded: true });
     const def = HEROES[selected];

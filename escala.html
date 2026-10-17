@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CATAC 7 — Prueba de escala</title>
+  <style>
+    html, body { margin: 0; height: 100%; background: #0b1018; color: #e8f0fa; font-family: system-ui, sans-serif; overflow: hidden; }
+    #c { position: fixed; inset: 0; width: 100%; height: 100%; display: block; }
+    #bar { position: fixed; top: 10px; left: 10px; right: 10px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; z-index: 2; }
+    #bar button { background: #172234cc; color: #e8f0fa; border: 1px solid #3a4f6e; border-radius: 10px; padding: 8px 12px; cursor: pointer; font-size: 13px; backdrop-filter: blur(6px); }
+    #bar button:hover { background: #24395a; }
+    #bar a { color: #ffb347; font-size: 13px; margin-left: auto; text-decoration: none; }
+    #info { position: fixed; left: 10px; bottom: 10px; max-width: min(96vw, 1100px); max-height: 46vh; overflow: auto; background: #0b1018e6; border: 1px solid #2a3c58; border-radius: 12px; padding: 8px 10px; z-index: 2; display: none; }
+    #info table { border-collapse: collapse; font-size: 12px; width: 100%; }
+    #info th, #info td { text-align: left; padding: 3px 8px; border-bottom: 1px solid #1d2c44; white-space: nowrap; }
+    #info th { color: #ffb347; position: sticky; top: 0; background: #0b1018; }
+    #hint { position: fixed; top: 52px; left: 10px; font-size: 12px; color: #9fb3cf; z-index: 2; }
+    #cargando { position: fixed; inset: 0; display: grid; place-items: center; font-size: 18px; z-index: 3; background: #0b1018; }
+  </style>
+</head>
+<body>
+  <div id="cargando">Cargando modelos…</div>
+  <canvas id="c"></canvas>
+  <div id="bar">
+    <button data-v="heroes">1 · Héroes</button>
+    <button data-v="jefes">2 · Jefes</button>
+    <button data-v="todos">3 · Todos juntos</button>
+    <button data-v="peque">4 · Feneco vs Kraken</button>
+    <button data-v="grande">5 · Jaglion vs Medusa</button>
+    <button id="tabla">Tabla de medidas</button>
+    <a href="/">← Volver al juego</a>
+  </div>
+  <div id="hint">Arrastra para girar · rueda para acercar · botón derecho para mover. Cuadrícula: 1 m (líneas gruesas cada 5 m).</div>
+  <div id="info"></div>
+  <script type="module" src="/src/escala.js"></script>
+</body>
+</html>

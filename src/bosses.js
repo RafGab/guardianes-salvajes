@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { clamp, damp, TAU } from './utils.js';
+import { loadGLB, cachedGLB, normalizeModel, prepareMeshes, measure } from './glb.js';
+import { bossScale, ALLY_SCALE, modelUrl } from './scale.js';
 
 /* ------------------------------------------------------------------ */
 /*  Helpers de geometría/material para los modelos de jefes            */
@@ -319,6 +321,48 @@ function buildCataclismoModel() {
   return { root, body, shards, limbs: [], mats: [core], fireMat, iceMat, rockMat };
 }
 
+// --- Modelos con escala maestra (scale.js): GLB real si ya está cargado; si no, el procedural de reserva ---
+function glbModel(gltf, S) {
+  const model = gltf.scene.clone(true);
+  const { root: nroot, naturalH } = normalizeModel(model); // pies en y=0, centrado, altura 1
+  const root = new THREE.Group();
+  const body = new THREE.Group();
+  const yawHolder = new THREE.Group();
+  yawHolder.rotation.y = S.yaw || 0;
+  yawHolder.add(nroot);
+  body.add(yawHolder);
+  root.add(body);
+  const mats = prepareMeshes(model);
+  return { root, body, limbs: [], mats, flies: !!S.fly, naturalH, unit: S.height, source: 'glb' };
+}
+
+function proceduralModel(builder, S) {
+  const m = builder();
+  m.root.scale.setScalar(1);
+  const naturalH = Math.max(1e-3, measure(m.root).h);
+  m.naturalH = naturalH;
+  m.unit = S.height / naturalH; // escala que lleva el modelo procedural a la altura objetivo
+  m.source = 'procedural';
+  if (S.fly) m.flies = true;
+  return m;
+}
+
+export function makeBossModel(kind) {
+  const S = bossScale(kind);
+  const gltf = S.glb ? cachedGLB(modelUrl(S.glb)) : null;
+  return gltf ? glbModel(gltf, S) : proceduralModel(MODEL_BUILDERS[kind], S);
+}
+
+// Carga en segundo plano el GLB del jefe y del aliado de un nivel (mientras tanto vale el modelo de reserva).
+export function preloadBoss(kind) {
+  const S = kind && bossScale(kind);
+  if (S && S.glb) loadGLB(modelUrl(S.glb)).catch(() => {});
+}
+export function preloadAlly(kind) {
+  const S = ALLY_SCALE[kind];
+  if (S && S.glb) loadGLB(modelUrl(S.glb)).catch(() => {});
+}
+
 const MODEL_BUILDERS = { minotauro: buildMinotauroModel, kerberos: buildKerberosModel, medusa: buildMedusaModel, basilisco: buildBasiliscoModel, kraken: buildKrakenModel, fenrir: buildFenrirModel, long: buildLongModel, cataclismo: buildCataclismoModel };
 
 /* ------------------------------------------------------------------ */
@@ -331,10 +375,14 @@ export class BossBase {
     this.ctx = ctx;
     this.arena = arena; // { x, z, r }
     this.name = flavor.name; this.icon = flavor.icon; this.color = flavor.color; this.cssColor = flavor.cssColor;
-    this.chargeName = flavor.chargeName; this.slamName = flavor.slamName; this.baseScale = flavor.scale;
-    this.model = MODEL_BUILDERS[kind]();
+    this.chargeName = flavor.chargeName; this.slamName = flavor.slamName; this.S = bossScale(kind); // dimensiones objetivo (scale.js)
+    this.model = makeBossModel(kind);
+    this.baseScale = this.model.unit;
+    this.reach = Math.max(4.6, this.S.radius + 3.6); // alcance del golpe del héroe, medido desde el centro del jefe
+    this.hitDist = this.S.radius + 0.9; // contacto de la embestida con el héroe
+    this.slamBase = Math.max(6, this.S.radius * 1.8 + 3.5); // radio base de la onda
     ctx.scene.add(this.model.root);
-    this.flyHeight = this.model.flies ? 5.5 : 0;
+    this.flyHeight = this.model.flies ? (this.S.fly ?? 5.5) : 0;
     this.pos = new THREE.Vector3(arena.x, this.groundY(arena.x, arena.z) + this.flyHeight, arena.z - arena.r * 0.6);
     this.facing = 0;
     this.hpMax = flavor.hpMax || 100;
@@ -374,7 +422,7 @@ export class BossBase {
   onPlayerAttack(ppos) {
     if (this.state === 'dead' || this.state === 'enter' || this.invuln > 0) return false;
     const d = Math.hypot(ppos.x - this.pos.x, ppos.z - this.pos.z);
-    if (d > 4.8) return false;
+    if (d > this.reach) return false;
     this.takeDamage(12);
     return true;
   }
@@ -421,7 +469,7 @@ export class BossBase {
 
     if (this.state === 'dead') {
       this.deathT += dt;
-      this.model.root.position.y = this.groundY(this.pos.x, this.pos.z) + this.flyHeight * Math.max(0, 1 - this.deathT * 0.8) - Math.min(1.6, this.deathT * 0.6);
+      this.model.root.position.y = this.groundY(this.pos.x, this.pos.z) + this.flyHeight * Math.max(0, 1 - this.deathT * 0.8) - Math.min(this.S.height * 0.4, this.deathT * this.S.height * 0.18);
       this.model.root.rotation.z = Math.min(1.1, this.deathT * 0.9);
       this.ringMesh.visible = false;
       this.arrowMesh.visible = false;
@@ -445,7 +493,7 @@ export class BossBase {
     if (this.state === 'idle') {
       faceTo(player.pos.x, player.pos.z);
       const d = Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z);
-      if (d > 7) {
+      if (d > Math.max(7, this.reach + 2.5)) {
         const nx = (player.pos.x - this.pos.x) / d, nz = (player.pos.z - this.pos.z) / d;
         this.pos.x += nx * 2.2 * speedMul * dt;
         this.pos.z += nz * 2.2 * speedMul * dt;
@@ -465,7 +513,7 @@ export class BossBase {
       const dur = 1.1 - (this.phase - 1) * 0.15;
       this.arrowMesh.visible = true;
       const ang = Math.atan2(this.targetPos.x - this.pos.x, this.targetPos.z - this.pos.z);
-      const mid = new THREE.Vector3(this.pos.x, this.groundY(this.pos.x, this.pos.z) + 0.4, this.pos.z).addScaledVector(new THREE.Vector3(Math.sin(ang), 0, Math.cos(ang)), 3.2);
+      const mid = new THREE.Vector3(this.pos.x, this.groundY(this.pos.x, this.pos.z) + 0.4, this.pos.z).addScaledVector(new THREE.Vector3(Math.sin(ang), 0, Math.cos(ang)), this.S.radius + 2.2);
       this.arrowMesh.position.copy(mid);
       this.arrowMesh.rotation.y = ang;
       this.arrowMesh.material.opacity = 0.35 + 0.45 * Math.abs(Math.sin(this.t * 10));
@@ -491,7 +539,7 @@ export class BossBase {
         this.state = 'recover'; this.stateT = 0;
       }
       const dp = Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z);
-      if (dp < 2.1 && this.stateT > 0.08) {
+      if (dp < this.hitDist && this.stateT > 0.08) {
         ctx.game.hitPlayer(1, this.pos);
         this.state = 'recover'; this.stateT = 0;
       }
@@ -503,7 +551,7 @@ export class BossBase {
     if (this.state === 'tg_slam') {
       faceTo(player.pos.x, player.pos.z);
       const dur = 0.9 - (this.phase - 1) * 0.1;
-      const radius = 6 + (this.phase - 1) * 0.6;
+      const radius = this.slamBase + (this.phase - 1) * 0.6;
       this.ringMesh.visible = true;
       this.ringMesh.position.set(this.pos.x, this.groundY(this.pos.x, this.pos.z) + 0.08, this.pos.z);
       this.ringMesh.scale.setScalar(radius);
@@ -577,21 +625,21 @@ export class BossBase {
 function defineBoss(kind, flavor) {
   return class extends BossBase {
     constructor(ctx, arena) {
-      super(kind, ctx, arena, { scale: 1.3, ...flavor });
+      super(kind, ctx, arena, flavor);
     }
   };
 }
 
-export const Minotauro = defineBoss('minotauro', { name: 'Minotauro', icon: '👹', color: 0xff6a1a, cssColor: '#ff8a1a', chargeName: 'Embestida', slamName: 'Golpe sísmico', scale: 1.55 });
-export const Kerberos = defineBoss('kerberos', { name: 'Kerberos', icon: '🐕‍🦺', color: 0xff4a1a, cssColor: '#ff5a1a', chargeName: 'Mordisco en carga', slamName: 'Aliento de fuego', scale: 1.3 });
-export const Medusa = defineBoss('medusa', { name: 'Medusa', icon: '🐍', color: 0x3aff6a, cssColor: '#4aff7a', chargeName: 'Zarpazo de serpientes', slamName: 'Mirada petrificante', scale: 1.1 });
-export const Basilisco = defineBoss('basilisco', { name: 'Basilisco', icon: '🐉', color: 0xd8b020, cssColor: '#e0b830', chargeName: 'Embestida desde la arena', slamName: 'Tormenta de arena', scale: 1.3 });
-export const Kraken = defineBoss('kraken', { name: 'Kraken', icon: '🐙', color: 0x2a6aff, cssColor: '#3a8aff', chargeName: 'Golpe de tentáculo', slamName: 'Ola gigante', scale: 1.25 });
-export const Fenrir = defineBoss('fenrir', { name: 'Fenrir', icon: '🐺', color: 0x8ad0ff, cssColor: '#9ad8ff', chargeName: 'Embestida helada', slamName: 'Aullido de hielo', scale: 1.35 });
-export const Long = defineBoss('long', { name: 'Long', icon: '🐲', color: 0x5ac8ff, cssColor: '#6ad0ff', chargeName: 'Picado aéreo', slamName: 'Tormenta de rayos', scale: 1.2 });
+export const Minotauro = defineBoss('minotauro', { name: 'Minotauro', icon: '👹', color: 0xff6a1a, cssColor: '#ff8a1a', chargeName: 'Embestida', slamName: 'Golpe sísmico' });
+export const Kerberos = defineBoss('kerberos', { name: 'Kerberos', icon: '🐕‍🦺', color: 0xff4a1a, cssColor: '#ff5a1a', chargeName: 'Mordisco en carga', slamName: 'Aliento de fuego' });
+export const Medusa = defineBoss('medusa', { name: 'Medusa', icon: '🐍', color: 0x3aff6a, cssColor: '#4aff7a', chargeName: 'Zarpazo de serpientes', slamName: 'Mirada petrificante' });
+export const Basilisco = defineBoss('basilisco', { name: 'Basilisco', icon: '🐉', color: 0xd8b020, cssColor: '#e0b830', chargeName: 'Embestida desde la arena', slamName: 'Tormenta de arena' });
+export const Kraken = defineBoss('kraken', { name: 'Kraken', icon: '🐙', color: 0x2a6aff, cssColor: '#3a8aff', chargeName: 'Golpe de tentáculo', slamName: 'Ola gigante' });
+export const Fenrir = defineBoss('fenrir', { name: 'Fenrir', icon: '🐺', color: 0x8ad0ff, cssColor: '#9ad8ff', chargeName: 'Embestida helada', slamName: 'Aullido de hielo' });
+export const Long = defineBoss('long', { name: 'Long', icon: '🐲', color: 0x5ac8ff, cssColor: '#6ad0ff', chargeName: 'Picado aéreo', slamName: 'Tormenta de rayos' });
 // El jefe final de Apocalia no es un monstruo más: es el propio Cataclismo que ha conectado
 // todas las catástrofes de la campaña. Más vida y más ritmo que el resto (mismo framework).
-export const Cataclismo = defineBoss('cataclismo', { name: 'El Cataclismo', icon: '☄️', color: 0x9a3cff, cssColor: '#b05aff', chargeName: 'Embestida del vacío', slamName: 'Onda elemental', scale: 1.7, hpMax: 190 });
+export const Cataclismo = defineBoss('cataclismo', { name: 'El Cataclismo', icon: '☄️', color: 0x9a3cff, cssColor: '#b05aff', chargeName: 'Embestida del vacío', slamName: 'Onda elemental', hpMax: 190 });
 
 const BOSSES = { minotauro: Minotauro, kerberos: Kerberos, medusa: Medusa, basilisco: Basilisco, kraken: Kraken, fenrir: Fenrir, long: Long, cataclismo: Cataclismo };
 
@@ -643,10 +691,18 @@ function buildVoyaModel() {
   return { root, body, rings, mats: [fur, armor] };
 }
 
+export function makeAllyModel(kind) {
+  const S = ALLY_SCALE[kind];
+  const gltf = S.glb ? cachedGLB(modelUrl(S.glb)) : null;
+  return gltf ? glbModel(gltf, S) : proceduralModel(buildVoyaModel, S);
+}
+
 export class Voya {
   constructor(ctx) {
     this.ctx = ctx;
-    this.model = buildVoyaModel();
+    this.model = makeAllyModel('voya');
+    this.model.root.scale.setScalar(this.model.unit);
+    this.S = ALLY_SCALE.voya;
     ctx.scene.add(this.model.root);
     this.t = 0;
     this.shieldCd = 4; // primer escudo pronto tras aparecer
@@ -662,7 +718,7 @@ export class Voya {
     const gy = this.ctx.world.groundY ? this.ctx.world.groundY(player.pos.x + ox, player.pos.z + oz) : player.pos.y;
     this.model.root.position.set(player.pos.x + ox, gy + 0.3 + Math.sin(this.t * 1.4) * 0.15, player.pos.z + oz);
     this.model.root.rotation.y = -ang + Math.PI / 2;
-    for (const r of this.model.rings) r.rotation.z += dt * 0.6;
+    for (const r of this.model.rings || []) r.rotation.z += dt * 0.6;
     this.shieldCd -= dt;
     if (this.shieldCd <= 0 && player.shieldT < 1) {
       this.shieldCd = rnd(13, 17);

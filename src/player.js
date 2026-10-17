@@ -1,9 +1,11 @@
 import * as THREE from 'three';
 import { clamp, damp, dampAngle, smoothstep, TAU } from './utils.js';
 import { CFG, terrainH } from './city.js';
+import { HERO_SCALE, cameraFor } from './scale.js';
 
-const R = 0.42; // radio
-const H = 1.8; // altura
+// Radio y altura del colisionador: por héroe, desde la escala maestra (scale.js). Valores por defecto:
+const R_DEF = 0.42;
+const H_DEF = 1.8;
 const G = 24;
 const STEP = 0.5;
 const MANTLE = 2.8;
@@ -11,6 +13,8 @@ const MANTLE = 2.8;
 export class Player {
   constructor(world) {
     this.world = world;
+    this.R = R_DEF;
+    this.H = H_DEF;
     this.pos = new THREE.Vector3();
     this.vx = 0;
     this.vz = 0;
@@ -68,6 +72,10 @@ export class Player {
     this.model = model;
     this.stats = def.stats;
     this.cdMax = def.power.cd;
+    const S = HERO_SCALE[def.id];
+    this.R = S ? S.radius : R_DEF; // colisionador a la medida del héroe (velocidad y poder no cambian)
+    this.H = S ? S.height : H_DEF;
+    this.cam = cameraFor(this.H);
   }
 
   reset(x, z) {
@@ -301,7 +309,7 @@ export class Player {
       pos.z += this.env.wind.z * dt * wk;
     }
     // empuje de escombros
-    w.pushAt(pos.x, pos.z, R, this.push);
+    w.pushAt(pos.x, pos.z, this.R, this.push);
     if (this.push.x || this.push.z) {
       pos.x += this.push.x * dt;
       pos.z += this.push.z * dt;
@@ -345,7 +353,7 @@ export class Player {
   /* ------------------------ colisiones ------------------------ */
   floorY(x, z, feet) {
     let y = terrainH(x, z);
-    const near = this.world.solidsNear(x - R * 0.8, x + R * 0.8, z - R * 0.8, z + R * 0.8, this.tmp);
+    const near = this.world.solidsNear(x - this.R * 0.8, x + this.R * 0.8, z - this.R * 0.8, z + this.R * 0.8, this.tmp);
     for (const s of near) {
       if (s.y1 <= feet + STEP + 0.02 && s.y1 > y) y = s.y1;
     }
@@ -356,14 +364,14 @@ export class Player {
     if (dx === 0 && dz === 0) return;
     const pos = this.pos;
     const nx = pos.x + dx, nz = pos.z + dz;
-    const near = this.world.solidsNear(nx - R, nx + R, nz - R, nz + R, this.tmp);
+    const near = this.world.solidsNear(nx - this.R, nx + this.R, nz - this.R, nz + this.R, this.tmp);
     let blocked = null;
     let stepTo = -Infinity;
     for (const s of near) {
-      if (s.tag === 'tree' && s.y1 > pos.y + H) {
+      if (s.tag === 'tree' && s.y1 > pos.y + this.H) {
         // troncos: bloquean siempre
       }
-      if (s.y1 <= pos.y + 0.001 || s.y0 >= pos.y + H) continue;
+      if (s.y1 <= pos.y + 0.001 || s.y0 >= pos.y + this.H) continue;
       const rise = s.y1 - pos.y;
       if (rise <= STEP && this.vy <= 2) {
         stepTo = Math.max(stepTo, s.y1);
@@ -407,15 +415,15 @@ export class Player {
     pos.y += this.vy * dt;
     let floor = terrainH(pos.x, pos.z);
     let sup = null;
-    const near = w.solidsNear(pos.x - R * 0.8, pos.x + R * 0.8, pos.z - R * 0.8, pos.z + R * 0.8, this.tmp);
+    const near = w.solidsNear(pos.x - this.R * 0.8, pos.x + this.R * 0.8, pos.z - this.R * 0.8, pos.z + this.R * 0.8, this.tmp);
     for (const s of near) {
       if (this.vy <= 0) {
         if (s.y1 <= prevFeet + STEP + 0.02 && s.y1 > floor - 1e-4 && s.y1 >= floor) {
           if (s.y1 >= floor) { floor = s.y1; sup = s; }
         }
-      } else if (s.y0 >= prevFeet + H - 0.15 && s.y0 < pos.y + H && s.y1 > s.y0) {
+      } else if (s.y0 >= prevFeet + this.H - 0.15 && s.y0 < pos.y + this.H && s.y1 > s.y0) {
         // golpe de cabeza
-        pos.y = s.y0 - H;
+        pos.y = s.y0 - this.H;
         this.vy = Math.min(this.vy, 0);
       }
     }
@@ -461,6 +469,7 @@ export class ChaseCam {
     this.pitch = 0.32;
     this.dist = 6.4;
     this.distTarget = 6.4;
+    this.aim = 1.55; // altura (sobre los pies) a la que mira la cámara; la fija cada héroe
     this.pos = new THREE.Vector3(0, 5, 10);
     this.look = new THREE.Vector3();
     this.shakeAmt = 0;
@@ -497,7 +506,7 @@ export class ChaseCam {
     this.dist = damp(this.dist, this.distTarget, 6, dt);
     const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
     const off = this.tmpV.set(Math.sin(this.yaw) * cp, sp, Math.cos(this.yaw) * cp).multiplyScalar(this.dist);
-    const tgt = this.tmpD.set(target.x, target.y + 1.55, target.z);
+    const tgt = this.tmpD.set(target.x, target.y + this.aim, target.z);
     const desired = new THREE.Vector3().copy(tgt).add(off);
     // colisión de la cámara: rayo del objetivo a la posición deseada
     let tHit = 1;

@@ -10,7 +10,8 @@ import { Save } from './save.js';
 import { ITEMS, heroPowerItem } from './items.js';
 import { useTool } from './tools.js';
 import { createHazards } from './hazards.js';
-import { createBoss, createAlly } from './bosses.js';
+import { createBoss, createAlly, preloadBoss, preloadAlly } from './bosses.js';
+import { bossScale, bossCameraFor } from './scale.js';
 import { IS_TOUCH } from './platform.js';
 const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
 
@@ -242,8 +243,15 @@ export class Game {
     const a = this.abilities[this.abIndex];
     if (!a) return false;
     if (a.id === 'power') {
-      const used = this.player.usePower(this.fx);
-      if (used && this.boss) this.boss.onPlayerAttack(this.player.pos);
+      const p = this.player;
+      const nEv = p.events.length;
+      let used = p.usePower(this.fx);
+      // Los poderes de agua/hielo solo funcionan sobre agua; en un combate de jefe no pueden dejar al héroe sin ataque.
+      if (!used && this.boss && p.cd <= 0) {
+        p.events.length = nEv; // descarta el aviso "este poder funciona sobre el agua"
+        used = this.bossStrike();
+      }
+      if (used && this.boss) this.boss.onPlayerAttack(p.pos);
       return used;
     }
     if ((this.toolCd[a.id] || 0) > 0) {
@@ -259,6 +267,15 @@ export class Game {
       return true;
     }
     return false;
+  }
+  // Golpe de contacto del héroe contra el jefe cuando su poder no se puede usar (mismo tiempo de recarga).
+  bossStrike() {
+    const p = this.player;
+    p.cd = p.cdMax * p.cdMul;
+    p.powerAnim = 1;
+    for (let i = 0; i < 14; i++) this.fx.sparkle(p.pos.x + (Math.random() - 0.5) * 1.4, p.pos.y + p.H * 0.6, p.pos.z + (Math.random() - 0.5) * 1.4, 0xffd070, 2);
+    audio.power('surf');
+    return true;
   }
   addScore(n) {
     this.score += n;
@@ -286,7 +303,7 @@ export class Game {
     this.ropeLine.visible = true;
     this.ropeShow = life;
     const pos = this.ropeLine.geometry.attributes.position;
-    pos.setXYZ(0, p.pos.x, p.pos.y + 1.4, p.pos.z);
+    pos.setXYZ(0, p.pos.x, p.pos.y + p.H * 0.75, p.pos.z);
     pos.setXYZ(1, target.x, target.y + 1, target.z);
     pos.needsUpdate = true;
   }
@@ -303,6 +320,8 @@ export class Game {
     const { scene, world, player, chase } = this;
     this.hero = def;
     this.mission = level;
+    preloadBoss(level.boss); // los modelos del jefe y del aliado se cargan en segundo plano
+    preloadAlly(level.ally);
     this.tips = { ...TIPS, ...(LEVEL_TIPS[level.id] || {}) };
     this.missionTime = level.time;
     world.duration = level.time;
@@ -377,8 +396,9 @@ export class Game {
     ui.minimap.init(world);
     chase.yaw = 0;
     chase.pitch = 0.3;
-    chase.distTarget = 6.6;
-    chase.dist = 6.6;
+    chase.distTarget = player.cam.dist; // cámara a la medida del héroe (scale.js)
+    chase.dist = player.cam.dist;
+    chase.aim = player.cam.aim;
     chase.snap(player.pos, 0);
     this.state = 'intro';
     this.input.enabled = true;
@@ -477,7 +497,7 @@ export class Game {
     for (const v of this.victims) {
       if (v.state !== 'waiting' || v.hidden) continue;
       const d = Math.hypot(v.wpos.x - player.pos.x, v.wpos.z - player.pos.z);
-      const dy = Math.abs(v.wpos.y + v.height * 0.5 - (player.pos.y + 0.9));
+      const dy = Math.abs(v.wpos.y + v.height * 0.5 - (player.pos.y + player.H * 0.5));
       if (d < bd && dy < 2.6) {
         bd = d;
         best = v;
@@ -595,6 +615,10 @@ export class Game {
     player.facing = Math.PI;
     this.boss = createBoss(this.mission.boss, { scene, world, player, chase, camera, fx: this.fx, audio, ui, game: this }, arena);
     if (this.mission.ally) this.ally = createAlly(this.mission.ally, { scene, world, player, chase, camera, fx: this.fx, audio, ui, game: this });
+    // cámara del combate: más lejos según el tamaño del jefe, sin perder de vista al héroe
+    const bc = bossCameraFor(player.H, bossScale(this.mission.boss).height);
+    chase.distTarget = bc.dist;
+    chase.aim = bc.aim;
     ui.setGaugeMode(this.mission);
   }
   hitPlayer(dmg, fromPos) {
@@ -702,7 +726,7 @@ export class Game {
       player.pos.set(r.from.x + (r.to.x - r.from.x) * e, r.from.y + (r.to.y - r.from.y) * e + Math.sin(k * Math.PI) * 1.4, r.from.z + (r.to.z - r.from.z) * e);
       player.vy = 0;
       const pos = this.ropeLine.geometry.attributes.position;
-      pos.setXYZ(0, player.pos.x, player.pos.y + 1.4, player.pos.z);
+      pos.setXYZ(0, player.pos.x, player.pos.y + player.H * 0.75, player.pos.z);
       pos.setXYZ(1, r.to.x, r.to.y + 0.6, r.to.z);
       pos.needsUpdate = true;
       if (k >= 1) {
@@ -811,7 +835,7 @@ export class Game {
     if (this.state === 'ending') {
       chase.yaw += real * 0.45;
       chase.pitch = damp(chase.pitch, 0.22, 3, real);
-      chase.distTarget = 4.6;
+      chase.distTarget = player.cam.dist * 0.7;
       chase.update(real, p, null);
     } else {
       chase.update(real, p, introLocked ? null : look);

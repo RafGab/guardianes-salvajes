@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { loadGLB, normalizeModel, prepareMeshes, measure } from './glb.js';
+import { HERO_SCALE, modelUrl } from './scale.js';
 import { makeCanvas, texFromCanvas, makeRng, clamp, lerp, damp, TAU } from './utils.js';
 
 /* ------------------------------------------------------------------ */
@@ -20,43 +21,43 @@ export const ELEMENTS = {
 // por las fichas de personaje proporcionadas — no inventar ni reasignar sin indicación).
 export const HEROES = [
   {
-    id: 'lira', name: 'Lira', species: 'Lince', element: 'tierra', scale: 0.8,
+    id: 'lira', name: 'Lira', species: 'Lince', element: 'tierra',
     power: { type: 'pillar', name: 'Pilar de Tierra', cd: 5, desc: 'Su guadaña canaliza la energía de la tierra: hace brotar una columna de roca bajo sus pies, una plataforma segura sobre el peligro.' },
     stats: { speed: 7.3, jump: 8.8, swim: 4.6, carry: 2 },
     bio: 'Lince valiente, fuerte, ágil y leal. Su guadaña de energía manipula el terreno, crea barreras y aumenta su fuerza en combate. "La fuerza de la tierra también habita en la agilidad."',
   },
   {
-    id: 'kairo', name: 'Kairo', species: 'Komodo', element: 'fuego', scale: 0.84,
+    id: 'kairo', name: 'Kairo', species: 'Komodo', element: 'fuego',
     power: { type: 'dash', name: 'Carga de Lava', cd: 3.5, desc: 'Se lanza como un meteoro ardiente con su martillo de fuego: gran salto adelante para alcanzar tejados y cruzar huecos.' },
     stats: { speed: 6.2, jump: 8.4, swim: 3.6, carry: 3 },
     bio: 'Komodo valiente, fuerte, leal, estratégico e indomable. Su piel es casi impenetrable y su aliento puede encender lo que toca. "El fuego también es una forma de sobrevivir."',
   },
   {
-    id: 'jago', name: 'Jago', species: 'Jaglión', element: 'roca', scale: 0.8,
+    id: 'jago', name: 'Jago', species: 'Jaglión', element: 'roca',
     power: { type: 'dash', name: 'Impulso de Roca', cd: 4, desc: 'Usa su cola como cuerda natural y su ala deslizadora para lanzarse con fuerza: un gran salto para trepar riscos y cruzar huecos.' },
     stats: { speed: 7.6, jump: 9.0, swim: 3.9, carry: 2 },
     bio: 'Jaglión valiente, leal, audaz, resistente y explorador. Su cola es su herramienta principal para escalar, trepar y moverse en terrenos difíciles. "La montaña no es un límite… es mi hogar."',
   },
   {
-    id: 'halley', name: 'Halley', species: 'Fénec', element: 'arena', scale: 0.56,
+    id: 'halley', name: 'Halley', species: 'Fénec', element: 'arena',
     power: { type: 'surf', name: 'Carrera de Arena', cd: 6, desc: 'Controla la arena a su alrededor: corre sobre dunas y terreno inestable a gran velocidad durante unos segundos.' },
     stats: { speed: 7.8, jump: 8.6, swim: 3.0, carry: 1 },
     bio: 'Fénec siniestra, inteligente, manipuladora, ambiciosa y vengativa. Controla la arena a su alrededor y lee el terreno del desierto. "Pequeña en tamaño… gigante en espíritu."',
   },
   {
-    id: 'nilo', name: 'Nilo', species: 'Nutria', element: 'agua', scale: 0.74,
+    id: 'nilo', name: 'Nilo', species: 'Nutria', element: 'agua',
     power: { type: 'surf', name: 'Impulso Acuático', cd: 7, desc: 'Su cola con tecnología y su flyboard calman la corriente: durante unos segundos corre sobre el agua sin que lo arrastre.' },
     stats: { speed: 6.6, jump: 8.4, swim: 5.0, carry: 3 },
     bio: 'Nutria valiente, curiosa, amigable, leal y cariñosa. "La emoción de descubrir el mundo… también se vive en el agua."',
   },
   {
-    id: 'kyra', name: 'Kyra', species: 'Zorro ártico', element: 'hielo', scale: 0.8,
+    id: 'kyra', name: 'Kyra', species: 'Zorro ártico', element: 'hielo',
     power: { type: 'ice', name: 'Hacha de Hielo', cd: 6, desc: 'Su hacha de hielo cristalino congela el agua a su alrededor y crea una plataforma que sube con la inundación.' },
     stats: { speed: 7.0, jump: 8.8, swim: 3.8, carry: 2 },
     bio: 'Zorro ártico valiente, curiosa, amigable, leal, inteligente y resistente. Su hacha de hielo cristalino puede crear o manipular el hielo. "El hielo también tiene un corazón."',
   },
   {
-    id: 'ambar', name: 'Ámbar', species: 'Águila', element: 'aire', scale: 0.8,
+    id: 'ambar', name: 'Ámbar', species: 'Águila', element: 'aire',
     power: { type: 'glide', name: 'Ráfaga Celeste', cd: 6, desc: 'Una corriente de aire la lanza hacia el cielo y planea con sus discos de viento. Mantén SALTAR para seguir planeando.' },
     stats: { speed: 7.2, jump: 9.4, swim: 3.4, carry: 1 },
     bio: 'Águila valiente, curiosa, ágil, estratégica y libre. Sus discos de viento y su módulo de alas le permiten volar a grandes alturas. "El viento no me detiene… me lleva más alto."',
@@ -1152,7 +1153,9 @@ export class HeroModel {
     this.rig = BUILDERS[def.id]();
     this.root = new THREE.Group();
     this.root.add(this.rig.root);
-    this.rig.root.scale.setScalar(def.scale);
+    const H_NAT = 2.34; // altura natural del modelo procedural a escala 1
+    const target = HERO_SCALE[def.id].height;
+    this.rig.root.scale.setScalar(target / H_NAT);
     this.t = Math.random() * 10;
     this.phase = 0;
     this.spin = 0;
@@ -1170,7 +1173,8 @@ export class HeroModel {
     for (const k in this.j) this.rot[k] = [0, 0, 0];
     this.hipY = HIP_H;
     this.weaponUp = 0;
-    this.height = 2.34 * def.scale;
+    this.height = target;
+    this.dims = { height: target, naturalH: H_NAT, scale: target / H_NAT, source: 'procedural' };
   }
 
   setVisible(v) {
@@ -1347,8 +1351,8 @@ export class HeroModel {
 }
 
 /* ------------------------------------------------------------------ */
-/*  Modelos GLB reales (opcional): public/models/manifest.json         */
-/*  Sustituyen al modelo procedural si existen                         */
+/*  Modelos GLB reales (public/models/*.glb, ver scale.js)             */
+/*  Sustituyen al modelo procedural cuando se han cargado              */
 /* ------------------------------------------------------------------ */
 class GLBHero {
   constructor(def, gltf, cfg) {
@@ -1359,25 +1363,17 @@ class GLBHero {
     this.spin = 0;
     this.glowPulse = 0;
     const model = gltf.scene;
-    const targetH = cfg.height || 1.85;
-    let box = new THREE.Box3().setFromObject(model);
-    const size = box.getSize(new THREE.Vector3());
-    model.scale.multiplyScalar(targetH / Math.max(0.001, size.y));
-    box = new THREE.Box3().setFromObject(model);
-    model.position.set(-(box.min.x + box.max.x) / 2, -box.min.y, -(box.min.z + box.max.z) / 2);
+    const targetH = cfg.height; // metros: viene de la escala maestra (scale.js)
+    const { root: nroot, naturalH } = normalizeModel(model);
+    nroot.scale.setScalar(targetH);
     const holder = new THREE.Group();
     holder.rotation.y = cfg.yaw || 0;
-    holder.add(model);
+    holder.add(nroot);
     this.body = new THREE.Group();
     this.body.add(holder);
     this.root.add(this.body);
-    model.traverse((o) => {
-      if (o.isMesh) {
-        o.castShadow = true;
-        o.frustumCulled = false;
-        if (o.material) o.material.envMapIntensity = 1.1;
-      }
-    });
+    prepareMeshes(model).forEach((m) => { m.envMapIntensity = 1.1; });
+    this.dims = { height: targetH, naturalH, scale: targetH / naturalH, source: 'glb' };
     this.height = targetH;
     const mk = (x, y, z) => {
       const g = new THREE.Group();
@@ -1469,21 +1465,15 @@ export function hasGLB(id) {
   return !!glbCache[id];
 }
 export async function preloadGLBHeroes() {
-  let manifest = {};
-  try {
-    const r = await fetch('/models/manifest.json', { cache: 'no-store' });
-    if (r.ok && (r.headers.get('content-type') || '').includes('json')) manifest = await r.json();
-  } catch (e) { /* sin manifest: se usan los modelos procedurales */ }
-  const loader = new GLTFLoader();
-  for (const def of HEROES) {
-    const cfg = manifest[def.id];
-    if (!cfg || !cfg.file) continue;
+  await Promise.all(HEROES.map(async (def) => {
+    const S = HERO_SCALE[def.id];
+    if (!S || !S.glb) return;
     try {
-      const gltf = await loader.loadAsync('/models/' + cfg.file);
-      glbCache[def.id] = new GLBHero(def, gltf, cfg);
+      const gltf = await loadGLB(modelUrl(S.glb));
+      glbCache[def.id] = new GLBHero(def, gltf, S);
     } catch (e) {
-      console.warn('No se pudo cargar el GLB de', def.id, e);
+      console.warn('No se pudo cargar el GLB de', def.id, '- se usa el modelo procedural', e);
     }
-  }
+  }));
   return Object.keys(glbCache);
 }
