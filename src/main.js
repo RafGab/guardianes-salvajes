@@ -43,12 +43,13 @@ camera.position.set(0, 40, 100);
 
 let composer, bloomPass, gradePass, renderPass;
 const GradeShader = {
-  uniforms: { tDiffuse: { value: null }, uVig: { value: TOON.gradeVig }, uSat: { value: TOON.gradeSat }, uCon: { value: TOON.gradeCon } },
+  uniforms: { tDiffuse: { value: null }, uVig: { value: TOON.gradeVig }, uSat: { value: TOON.gradeSat }, uCon: { value: TOON.gradeCon }, uLift: { value: new THREE.Vector3(...TOON.gradeLift) }, uWarm: { value: new THREE.Vector3(...TOON.gradeWarm) } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
-  fragmentShader: `uniform sampler2D tDiffuse; uniform float uVig, uSat, uCon; varying vec2 vUv;
+  fragmentShader: `uniform sampler2D tDiffuse; uniform float uVig, uSat, uCon; uniform vec3 uLift, uWarm; varying vec2 vUv;
     void main(){ vec4 c = texture2D(tDiffuse, vUv);
       float l = dot(c.rgb, vec3(0.299,0.587,0.114)); c.rgb = mix(vec3(l), c.rgb, uSat);
       c.rgb = (c.rgb - 0.5) * uCon + 0.5;
+      c.rgb += (1.0 - l) * uLift; c.rgb *= mix(vec3(1.0), uWarm, l);
       vec2 d = vUv - 0.5; float v = smoothstep(0.85, 0.25, length(d) * (1.0 + uVig)); c.rgb *= mix(1.0 - uVig, 1.0, v);
       gl_FragColor = c; }`,
 };
@@ -66,9 +67,9 @@ function buildComposer(w, h) {
   composer.setSize(w, h);
   renderPass = new RenderPass(scene, camera);
   composer.addPass(renderPass);
-  bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), 0.55, 0.7, 0.92);
+  bloomPass = new UnrealBloomPass(new THREE.Vector2(w, h), TOON.bloom.strength, TOON.bloom.radius, TOON.bloom.threshold);
   bloomPass.enabled = quality === 'high' && URLQ.get('bloom') !== '0';
-  bloomPass.threshold = world && world.look.bloom ? world.look.bloom : 0.92;
+  bloomPass.threshold = world && world.look.bloom ? Math.min(world.look.bloom, TOON.bloom.threshold + 0.04) : TOON.bloom.threshold;
   composer.addPass(bloomPass);
   composer.addPass(new OutputPass());
   gradePass = new ShaderPass(GradeShader);
@@ -436,7 +437,7 @@ async function buildGame(scenario) {
   SHOW.x = CFG.START.x;
   SHOW.z = CFG.START.z - 5.5;
   renderer.toneMappingExposure = world.look.exposure;
-  if (bloomPass) bloomPass.threshold = world.look.bloom || 0.92;
+  if (bloomPass) bloomPass.threshold = world.look.bloom ? Math.min(world.look.bloom, TOON.bloom.threshold + 0.04) : TOON.bloom.threshold;
   await nextFrame();
   fx = new FX(scene);
   player = new Player(world);

@@ -53,6 +53,9 @@ unitCyl.translate(0, 0.5, 0);
 const unitCone = new THREE.ConeGeometry(1, 1, 8);
 unitCone.translate(0, 0.5, 0);
 const unitIco = new THREE.IcosahedronGeometry(1, 0);
+const unitBlob = new THREE.IcosahedronGeometry(1, 2); // copas y arbustos redondeados
+const treeCone = new THREE.ConeGeometry(1, 1, 14);
+treeCone.translate(0, 0.5, 0);
 const unitPrism = (() => {
   // prisma triangular para tejados a dos aguas (x: -0.5..0.5, base y=0, cumbrera y=1 a lo largo de z)
   const s = new THREE.Shape();
@@ -91,17 +94,17 @@ function treeGeo(kind) {
     const snow = kind === 'snowpine';
     g = colored([
       [unitCyl, M4(0, -0.1, 0, 0.3, 3.4, 0.3), 0x4a3524],
-      [unitCone, M4(0, 1.6, 0, 2.5, 2.6, 2.5), snow ? 0x9fb0a4 : 0x2f5a30],
-      [unitCone, M4(0, 3.5, 0, 2.0, 2.3, 2.0), snow ? 0xe6eef3 : 0x386a36],
-      [unitCone, M4(0, 5.2, 0, 1.4, 2.0, 1.4), snow ? 0xf2f6fa : 0x3f7a3c],
-      [unitCone, M4(0, 6.6, 0, 0.9, 1.6, 0.9), snow ? 0xffffff : 0x4a8a44],
+      [treeCone, M4(0, 1.6, 0, 2.5, 2.6, 2.5), snow ? 0x9fb0a4 : 0x2f5a30],
+      [treeCone, M4(0, 3.5, 0, 2.0, 2.3, 2.0), snow ? 0xe6eef3 : 0x386a36],
+      [treeCone, M4(0, 5.2, 0, 1.4, 2.0, 1.4), snow ? 0xf2f6fa : 0x3f7a3c],
+      [treeCone, M4(0, 6.6, 0, 0.9, 1.6, 0.9), snow ? 0xffffff : 0x4a8a44],
     ]);
   } else if (kind === 'broad') {
     g = colored([
       [unitCyl, M4(0, -0.1, 0, 0.3, 3.2, 0.3), 0x5a3f2a],
-      [unitIco, M4(0, 4.4, 0, 2.0, 1.8, 2.0), 0x4a8a3a],
-      [unitIco, M4(0.9, 3.6, 0.5, 1.4, 1.2, 1.4), 0x3f7d3a],
-      [unitIco, M4(-0.8, 5.2, -0.3, 1.3, 1.1, 1.3), 0x58a044],
+      [unitBlob, M4(0, 4.4, 0, 2.1, 1.9, 2.1), 0x4a8a3a],
+      [unitBlob, M4(0.9, 3.6, 0.5, 1.4, 1.2, 1.4), 0x3f7d3a],
+      [unitBlob, M4(-0.8, 5.2, -0.3, 1.3, 1.1, 1.3), 0x58a044],
     ]);
   } else if (kind === 'palm') {
     const parts = [];
@@ -132,7 +135,7 @@ function treeGeo(kind) {
       [unitCyl, M4(-0.42, 1.8, 0, 0.3, 0.3, 0.26, 0, 0, Math.PI / 2), 0x4a9a52],
     ]);
   } else {
-    g = colored([[unitIco, M4(0, 0.6, 0, 0.9, 0.7, 0.9), 0x5a7a3a], [unitIco, M4(0.5, 0.4, 0.3, 0.6, 0.5, 0.6), 0x6a8a44]]);
+    g = colored([[unitBlob, M4(0, 0.6, 0, 0.9, 0.7, 0.9), 0x5a7a3a], [unitBlob, M4(0.5, 0.4, 0.3, 0.6, 0.5, 0.6), 0x6a8a44]]);
   }
   TREE_GEO[kind] = g;
   return g;

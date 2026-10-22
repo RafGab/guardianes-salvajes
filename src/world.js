@@ -10,6 +10,7 @@ import { SCENARIOS } from './scenarios/index.js';
 import { generateRescues, computeReach } from './spawn.js';
 import { toonMat, cartoonLook } from './toon.js';
 import { createBackdrop } from './backdrop.js';
+import { createFoliage } from './foliage.js';
 
 export function createWorld(scene, renderer, { quality = 'high', scenario = 'flood' } = {}) {
   const def = SCENARIOS[scenario] || SCENARIOS.flood;
@@ -632,5 +633,6 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
   W.safe = CFG.SAFE;
   W.signs = sc.signs;
   W.sunLightRef = sun;
+  createFoliage(scene, W); // arbustos y flores en las zonas de césped
   return W;
 }

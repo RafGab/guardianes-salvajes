@@ -5,12 +5,15 @@ import * as THREE from 'three';
 // de modo que cada región cambia de tema (bosque, desierto, nieve, volcán...) sin perder la identidad común.
 
 export const TOON = {
-  bands: [0.42, 0.68, 0.88, 1.0], // niveles de luz del sombreado por bandas (de sombra a luz)
+  bands: [0.56, 0.78, 0.92, 1.0], // niveles de luz del sombreado por bandas (sombras suaves, nunca negras)
   skySat: 1.28, skyLift: 0.07,    // viveza del cielo y la niebla
   lightSat: 1.12,                 // viveza de las luces
-  fogMul: 0.85,                   // la niebla se aclara un poco: escenarios más legibles
+  fogMul: 0.68,                   // la niebla se aclara un poco: escenarios más legibles
   hemiMul: 1.1,                   // luz ambiental algo mayor = sombras más suaves
-  gradeSat: 1.22, gradeCon: 1.0, gradeVig: 0.24, // corrección de color final (main.js)
+  gradeSat: 1.22, gradeCon: 1.06, gradeVig: 0.2, // corrección de color final (main.js)
+  gradeLift: [0.02, 0.015, 0.045], // tinte frío en las sombras (aspecto pintado)
+  gradeWarm: [1.05, 1.0, 0.93],   // tinte cálido en las luces
+  bloom: { strength: 0.78, radius: 0.95, threshold: 0.88 }, // resplandor suave de las luces y los efectos
 };
 
 let _grad = null;
