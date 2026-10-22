@@ -8,13 +8,16 @@ import { carGeometry } from './bodies.js';
 import { IS_TOUCH } from './platform.js';
 import { SCENARIOS } from './scenarios/index.js';
 import { generateRescues, computeReach } from './spawn.js';
+import { toonMat, cartoonLook } from './toon.js';
+import { createBackdrop } from './backdrop.js';
 
 export function createWorld(scene, renderer, { quality = 'high', scenario = 'flood' } = {}) {
   const def = SCENARIOS[scenario] || SCENARIOS.flood;
   const mobile = IS_TOUCH;
   const K = createKit({ scene, seed: def.seed || 555, mobile });
   const sc = def.build(K, { scene, quality, mobile });
-  const look = sc.look;
+  const look = cartoonLook(sc.look, scenario); // paleta viva común a todos los escenarios (toon.js)
+  sc.look = look;
   const wcfg = sc.water || { mode: 'none' };
   const hasWater = wcfg.mode !== 'none';
   const W = { time: 0, waterY: hasWater ? wcfg.base : -50, quality, scenario, hasWater, look, fogBase: look.fogD, sc, K, duration: 360, mobile, missionT: 0 };
@@ -24,6 +27,7 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
   /* ---------- cielo, niebla, luces ---------- */
   const sky = createSky(scene);
   W.sky = sky;
+  W.backdrop = createBackdrop(scene, scenario, look); // colinas y nubes en capas con parallax
   const su = sky.mat.uniforms;
   su.uHorizon.value.set(look.horizon);
   su.uZenith.value.set(look.zenith);
@@ -59,12 +63,12 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
   const windAmp = { value: sc.windAmp ?? 1 };
   W.windAmp = windAmp;
   const mats = {
-    flat: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.85, metalness: 0.05 }),
-    trees: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true }),
+    flat: toonMat({ vertexColors: true }),
+    trees: toonMat({ vertexColors: true }),
     glow: new THREE.MeshBasicMaterial({ vertexColors: true }),
-    treeInst: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.9, flatShading: true }),
+    treeInst: toonMat({ vertexColors: true }),
   };
-  if (sc.facade) mats.facade = new THREE.MeshStandardMaterial({ map: sc.facade.map, emissiveMap: sc.facade.em, emissive: 0xffffff, emissiveIntensity: 1.6, vertexColors: true, roughness: 0.88 });
+  if (sc.facade) mats.facade = toonMat({ map: sc.facade.map, emissiveMap: sc.facade.em, emissive: 0xffffff, emissiveIntensity: 1.6, vertexColors: true });
   mats.trees.onBeforeCompile = (shader) => {
     shader.uniforms.uTime = treeTime;
     shader.vertexShader = shader.vertexShader
@@ -502,6 +506,7 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
   W.update = (dt, t, camPos, playerPos, missionT, gameOn) => {
     W.time = t;
     W.missionT = missionT;
+    W.backdrop.update(dt, camPos);
     W.waterY = hasWater ? W.levelAt(missionT) + Math.sin(t * 0.7) * 0.02 : -50;
     const wu = water.uniforms;
     wu.uTime.value = t;

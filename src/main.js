@@ -21,6 +21,7 @@ import { ITEMS } from './items.js';
 import { IS_TOUCH } from './platform.js';
 import { Formation } from './formation.js';
 import { TEAM } from './skills/config.js';
+import { TOON } from './toon.js';
 
 const $ = (id) => document.getElementById(id);
 const BOSS_ICON = { minotauro: '👹', kerberos: '🐕‍🦺', medusa: '🐍', basilisco: '🐉', kraken: '🐙', fenrir: '🐺', long: '🐲', cataclismo: '☄️' };
@@ -34,7 +35,7 @@ const renderer = new THREE.WebGLRenderer({ antialias: false, powerPreference: 'h
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.95;
 renderer.shadowMap.enabled = !IS_TOUCH;
-renderer.shadowMap.type = THREE.PCFShadowMap;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap; // sombras suaves
 stage.appendChild(renderer.domElement);
 let scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.1, 1600);
@@ -42,7 +43,7 @@ camera.position.set(0, 40, 100);
 
 let composer, bloomPass, gradePass, renderPass;
 const GradeShader = {
-  uniforms: { tDiffuse: { value: null }, uVig: { value: 0.38 }, uSat: { value: 1.08 }, uCon: { value: 1.06 } },
+  uniforms: { tDiffuse: { value: null }, uVig: { value: TOON.gradeVig }, uSat: { value: TOON.gradeSat }, uCon: { value: TOON.gradeCon } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
   fragmentShader: `uniform sampler2D tDiffuse; uniform float uVig, uSat, uCon; varying vec2 vUv;
     void main(){ vec4 c = texture2D(tDiffuse, vUv);
