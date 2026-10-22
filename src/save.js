@@ -8,6 +8,7 @@ const DEFAULT = () => ({
   stars: {}, // estrellas por nivel
   items: [], // ids de herramientas obtenidas (en orden de desbloqueo)
   hero: 'jago',
+  team: [], // último equipo elegido para los jefes
   score: 0,
   people: 0,
   animals: 0,
@@ -47,6 +48,8 @@ export const Save = {
   get items() { return data.items; },
   get hero() { return data.hero; },
   setHero(id) { data.hero = id; persist(); },
+  get team() { return data.team || []; },
+  setTeam(ids) { data.team = ids.slice(); persist(); },
   stars(levelId) { return data.stars[levelId] || 0; },
   toolSet() { return new Set(data.items); },
 

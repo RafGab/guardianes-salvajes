@@ -5,12 +5,15 @@ import { LEVELS } from './levels.js';
 import { Save, BADGES } from './save.js';
 import { ITEMS, heroPowerItem } from './items.js';
 import { IS_TOUCH } from './platform.js';
+import { HERO_SCALE } from './scale.js';
+import { TEAM } from './skills/config.js';
 
 const $ = (id) => document.getElementById(id);
 export const HERO_ICON = { jago: '🐆', kairo: '🦎', lira: '🐈', halley: '🦊', nilo: '🦦', kyra: '❄️', ambar: '🦅' };
+const fmtH = (id) => `${HERO_SCALE[id].height.toFixed(2).replace('.', ',')} m`;
 export const HERO_FACE = (id) => `/img/heroes/${id}.jpg`;
 
-const SCREENS = ['loading', 'title', 'missions', 'select', 'pause', 'how', 'end', 'reveal', 'inventory', 'levelintro'];
+const SCREENS = ['loading', 'title', 'missions', 'select', 'team', 'pause', 'how', 'end', 'reveal', 'inventory', 'levelintro'];
 
 class TipManager {
   constructor() {
@@ -245,6 +248,147 @@ export const ui = {
       .map(([n, v]) => `<div class="stat"><span>${n}</span><div class="bar"><i style="width:${Math.round(Math.max(0.12, Math.min(1, v)) * 100)}%"></i></div></div>`)
       .join('');
   },
+
+  /* ---------- preparación del jefe: selección y formación del equipo ---------- */
+  buildTeamScreen(boss, onToggle) {
+    this.teamToggle = onToggle;
+    $('tm-boss-icon').textContent = boss.icon || '👹';
+    $('tm-boss-name').textContent = boss.name;
+    $('tm-boss-sub').textContent = boss.sub || '';
+    const box = $('tm-roster');
+    box.innerHTML = '';
+    HEROES.forEach((h) => {
+      const el = ELEMENTS[h.element];
+      const c = document.createElement('div');
+      c.className = 'tm-card';
+      c.dataset.id = h.id;
+      c.style.setProperty('--cel', el.css);
+      c.innerHTML = `<div class="em"><img src="${HERO_FACE(h.id)}" alt="${h.name}" /></div><div class="nm">${h.name}</div><div class="el">${el.icon} ${el.name}</div><div class="ht">${fmtH(h.id)}</div>`;
+      c.addEventListener('click', () => onToggle(h.id));
+      box.appendChild(c);
+    });
+  },
+  // ids: héroes elegidos en orden (el primero sale al campo)
+  renderTeamScreen(ids) {
+    [...$('tm-roster').children].forEach((c) => {
+      const picked = ids.includes(c.dataset.id);
+      c.classList.toggle('picked', picked);
+      c.classList.toggle('full', !picked && ids.length >= TEAM.size);
+    });
+    const slots = $('tm-slots');
+    slots.innerHTML = '';
+    for (let i = 0; i < TEAM.size; i++) {
+      const d = document.createElement('div');
+      const id = ids[i];
+      if (id) {
+        const h = HEROES.find((x) => x.id === id), el = ELEMENTS[h.element];
+        d.className = 'tm-slot full';
+        d.style.setProperty('--cel', el.css);
+        d.innerHTML = `<span class="num">${i === 0 ? '★ INICIA' : i + 1}</span><span class="rm">✕</span><div class="face"><img src="${HERO_FACE(id)}" alt="" /></div><div class="nm">${h.name}</div><div class="ht">${fmtH(id)}</div>`;
+        d.title = 'Quitar del equipo';
+        d.addEventListener('click', () => this.teamToggle(id));
+      } else {
+        d.className = 'tm-slot';
+        d.innerHTML = `<span class="num">${i + 1}</span>Libre<br>elige un héroe`;
+      }
+      slots.appendChild(d);
+    }
+    $('tm-count').textContent = `${ids.length}/${TEAM.size}`;
+    $('btn-team-ok').disabled = ids.length === 0;
+  },
+
+  /* ---------- combate de jefe: barra del jefe, equipo, registro, números ---------- */
+  bossFight(on) {
+    document.body.classList.toggle('bossfight', on);
+    $('bossbar').classList.toggle('show', on);
+    if (!on) { $('teamhud').innerHTML = ''; this._teamKey = ''; }
+  },
+  setBossBar(b) {
+    $('bb-icon').textContent = b.icon;
+    $('bb-name').textContent = b.name.toUpperCase();
+    const pct = Math.max(0, Math.min(1, b.hp / b.max));
+    $('bb-fill').style.width = `${pct * 100}%`;
+    $('bb-ghost').style.width = `${pct * 100}%`;
+    $('bb-text').textContent = `${Math.ceil(b.hp)} / ${b.max}  ·  ${Math.ceil(pct * 100)}%`;
+    $('bb-phase').innerHTML = [1, 2, 3].map((k) => `<i class="${k <= b.phase ? 'on' : ''}"></i>`).join('');
+    $('bb-fill').style.filter = b.hurt ? 'brightness(1.6)' : '';
+    const st = [];
+    if (b.slow) st.push('<span class="chip slow">🐢 Ralentizado</span>');
+    if (b.root) st.push('<span class="chip root">🌿 Inmovilizado</span>');
+    if (b.blind) st.push('<span class="chip blind">🌫️ Cegado</span>');
+    if (b.mark) st.push('<span class="chip mark">🎯 Marcado</span>');
+    const html = st.join('');
+    if (html !== this._bbStatus) { this._bbStatus = html; $('bb-status').innerHTML = html; }
+  },
+  bossAction(text) {
+    const el = $('bb-action');
+    if (el.textContent !== text) el.textContent = text;
+  },
+  // members: [{ id, hp, max, ko }]; active: índice; onPick(i)
+  setTeamHud(members, active, onPick) {
+    const box = $('teamhud');
+    const key = members.map((m) => m.id).join(',');
+    if (this._teamKey !== key) {
+      this._teamKey = key;
+      box.innerHTML = '';
+      members.forEach((m, i) => {
+        const h = HEROES.find((x) => x.id === m.id), el = ELEMENTS[h.element];
+        const c = document.createElement('div');
+        c.className = 'tcard';
+        c.style.setProperty('--cel', el.css);
+        c.innerHTML = `<div class="face"><img src="${HERO_FACE(m.id)}" alt="" /></div><div><div class="row1"><span class="nm">${h.name}</span><span class="key">${i === 0 && !IS_TOUCH ? '<kbd>Z</kbd> ◂ ▸ <kbd>X</kbd>' : ''}</span></div><div class="hpbar"><div class="hpfill"></div><div class="hptxt"></div></div></div><span class="ko-tag"></span>`;
+        c.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); onPick(i); });
+        box.appendChild(c);
+      });
+    }
+    members.forEach((m, i) => {
+      const c = box.children[i];
+      if (!c) return;
+      c.classList.toggle('active', i === active);
+      c.classList.toggle('ko', m.ko);
+      const pct = m.hp / m.max;
+      const f = c.querySelector('.hpfill');
+      f.style.width = `${pct * 100}%`;
+      f.className = 'hpfill' + (pct < 0.25 ? ' low' : pct < 0.55 ? ' mid' : '');
+      c.querySelector('.hptxt').textContent = `${Math.ceil(m.hp)} / ${m.max}`;
+      c.querySelector('.ko-tag').textContent = m.ko ? 'FUERA DE COMBATE' : '';
+    });
+  },
+  hurtTeamCard(i) {
+    const c = $('teamhud').children[i];
+    if (!c) return;
+    c.classList.remove('hurt');
+    void c.offsetWidth;
+    c.classList.add('hurt');
+  },
+  battleLog(text, kind = '') {
+    const box = $('battlelog');
+    const d = document.createElement('div');
+    d.className = kind;
+    d.textContent = text;
+    box.appendChild(d);
+    while (box.children.length > 5) box.removeChild(box.firstChild);
+    setTimeout(() => d.remove(), 5200);
+  },
+  // Número flotante en pantalla (x, y en píxeles)
+  floatText(x, y, text, kind = 'dmg') {
+    const d = document.createElement('div');
+    d.className = `floater ${kind}`;
+    d.textContent = text;
+    d.style.left = `${x}px`;
+    d.style.top = `${y}px`;
+    $('floaters').appendChild(d);
+    setTimeout(() => d.remove(), 1000);
+  },
+  bossIntro(name, sub) {
+    const el = $('bossintro');
+    $('bi-name').textContent = name.toUpperCase();
+    $('bi-sub').textContent = sub || '';
+    el.classList.remove('show');
+    void el.offsetWidth;
+    el.classList.add('show');
+  },
+  fade(on) { $('fade').classList.toggle('on', on); },
 
   /* ---------- misiones ---------- */
   buildMissions(onPick) {

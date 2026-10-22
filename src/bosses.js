@@ -385,6 +385,7 @@ export class BossBase {
     this.st = newStatus(); // ralentizado / inmovilizado / cegado / marcado
     this.kbx = 0; this.kbz = 0;
     this.sig = null; this.sigCd = 6; // habilidad de firma (skills/bossatk.js)
+    this.introHold = 0;              // presentación: segundos que espera sin atacar mientras aparece el equipo
     this.anim = { dy: 0, rx: 0, sy: 1, spin: 0 }; // poses que usan las habilidades
     this.reach = Math.max(4.6, this.S.radius + 3.6); // alcance del golpe del héroe, medido desde el centro del jefe
     this.hitDist = this.S.radius + 0.9; // contacto de la embestida con el héroe
@@ -426,6 +427,17 @@ export class BossBase {
     const p = this.ctx.player.pos;
     const j = this.st.blind > 0 ? 5.5 : 0;
     return new THREE.Vector3(p.x + rnd(-j, j), p.y, p.z + rnd(-j, j));
+  }
+
+  // Nombre del ataque en curso (para la barra del jefe y el registro de combate)
+  actionLabel() {
+    switch (this.state) {
+      case 'tg_charge': case 'charge': return this.chargeName;
+      case 'tg_slam': case 'slam': return this.slamName;
+      case 'sig': return this.sig && this.sig.cfg ? this.sig.cfg.name || '' : '';
+      case 'enrage': return '¡Se enfurece!';
+      default: return '';
+    }
   }
 
   cancelSig() {
@@ -519,6 +531,14 @@ export class BossBase {
       this.pos.z = damp(this.pos.z, tz, 2.4, dt);
       faceTo(player.pos.x, player.pos.z);
       if (Math.abs(this.pos.z - tz) < 0.3) { this.state = 'idle'; this.stateT = 0; this.cd = 1.4; }
+      this.syncTransform();
+      return;
+    }
+    if (this.introHold > 0) { // presentación del jefe: se alza y mira al equipo, sin atacar todavía
+      this.introHold -= dtRaw;
+      if (this.introHold <= 0) this.anim.dy = 0;
+      faceTo(player.pos.x, player.pos.z);
+      this.anim.dy = Math.max(0, Math.sin(this.t * 3)) * this.S.height * 0.03;
       this.syncTransform();
       return;
     }

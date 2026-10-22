@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clamp, damp } from './utils.js';
 import { terrainH } from './terrain.js';
-import { MINIONS } from './skills/config.js';
+import { MINIONS, TEAM } from './skills/config.js';
 import { ui } from './ui.js';
 
 // COMBATE COMPARTIDO: objetivos (jefes y esbirros), estados (empuje, ralentizar, inmovilizar, cegar, marcar),
@@ -88,7 +88,7 @@ class Minion {
     const dpx = player.pos.x - this.pos.x, dpz = player.pos.z - this.pos.z;
     if (this.hitCd <= 0 && Math.hypot(dpx, dpz) < MINIONS.contact + player.R && Math.abs(player.pos.y - this.pos.y) < 1.8) {
       this.hitCd = 1.4;
-      c.game.hitPlayer(1, this.pos);
+      c.game.hitPlayer(TEAM.minionHit, this.pos);
       const l = Math.hypot(dpx, dpz) || 1;
       player.vx += (dpx / l) * 5; player.vz += (dpz / l) * 5;
     }
@@ -177,8 +177,16 @@ export class Combat {
   damage(t, n, { quiet = false } = {}) {
     if (!t || (t.dead)) return;
     const mul = (t.st.mark > 0 ? 1.5 : 1) * this.damageMul;
-    if (t.heavy) t.takeDamage(n * mul, quiet);
-    else { t.hp -= n; if (t.hp <= 0) t.kill(); }
+    if (t.heavy) {
+      t.takeDamage(n * mul, quiet);
+      // número de daño sobre el jefe: los golpes sueltos siempre; el daño continuo se acumula
+      t._acc = (t._acc || 0) + n * mul;
+      if (!quiet || t._acc >= 2) {
+        const shown = Math.round(t._acc);
+        t._acc = 0;
+        if (shown >= 1) this.game.floatAt(t.pos, t.S.height * 0.85 + (t.flyHeight || 0), `-${shown}`, shown >= 10 ? 'big' : 'dmg');
+      }
+    } else { t.hp -= n; if (t.hp <= 0) t.kill(); }
   }
   push(t, dx, dz, force) {
     const l = Math.hypot(dx, dz) || 1;
@@ -333,7 +341,7 @@ export class Combat {
       if (p.pos.y < gy + 0.1) { this.killProjectile(p); continue; }
       if (p.owner === 'boss') {
         const dx = player.pos.x - p.pos.x, dz = player.pos.z - p.pos.z, dy = player.pos.y + player.H * 0.5 - p.pos.y;
-        if (Math.hypot(dx, dz) < p.radius + player.R && Math.abs(dy) < player.H * 0.6 + p.radius) { this.killProjectile(p); g.hitPlayer(1, p.pos); }
+        if (Math.hypot(dx, dz) < p.radius + player.R && Math.abs(dy) < player.H * 0.6 + p.radius) { this.killProjectile(p); g.hitPlayer(TEAM.projectileHit, p.pos); }
       } else {
         for (const t of this.targets()) {
           if (Math.hypot(t.pos.x - p.pos.x, t.pos.z - p.pos.z) < t.radius + p.radius) { this.damage(t, t.heavy ? 8 : 2, { quiet: false }); this.killProjectile(p); break; }

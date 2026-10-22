@@ -19,8 +19,11 @@ import { LEVELS } from './levels.js';
 import { Save } from './save.js';
 import { ITEMS } from './items.js';
 import { IS_TOUCH } from './platform.js';
+import { Formation } from './formation.js';
+import { TEAM } from './skills/config.js';
 
 const $ = (id) => document.getElementById(id);
+const BOSS_ICON = { minotauro: '👹', kerberos: '🐕‍🦺', medusa: '🐍', basilisco: '🐉', kraken: '🐙', fenrir: '🐺', long: '🐲', cataclismo: '☄️' };
 const stage = $('stage');
 let quality = 'high';
 try { quality = localStorage.getItem('gs_quality') || 'high'; } catch (e) { /* sin almacenamiento */ }
@@ -238,6 +241,63 @@ function enterSelect() {
   const saved = Math.max(0, HEROES.findIndex((h) => h.id === (curHero ? curHero.id : Save.hero)));
   showHero(saved, true);
 }
+/* ---------- jefe de zona: selección de héroes y formación del equipo ---------- */
+const formation = new Formation();
+let teamIds = [];
+let teamBusy = false;
+function enterTeam() {
+  mode = 'team';
+  input.enabled = false;
+  input.releaseLock();
+  ui.hud(false);
+  ui.clickHint(false);
+  teamBusy = false;
+  if (player && player.model) player.model.setVisible(false);
+  const lv = currentLevel;
+  ui.buildTeamScreen({ name: lv.bossName, icon: BOSS_ICON[lv.boss], sub: lv.bossTitle }, toggleTeamHero);
+  formation.attach(scene, SHOW.x, SHOW.z);
+  // equipo inicial: el héroe con el que exploraste + los últimos elegidos
+  teamIds = [game.hero.id, ...Save.team.filter((id) => id !== game.hero.id)].slice(0, TEAM.size);
+  ui.showScreen('team');
+  ui.fade(false);
+  refreshTeam();
+}
+function refreshTeam() {
+  ui.renderTeamScreen(teamIds);
+  formation.set(teamIds, fx);
+}
+function toggleTeamHero(id) {
+  if (mode !== 'team' || teamBusy) return;
+  const i = teamIds.indexOf(id);
+  if (i >= 0) teamIds.splice(i, 1);
+  else if (teamIds.length < TEAM.size) teamIds.push(id);
+  else teamIds[TEAM.size - 1] = id; // equipo completo: sustituye al último
+  audio.click();
+  refreshTeam();
+}
+// Equipo recomendado: primero los héroes cuyo elemento es el ideal para el nivel, luego el resto
+function recommendTeam() {
+  if (mode !== 'team' || teamBusy) return;
+  const best = HEROES.filter((h) => currentLevel.best.includes(h.element)).map((h) => h.id);
+  const rest = HEROES.map((h) => h.id).filter((id) => !best.includes(id));
+  teamIds = [...best, ...rest].slice(0, TEAM.size);
+  audio.click();
+  refreshTeam();
+}
+async function confirmTeam() {
+  if (mode !== 'team' || teamBusy || !teamIds.length) return;
+  teamBusy = true;
+  audio.click();
+  Save.setTeam(teamIds);
+  ui.fade(true); // transición fluida: selección → formación → batalla
+  await wait(550);
+  formation.detach();
+  ui.showScreen(null);
+  mode = 'playing';
+  game.startBoss(teamIds);
+  input.requestLock();
+}
+
 function beginMission() {
   curHero = HEROES[selected];
   Save.setHero(curHero.id);
@@ -283,7 +343,11 @@ function frame(now) {
   input.poll();
   try {
     if (mode === 'title' || mode === 'select') updateMenu(dt);
-    else if (mode === 'playing') {
+    else if (mode === 'team') {
+      formation.update(dt, camera);
+      world.update(dt, clockT, camera.position, new THREE.Vector3(SHOW.x, terrainH(SHOW.x, SHOW.z), SHOW.z), 30, true);
+      fx.update(dt, camera, renderer.domElement.height);
+    } else if (mode === 'playing') {
       game.update(dt);
       ui.clickHint(!input.locked && input.canLock && game.state === 'playing' && clockT - lastMouseT > 4 && !hintDismissed);
       if (game.state === 'done') mode = 'end';
@@ -377,6 +441,7 @@ async function buildGame(scenario) {
   player = new Player(world);
   chase = new ChaseCam(camera, world);
   game = new Game({ scene, camera, renderer, world, player, chase, fx, input });
+  game.onBossPrep = enterTeam;
   window.__g = { game, world, player, chase, input, camera, scene, renderer, get mode() { return mode; }, setMode: (m) => (mode = m), enterSelect, beginMission, showHero, HEROES, fx, LEVELS, Save, ITEMS, pickMission, enterMissions, buildGame, loadLevel, startNextLevel, get level() { return currentLevel; } };
 }
 
@@ -503,6 +568,10 @@ function bindUi() {
   input.on('power', () => mode === 'playing' && game.state === 'playing' && game.useAbility());
   input.on('ability', (i) => mode === 'playing' && game.selectAbility(i));
   input.on('abilityNext', () => mode === 'playing' && game.cycleAbility(1));
+  input.on('teamPrev', () => mode === 'playing' && game.cycleTeam(-1));
+  input.on('teamNext', () => mode === 'playing' && game.cycleTeam(1));
+  $('btn-team-ok').onclick = confirmTeam;
+  $('btn-team-rec').onclick = recommendTeam;
   input.on('rescue', () => mode === 'playing' && game.tryRescue());
   input.on('interact', () => mode === 'playing' && game.interact());
   input.on('recenter', () => mode === 'playing' && (chase.yaw = player.facing + Math.PI));

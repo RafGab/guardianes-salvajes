@@ -435,3 +435,121 @@ html.touch .how-grid, html.touch .controls-hint, html.touch .click-hint, html.to
   .reveal-icon { font-size: 92px; }
   .how-grid { grid-template-columns: 1fr; }
 }
+
+/* ============ Combate de jefe: equipo, barra del jefe, registro, números de daño ============ */
+.fade { position: absolute; inset: 0; background: #05070c; opacity: 0; pointer-events: none; z-index: 60; transition: opacity .45s ease; }
+.fade.on { opacity: 1; }
+
+/* Preparación del jefe */
+#team { flex-direction: column; justify-content: space-between; padding: 20px 22px; pointer-events: none; }
+#team > * { pointer-events: auto; }
+.tm-top { align-self: center; text-align: center; padding: 12px 34px 14px; border-color: rgba(255, 90, 60, .55); background: linear-gradient(180deg, rgba(40, 10, 10, .82), rgba(8, 16, 28, .7)); }
+.tm-kicker { color: #ff7a5a; font-size: 12px; letter-spacing: 5px; font-weight: 700; }
+.tm-boss { font-size: 34px; font-weight: 700; line-height: 1.1; margin-top: 4px; text-shadow: 0 4px 24px rgba(0,0,0,.7); }
+.tm-boss span { margin-right: 10px; }
+.tm-sub { color: #ffc2b2; font-size: 15px; margin-top: 2px; }
+.tm-hint { color: var(--muted); font-size: 13.5px; margin-top: 8px; }
+.tm-bottom { display: grid; grid-template-columns: auto 1fr; grid-template-areas: 'slots actions' 'roster roster'; gap: 10px 16px; align-items: end; }
+.tm-slots-wrap { grid-area: slots; } .tm-actions { grid-area: actions; justify-self: end; } .tm-roster-wrap { grid-area: roster; }
+.tm-title { font-size: 11px; letter-spacing: 3px; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+.tm-title span { color: var(--accent); margin-left: 6px; }
+.tm-slots-wrap { padding: 8px 12px 10px; }
+.tm-slots { display: flex; gap: 10px; }
+.tm-slot { position: relative; width: 104px; height: 120px; border-radius: 14px; border: 2px dashed rgba(255,255,255,.28); display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; color: var(--muted); font-size: 13px; background: rgba(255,255,255,.04); transition: transform .2s, border-color .2s, box-shadow .2s; }
+.tm-slot.full { border: 2px solid var(--cel); background: linear-gradient(180deg, rgba(255,255,255,.1), rgba(255,255,255,.03)); box-shadow: 0 0 20px var(--cel); color: var(--text); cursor: pointer; animation: slotIn .35s ease-out; }
+.tm-slot.full:hover { transform: translateY(-3px); }
+@keyframes slotIn { from { transform: translateY(14px) scale(.9); opacity: 0; } to { transform: none; opacity: 1; } }
+.tm-slot .num { position: absolute; left: 8px; top: 6px; font-weight: 700; font-size: 12px; color: var(--muted); }
+.tm-slot .face { width: 50px; height: 50px; border-radius: 50%; overflow: hidden; border: 3px solid var(--cel); margin-bottom: 6px; }
+.tm-slot .face img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; display: block; }
+.tm-slot .nm { font-weight: 700; font-size: 16px; }
+.tm-slot .ht { font-size: 12px; color: var(--cel); font-weight: 700; }
+.tm-slot .rm { position: absolute; right: 6px; top: 4px; width: 22px; height: 22px; border-radius: 50%; background: rgba(0,0,0,.5); display: grid; place-items: center; font-size: 13px; }
+.tm-roster { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.tm-roster-wrap { text-align: center; }
+.tm-card { width: 88px; padding: 6px 4px 5px; text-align: center; border-radius: 14px; cursor: pointer; background: var(--bg); border: 2px solid var(--line); transition: transform .15s, border-color .15s, box-shadow .15s, opacity .2s, filter .2s; backdrop-filter: blur(8px); position: relative; }
+.tm-card:hover { transform: translateY(-4px); }
+.tm-card .em { width: 42px; height: 42px; margin: 0 auto; border-radius: 50%; overflow: hidden; }
+.tm-card .em img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; display: block; }
+.tm-card .nm { font-weight: 700; font-size: 14px; margin-top: 2px; }
+.tm-card .el { font-size: 11px; font-weight: 700; color: var(--cel); }
+.tm-card .ht { font-size: 10.5px; color: var(--muted); }
+.tm-card.picked { border-color: var(--cel); box-shadow: 0 0 18px var(--cel); filter: saturate(.4) brightness(.7); opacity: .75; }
+.tm-card.picked::after { content: '✔ EN EL EQUIPO'; position: absolute; left: 4px; right: 4px; bottom: 4px; font-size: 9.5px; font-weight: 700; letter-spacing: .5px; color: #fff; background: rgba(0,0,0,.65); border-radius: 6px; padding: 1px 0; }
+.tm-card.full { cursor: not-allowed; }
+.tm-actions { display: flex; flex-direction: row; gap: 10px; align-items: center; }
+.tm-actions .btn { white-space: nowrap; }
+#btn-team-ok:disabled { opacity: .4; cursor: not-allowed; filter: grayscale(.6); transform: none; }
+
+/* Presentación del jefe */
+.bossintro { position: absolute; left: 0; right: 0; top: 30%; text-align: center; opacity: 0; pointer-events: none; z-index: 30; }
+.bossintro.show { animation: bossIntro 3.6s ease-out forwards; }
+.bi-kicker { display: inline-block; color: #ffd0c0; font-size: 15px; letter-spacing: 10px; font-weight: 700; padding: 4px 22px; border-top: 2px solid #ff5a3a; border-bottom: 2px solid #ff5a3a; text-shadow: 0 2px 12px #000; }
+.bi-name { font-size: clamp(54px, 9vw, 120px); font-weight: 700; letter-spacing: 6px; line-height: 1.05; margin-top: 8px; background: linear-gradient(180deg, #fff, #ffb090 55%, #ff4d2a); -webkit-background-clip: text; background-clip: text; color: transparent; filter: drop-shadow(0 6px 24px rgba(0,0,0,.8)); }
+.bi-sub { font-size: 20px; color: #ffd6c8; text-shadow: 0 2px 10px #000; margin-top: 4px; }
+@keyframes bossIntro { 0% { opacity: 0; transform: scale(1.35); } 12% { opacity: 1; transform: scale(1); } 80% { opacity: 1; transform: scale(1.02); } 100% { opacity: 0; transform: scale(1.06) translateY(-20px); } }
+
+/* Barra del jefe: grande y protagonista */
+.bossbar { position: absolute; left: 50%; top: 14px; transform: translate(-50%, -140%); width: clamp(300px, 44vw, 740px); opacity: 0; transition: transform .6s cubic-bezier(.2,.9,.3,1.2), opacity .4s; text-align: left; }
+.bossbar.show { transform: translate(-50%, 0); opacity: 1; }
+.bb-head { display: flex; align-items: center; gap: 12px; }
+.bb-icon { font-size: 30px; filter: drop-shadow(0 0 8px rgba(255, 80, 40, .8)); }
+.bb-name { font-size: 26px; font-weight: 700; letter-spacing: 3px; text-shadow: 0 2px 12px #000; }
+.bb-tag { font-size: 10.5px; letter-spacing: 3px; font-weight: 700; padding: 2px 10px; border-radius: 999px; color: #fff; background: linear-gradient(90deg, #d4251a, #ff6a2a); box-shadow: 0 0 14px rgba(255, 70, 40, .6); }
+.bb-phase { margin-left: auto; display: flex; gap: 6px; }
+.bb-phase i { width: 12px; height: 12px; border-radius: 50%; background: rgba(255,255,255,.22); border: 1px solid rgba(255,255,255,.4); }
+.bb-phase i.on { background: #ff5a3a; box-shadow: 0 0 10px #ff5a3a; }
+.bb-bar { position: relative; height: 30px; margin-top: 4px; border-radius: 10px; background: rgba(10, 6, 8, .78); border: 2px solid rgba(255, 190, 170, .55); box-shadow: 0 6px 26px rgba(0,0,0,.55), 0 0 26px rgba(255, 60, 30, .35); overflow: hidden; }
+.bb-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: linear-gradient(180deg, #ff8a5a, #e8281a 55%, #a30f0f); transition: width .12s linear; }
+.bb-ghost { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: rgba(255, 235, 210, .85); transition: width .9s .25s ease-out; }
+.bb-text { position: absolute; inset: 0; display: grid; place-items: center; font-weight: 700; font-size: 16px; letter-spacing: 1px; text-shadow: 0 1px 4px #000; font-variant-numeric: tabular-nums; }
+.bb-foot { display: flex; justify-content: space-between; gap: 10px; min-height: 22px; margin-top: 4px; }
+.bb-action { font-size: 14px; font-weight: 700; color: #ffd24a; text-shadow: 0 2px 8px #000; }
+.bb-status { display: flex; gap: 6px; }
+.chip { font-size: 12px; font-weight: 700; padding: 1px 9px; border-radius: 999px; background: rgba(8,16,28,.85); border: 1px solid var(--line); }
+.chip.slow { color: #8ad8ff; border-color: #8ad8ff; }
+.chip.root { color: #7aff8a; border-color: #7aff8a; }
+.chip.blind { color: #e8c890; border-color: #e8c890; }
+.chip.mark { color: #ffd24a; border-color: #ffd24a; }
+body.bossfight #hud-gauge, body.bossfight .hud-top { display: none; }
+
+/* Equipo (abajo a la izquierda) */
+.teamhud { position: absolute; left: 18px; bottom: 18px; display: none; flex-direction: column; gap: 8px; }
+body.bossfight .teamhud { display: flex; }
+.tcard { position: relative; display: grid; grid-template-columns: 52px 1fr; gap: 10px; align-items: center; width: 270px; padding: 8px 12px 8px 8px; border-radius: 14px; background: var(--bg); border: 2px solid var(--line); backdrop-filter: blur(8px); pointer-events: auto; cursor: pointer; transition: transform .15s, border-color .2s, box-shadow .2s, opacity .2s; }
+.tcard.active { border-color: var(--cel); box-shadow: 0 0 20px var(--cel); transform: translateX(8px) scale(1.04); }
+.tcard.ko { opacity: .45; filter: grayscale(1); cursor: default; }
+.tcard .face { width: 52px; height: 52px; border-radius: 50%; overflow: hidden; border: 3px solid var(--cel); }
+.tcard .face img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; display: block; }
+.tcard .row1 { display: flex; justify-content: space-between; align-items: baseline; }
+.tcard .nm { font-weight: 700; font-size: 16px; }
+.tcard .key { font-size: 11px; color: var(--muted); }
+.tcard .hpbar { position: relative; height: 14px; margin-top: 4px; border-radius: 7px; background: rgba(255,255,255,.14); overflow: hidden; }
+.tcard .hpfill { position: absolute; left: 0; top: 0; bottom: 0; background: linear-gradient(180deg, #7dffa0, #25b85a); transition: width .15s linear; }
+.tcard .hpfill.mid { background: linear-gradient(180deg, #ffe27a, #e0a41a); }
+.tcard .hpfill.low { background: linear-gradient(180deg, #ff8a7a, #d4251a); }
+.tcard .hptxt { position: absolute; inset: 0; display: grid; place-items: center; font-size: 10.5px; font-weight: 700; text-shadow: 0 1px 3px #000; font-variant-numeric: tabular-nums; }
+.tcard .ko-tag { position: absolute; right: 10px; top: 6px; font-size: 11px; font-weight: 700; color: #ff8a7a; }
+.tcard.hurt .face { animation: hurtShake .35s; }
+@keyframes hurtShake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-6px); } 75% { transform: translateX(6px); } }
+
+/* Registro de combate */
+.battlelog { position: absolute; right: 18px; bottom: 96px; width: 300px; display: none; flex-direction: column; gap: 4px; align-items: flex-end; pointer-events: none; }
+body.bossfight .battlelog { display: flex; }
+.battlelog div { font-size: 13px; padding: 3px 10px; border-radius: 8px; background: rgba(8,16,28,.72); border-left: 3px solid #9db2c8; animation: logIn .25s ease-out, logOut .4s 4.6s forwards; }
+.battlelog .hero { border-left-color: #3de0c8; }
+.battlelog .boss { border-left-color: #ff5a3a; }
+.battlelog .hit { border-left-color: #ff4d4d; color: #ffb4a8; }
+@keyframes logIn { from { opacity: 0; transform: translateX(14px); } }
+@keyframes logOut { to { opacity: 0; } }
+
+/* Números de daño flotantes */
+.floaters { position: absolute; inset: 0; pointer-events: none; overflow: hidden; }
+.floater { position: absolute; font-weight: 700; font-size: 26px; text-shadow: 0 2px 6px #000, 0 0 12px rgba(0,0,0,.6); animation: floatUp .95s ease-out forwards; white-space: nowrap; transform: translate(-50%, -50%); }
+.floater.dmg { color: #ffe27a; }
+.floater.big { color: #ff9a3a; font-size: 38px; }
+.floater.taken { color: #ff6a5a; font-size: 30px; }
+.floater.heal { color: #7dffa0; }
+@keyframes floatUp { 0% { opacity: 0; margin-top: 10px; scale: .6; } 15% { opacity: 1; scale: 1.15; } 100% { opacity: 0; margin-top: -60px; scale: 1; } }
+@media (max-height: 640px) { .tm-hint { display: none; } .tm-top { padding: 8px 26px 10px; } .tm-boss { font-size: 26px; } .tm-slot { height: 96px; width: 92px; } .tm-slot .face { width: 38px; height: 38px; } .tm-card .ht { display: none; } }
+@media (max-width: 760px) { .tcard { width: 200px; grid-template-columns: 40px 1fr; } .tcard .face { width: 40px; height: 40px; } .tm-bottom { grid-template-columns: 1fr; grid-template-areas: 'slots' 'actions' 'roster'; } .tm-slot { width: 88px; height: 124px; } }

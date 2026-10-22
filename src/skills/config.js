@@ -176,3 +176,17 @@ export const BOSS_ATTACKS = {
 
 // Esbirros ligeros que aparecen en los combates de jefe (dan sentido a atraer / desviar / ralentizar)
 export const MINIONS = { max: 3, speed: 2.7, radius: 0.55, contact: 0.95, spawnEvery: 14, firstAt: 8, hp: 1, score: 10 };
+
+// Equipo y vida en los combates de jefe. Cada héroe tiene su propia barra; los golpes del jefe se miden en "golpes" (1 = golpe normal).
+export const TEAM = {
+  size: 3,              // héroes por equipo
+  hp: 100,              // vida máxima de cada héroe
+  hitDamage: 14,        // vida que quita un golpe normal (1 unidad) de un jefe
+  phaseScale: 0.15,     // +15 % de daño por cada fase del jefe
+  minionHit: 0.5,       // golpe de esbirro (en unidades)
+  projectileHit: 0.7,   // golpe de proyectil (en unidades)
+  benchRegen: 1.5,      // vida/s que recuperan los héroes en reserva
+  switchCd: 1.6,        // espera entre cambios de héroe
+  switchGrace: 1.0,     // invulnerabilidad breve tras entrar en combate
+  introT: 4.8,          // duración de la presentación del jefe y la aparición del equipo
+};

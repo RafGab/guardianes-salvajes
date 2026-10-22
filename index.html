@@ -82,6 +82,30 @@
       </div>
     </section>
 
+    <!-- Preparación del jefe: selección de héroes y formación del equipo -->
+    <section id="team" class="screen">
+      <div class="tm-top panel">
+        <div class="tm-kicker">⚔ JEFE DE ZONA DESCUBIERTO</div>
+        <div class="tm-boss"><span id="tm-boss-icon">👹</span><b id="tm-boss-name">Minotauro</b></div>
+        <div id="tm-boss-sub" class="tm-sub"></div>
+        <div class="tm-hint">Elige hasta 3 héroes. Cada uno tiene su propia vida y puedes cambiar de héroe en combate.</div>
+      </div>
+      <div class="tm-bottom">
+        <div class="tm-slots-wrap panel">
+          <div class="tm-title">TU EQUIPO <span id="tm-count">0/3</span></div>
+          <div id="tm-slots" class="tm-slots"></div>
+        </div>
+        <div class="tm-roster-wrap">
+          <div class="tm-title">HÉROES DISPONIBLES</div>
+          <div id="tm-roster" class="tm-roster"></div>
+        </div>
+        <div class="tm-actions">
+          <button id="btn-team-rec" class="btn">✨ Equipo recomendado</button>
+          <button id="btn-team-ok" class="btn primary">CONFIRMAR EQUIPO ▶</button>
+        </div>
+      </div>
+    </section>
+
     <!-- HUD -->
     <section id="hud">
       <div id="hud-hero" class="panel hud-hero">
@@ -121,6 +145,15 @@
         <div id="carry-row" class="carry-row"></div>
       </div>
 
+      <!-- Combate de jefe: barra del jefe, equipo, registro y números de daño -->
+      <div id="bossbar" class="bossbar">
+        <div class="bb-head"><span id="bb-icon" class="bb-icon">👹</span><span id="bb-name" class="bb-name">JEFE</span><span class="bb-tag">JEFE DE ZONA</span><span id="bb-phase" class="bb-phase"></span></div>
+        <div class="bb-bar"><div id="bb-ghost" class="bb-ghost"></div><div id="bb-fill" class="bb-fill"></div><div id="bb-text" class="bb-text">100 / 100</div></div>
+        <div class="bb-foot"><span id="bb-action" class="bb-action"></span><span id="bb-status" class="bb-status"></span></div>
+      </div>
+      <div id="teamhud" class="teamhud"></div>
+      <div id="battlelog" class="battlelog"></div>
+      <div id="floaters" class="floaters"></div>
       <div id="skillbar" class="skillbar"></div>
       <div id="prompt" class="prompt"></div>
       <div id="banner" class="banner"></div>
@@ -130,6 +163,11 @@
       <div class="controls-hint">WASD mover · ESPACIO saltar · SHIFT correr · Q poder · F rescatar · E interactuar · C cámara · ESC pausa</div>
       <div id="click-hint" class="click-hint">Haz clic en la pantalla para controlar la cámara con el ratón</div>
     </section>
+
+
+    <!-- Presentación del jefe y transiciones -->
+    <div id="bossintro" class="bossintro"><div class="bi-kicker">⚔ JEFE DE ZONA</div><div id="bi-name" class="bi-name">MINOTAURO</div><div id="bi-sub" class="bi-sub"></div></div>
+    <div id="fade" class="fade"></div>
 
     <!-- Controles táctiles -->
     <div id="touch">
