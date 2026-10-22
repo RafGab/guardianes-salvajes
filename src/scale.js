@@ -10,15 +10,18 @@
 export const MODEL_DIR = '/models/';
 export const MANNEQUIN_H = 1.8;
 
-// Héroes (jugables). `radius` ≤ 0,42 (el valor anterior para todos) para no cerrar pasos ya generados.
+// Héroes (jugables). ALTURAS OFICIALES (parte del diseño de los personajes; NO se tocan para componer escenas):
+// Feneco 1,00 → Nutria 1,50 → Águila 1,60 → Lince 1,65 → Zorra Ártica 1,75 → Jaglion 1,80 → Komodo 1,90.
+// Si una escena no cuadra, se cambia la cámara o la composición, nunca la estatura.
+// `radius` (colisión) ≈ 0,22 × altura, con tope 0,42 (el valor máximo anterior) para no cerrar pasos ya generados.
 export const HERO_SCALE = {
-  halley: { nombre: 'Feneco', tipo: 'Héroe · bípedo pequeño', height: 0.75, radius: 0.26, glb: 'halley.glb', yaw: 0, notas: 'El más pequeño; cámara más cerca.' },
-  nilo:   { nombre: 'Nutria', tipo: 'Héroe · bípedo pequeño', height: 0.90, radius: 0.30, glb: 'nilo.glb', yaw: 0, notas: 'La cola larga añade longitud.' },
-  kyra:   { nombre: 'Zorra Ártica', tipo: 'Héroe · bípedo', height: 1.00, radius: 0.34, glb: 'kyra.glb', yaw: 0, notas: 'Las colas aumentan el volumen visual.' },
-  lira:   { nombre: 'Lince', tipo: 'Héroe · bípedo', height: 1.15, radius: 0.38, glb: 'lira.glb', yaw: 0, notas: '' },
-  ambar:  { nombre: 'Águila', tipo: 'Héroe · ave', height: 1.20, radius: 0.36, glb: 'ambar.glb', yaw: 0, notas: 'Altura corporal 1,20 m; las alas del modelo dan la envergadura.' },
-  kairo:  { nombre: 'Dragón de Komodo', tipo: 'Héroe · reptil', height: 1.25, radius: 0.42, glb: 'kairo.glb', yaw: 0, notas: 'El modelo entregado es erguido: su longitud es corta (ver tabla).' },
-  jago:   { nombre: 'Jaglion', tipo: 'Héroe · felino', height: 1.55, radius: 0.42, glb: 'jago.glb', yaw: 0, notas: 'El héroe con más presencia física.' },
+  halley: { nombre: 'Feneco', tipo: 'Héroe · bípedo pequeño', height: 1.00, radius: 0.28, glb: 'halley.glb', yaw: 0, notas: 'El más pequeño del grupo.' },
+  nilo:   { nombre: 'Nutria', tipo: 'Héroe · bípedo pequeño', height: 1.50, radius: 0.33, glb: 'nilo.glb', yaw: 0, notas: 'La cola larga añade longitud.' },
+  ambar:  { nombre: 'Águila', tipo: 'Héroe · ave', height: 1.60, radius: 0.34, glb: 'ambar.glb', yaw: 0, notas: 'Altura corporal 1,60 m; las alas del modelo dan la envergadura y la presencia.' },
+  lira:   { nombre: 'Lince', tipo: 'Héroe · bípedo', height: 1.65, radius: 0.35, glb: 'lira.glb', yaw: 0, notas: 'Ágil y estilizado.' },
+  kyra:   { nombre: 'Zorra Ártica', tipo: 'Héroe · bípedo', height: 1.75, radius: 0.38, glb: 'kyra.glb', yaw: 0, notas: 'Las colas aumentan el volumen visual.' },
+  jago:   { nombre: 'Jaglion', tipo: 'Héroe · felino', height: 1.80, radius: 0.40, glb: 'jago.glb', yaw: 0, notas: 'El héroe más imponente por constitución y postura, aunque no sea el más alto.' },
+  kairo:  { nombre: 'Dragón de Komodo', tipo: 'Héroe · reptil', height: 1.90, radius: 0.42, glb: 'kairo.glb', yaw: 0, notas: 'El más alto, robusto y muy largo. El modelo entregado es erguido: su longitud es corta (ver tabla).' },
 };
 
 // Jefes de zona. `radius` = media anchura del cuerpo sobre el suelo (para alcances, cargas y ondas).
