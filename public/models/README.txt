@@ -30,3 +30,7 @@ PERSONAJES CON ESQUELETO (rig) Y ANIMACIONES
   El juego las elige por el NOMBRE de la animación (src/heroes.js, clase GLBHero).
   Para animar otro héroe con el mismo rig: genera el GLB con rig desde Tripo/Blender, añade las animaciones
   y aligéralo con el comando de arriba (el ratio sigue siendo triángulos deseados / originales).
+  kyra.glb (4 colas, hacha) también lleva esqueleto (63 huesos) y las mismas 7 animaciones.
+  Herramienta para crear las animaciones de un rig nuevo: tools/make_anims.mjs
+    (npm i @gltf-transform/core @gltf-transform/extensions; node tools/make_anims.mjs ENTRADA.glb SALIDA.glb;
+     luego aligerar con el comando de arriba). Detecta colas (tail_N o tail_<color>_N), orejas (ear_L/R_N) y arma.
