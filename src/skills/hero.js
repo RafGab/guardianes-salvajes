@@ -203,6 +203,9 @@ class HaboobSkill extends Skill {
     return true;
   }
   makeEars() {
+    // con el rig real (huesos de las orejas) el aleteo lo hace la animación 'power'; las orejas dibujadas son solo el modelo de reserva
+    this.realEars = !!(this.p.model.mixer && this.p.model.clips && this.p.model.clips.power);
+    if (this.realEars) return;
     const H = this.p.H, g = new THREE.Group();
     const mat = new THREE.MeshBasicMaterial({ color: 0xe8c890, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide });
     this.earMats = [mat];
@@ -221,6 +224,7 @@ class HaboobSkill extends Skill {
     this.track({ kill: () => { this.p.model.root.remove(g); mat.dispose(); } });
   }
   flap(t, amount) { // orejas exageradas: aleteo rápido
+    if (this.realEars) { this.p.powerAnim = amount > 0.2 ? 1 : this.p.powerAnim; return; }
     for (const e of this.ears) { e.pivot.rotation.z = -e.s * (0.45 + amount * Math.sin(t * 24)); e.pivot.rotation.x = 0.15 * Math.sin(t * 24 + 1); }
   }
   build() {

@@ -24,3 +24,9 @@ generas en Tripo/Meshy con ~500 mil triángulos, aligéralo antes con:
 
 PRUEBA DE ESCALA: abre /escala.html (maniquí de 1,80 m, héroes, jefes,
 cuadrícula métrica y tabla de medidas).
+
+PERSONAJES CON ESQUELETO (rig) Y ANIMACIONES
+  halley.glb ya lleva esqueleto de 42 huesos y 7 animaciones: idle, walk, run, swim, jump, power, cele.
+  El juego las elige por el NOMBRE de la animación (src/heroes.js, clase GLBHero).
+  Para animar otro héroe con el mismo rig: genera el GLB con rig desde Tripo/Blender, añade las animaciones
+  y aligéralo con el comando de arriba (el ratio sigue siendo triángulos deseados / originales).
