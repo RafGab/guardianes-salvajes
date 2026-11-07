@@ -34,3 +34,4 @@ PERSONAJES CON ESQUELETO (rig) Y ANIMACIONES
   Herramienta para crear las animaciones de un rig nuevo: tools/make_anims.mjs
     (npm i @gltf-transform/core @gltf-transform/extensions; node tools/make_anims.mjs ENTRADA.glb SALIDA.glb;
      luego aligerar con el comando de arriba). Detecta colas (tail_N o tail_<color>_N), orejas (ear_L/R_N) y arma.
+  jago.glb (Jaglioner: cola de 7 huesos, mochila, katana) también lleva esqueleto (40 huesos) y las 7 animaciones.
