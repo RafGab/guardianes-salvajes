@@ -345,6 +345,11 @@ html.touch .how-grid, html.touch .controls-hint, html.touch .click-hint, html.to
 .skill.sel { border-color: var(--el); box-shadow: 0 0 16px var(--el); background: rgba(40,60,90,.85); transform: translateY(-3px); }
 .skill .sk { position: absolute; left: 4px; top: 1px; font-size: 10px; font-weight: 700; color: #cfe0f2; }
 .skill .cdo { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(0,0,0,.6); pointer-events: none; }
+.skill .rl { position: absolute; left: 0; right: 0; bottom: 2px; font: 800 7.5px/1 system-ui, sans-serif; letter-spacing: .3px; font-style: normal; color: #fff; opacity: .9; text-shadow: 0 1px 2px #000; pointer-events: none; }
+.skill .rl-velocidad { color: #7ae0ff; } .skill .rl-poder { color: #ff9a6a; } .skill .rl-escudo { color: #9ad0ff; } .skill .rl-arma { color: #ffe27a; } .skill .rl-especial { color: #d8a0ff; }
+.skill .ic { display: block; transform: translateY(-3px); }
+.skill.tool { width: 44px; height: 44px; font-size: 19px; opacity: .92; border-style: dashed; }
+.sk-sep { width: 2px; align-self: stretch; margin: 4px 3px; background: rgba(255,255,255,.35); border-radius: 2px; }
 .skill .cdt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 800 15px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #000; pointer-events: none; }
 .skill.cooling .ic { filter: grayscale(.7) brightness(.7); }
 .skill.live { border-color: #ffe27a; box-shadow: 0 0 18px #ffd24a; animation: sk-live 0.8s ease-in-out infinite alternate; }
@@ -405,6 +410,7 @@ html.touch .how-grid, html.touch .controls-hint, html.touch .click-hint, html.to
   .gauge-val { font-size: 10px; }
   .gauge-title { font-size: 8px; }
   .skillbar { top: 104px; left: auto; right: 8px; transform: none; flex-direction: column; }
+  .sk-sep { width: auto; height: 2px; margin: 3px 4px; }
   .skill { width: 44px; height: 44px; font-size: 20px; }
   .hud-score { left: 8px; right: auto; bottom: auto; top: 208px; min-width: 0; padding: 5px 9px; }
   .score-line { gap: 8px; }

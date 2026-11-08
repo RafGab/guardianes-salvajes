@@ -76,6 +76,9 @@ export class Player {
     // { kind, t, max, speed, climb, sink, ceil, lean, minT, ending }
     this.fly = null;
     this.moveMul = 1; // velocidad extra de una transformación (bola de roca del Jaglion)
+    // BOTÓN DE VELOCIDAD: aceleración progresiva (boostT = segundos, boostMax = multiplicador final, boostRamp = s hasta alcanzarlo)
+    this.boostMax = 1.5; this.boostRamp = 0.01; this.boostAge = 0; this.boostDur = 1;
+    this.airJumps = 0; // doble salto (el águila despega a volar)
   }
 
   setHero(def, model) {
@@ -119,6 +122,7 @@ export class Player {
     this.env = { slip: 1, wind: { x: 0, z: 0 }, speedMul: 1 };
     this.fly = null;
     this.moveMul = 1;
+    this.boostMax = 1.5; this.boostRamp = 0.01; this.boostAge = 0;
   }
 
   // Superpone la pose de una habilidad (inclinación, aplastamiento, giro, desaparición) sobre la animación del modelo
@@ -140,6 +144,14 @@ export class Player {
     return (this.stats ? this.stats.carry : 2) + this.capBonus;
   }
 
+  // Arranca el botón de velocidad: dura `t` s y acelera hasta `max` × en `ramp` s
+  speedBoost(t, max, ramp) { this.boostT = t; this.boostDur = t; this.boostMax = max; this.boostRamp = ramp; this.boostAge = 0; }
+  // multiplicador de velocidad actual del botón de velocidad (sube progresivamente y se suaviza al acabar)
+  get boostK() {
+    if (this.boostT <= 0) return 0;
+    return Math.min(1, this.boostAge / Math.max(0.01, this.boostRamp)) * Math.min(1, this.boostT / 0.5);
+  }
+
   get cdMaxEff() {
     return this.cdMax * this.cdMul;
   }
@@ -153,7 +165,11 @@ export class Player {
     const dx = this.dirX || Math.sin(this.facing);
     const dz = this.dirZ || Math.cos(this.facing);
     const len = Math.hypot(dx, dz) || 1;
+    const moving = Math.hypot(this.dirX, this.dirZ) > 0.1;
+    const hid = this.hero.id;
     if (type === 'dash') {
+      // Kairo: cometa de fuego que acelera · Jago: embestida pesada
+      this.speedBoost(hid === 'kairo' ? 3.6 : 3, hid === 'kairo' ? 1.75 : 1.55, hid === 'kairo' ? 1.6 : 0.6);
       this.dashT = 0.36;
       this.vx = (dx / len) * 20;
       this.vz = (dz / len) * 20;
@@ -166,11 +182,16 @@ export class Player {
       this.glideT = 5.5;
       this.grounded = false;
       this.support = null;
+    } else if (type === 'rocket') {
+      // Ámbar: arranque explosivo con propulsores de aire en los pies
+      this.speedBoost(4, 2.2, 0.7);
+      this.vx += (dx / len) * 6; this.vz += (dz / len) * 6;
+      this.facing = Math.atan2(dx, dz);
     } else if (type === 'pillar') {
-      w.spawnPillar(this.pos.x, this.pos.z, this.pos.y);
-      this.vy = Math.max(this.vy, 0);
+      if (moving) this.speedBoost(4, 1.6, 0.8); // corriendo: raíces impulsoras
+      else { w.spawnPillar(this.pos.x, this.pos.z, this.pos.y); this.vy = Math.max(this.vy, 0); } // quieta: pilar de tierra (como siempre)
     } else if ((type === 'ice' || type === 'surf') && !w.hasWater) {
-      this.boostT = type === 'surf' ? 5 : 6;
+      this.speedBoost(type === 'surf' ? 5 : 6, hid === 'halley' ? 1.7 : hid === 'nilo' ? 1.6 : 1.65, 0.8);
       this.grip = type === 'ice';
     } else if (type === 'ice') {
       const tx = this.pos.x + (dx / len) * 3.6, tz = this.pos.z + (dz / len) * 3.6;
@@ -179,6 +200,7 @@ export class Player {
         return false;
       }
       w.spawnIce(tx, tz);
+      this.speedBoost(3, 1.4, 0.5); this.grip = true;
     } else if (type === 'surf') {
       if (depthHere < 0.2 && !this.swimming && this.surfT <= 0) {
         this.events.push({ type: 'fail', msg: 'Este poder funciona sobre el agua. Acércate a la inundación.' });
@@ -204,7 +226,7 @@ export class Player {
     const w = this.world;
     const st = this.stats;
     const pos = this.pos;
-    this.events.length = 0;
+    // (los eventos se vacían en game.js DESPUÉS de procesarlos: así no se pierden los que lanza usePower entre fotogramas)
     this.petrifyT = Math.max(0, this.petrifyT - dt);
     this.slowT = Math.max(0, this.slowT - dt);
     if (this.slowT <= 0) this.slowF = 1;
@@ -216,6 +238,7 @@ export class Player {
     this.glideT = Math.max(0, this.glideT - dt);
     this.surfT = Math.max(0, this.surfT - dt);
     this.boostT = Math.max(0, this.boostT - dt);
+    this.boostAge += dt;
     this.climbT = Math.max(0, this.climbT - dt);
     this.shieldT = Math.max(0, this.shieldT - dt);
     this.evadeT = Math.max(0, this.evadeT - dt);
@@ -282,7 +305,7 @@ export class Player {
     else if (this.wading) maxSpeed *= 0.72;
     if (surfing) maxSpeed = st.speed * (this.hero.id === 'halley' ? 1.8 : 1.55);
     if (this.carrying.length) maxSpeed *= 1 - Math.min(0.08 * this.carrying.length, 0.2);
-    maxSpeed *= this.env.speedMul * (this.boostT > 0 ? 1.5 : 1) * (this.slowT > 0 ? this.slowF : 1) * this.speedBuff;
+    maxSpeed *= this.env.speedMul * (1 + (this.boostMax - 1) * this.boostK) * (this.slowT > 0 ? this.slowF : 1) * this.speedBuff;
     if (w.slowAt && this.grounded) maxSpeed *= w.slowAt(pos.x, pos.z);
     if (this.dashT > 0) maxSpeed = 20;
     if (this.gliding) maxSpeed = st.speed * 1.6;
@@ -308,6 +331,11 @@ export class Player {
     // salto
     if (inp.jumpPressed) this.jumpBuf = 0.14;
     const canJump = !frozen && (this.grounded || this.coyote > 0 || this.swimming);
+    if (this.grounded || this.swimming) this.airJumps = 0;
+    else if (inp.jumpPressed && !canJump && !this.fly && !frozen && this.airJumps === 0 && this.hero.id === 'ambar') {
+      this.airJumps = 1;
+      this.events.push({ type: 'airJump' }); // el juego la hace despegar (Vuelo Libre)
+    }
     if (this.jumpBuf > 0 && canJump) {
       this.vy = this.swimming ? 6.8 : st.jump;
       if (this.surfing) this.vy = st.jump * 0.9;

@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { Staged, rnd, TAU } from './attack.js';
-import { HERO_SKILLS } from './config.js';
+import { HERO_SKILLS, HERO_BUTTONS } from './config.js';
 import { makeTentacle } from './props.js';
 import { terrainH } from '../terrain.js';
 import { Audio3D as audio } from '../audio.js';
@@ -12,6 +12,7 @@ import { ui } from '../ui.js';
 
 import { Skill, DEG, ease, lerp, clamp, V, NEUTRAL, SKIP_TAGS, makeElastic, boneWorld } from './base.js';
 import { POWER_CLASSES } from './powers.js';
+import { POWER2_CLASSES } from './powers2.js';
 
 /* ====================================================================== */
 /*  JAGLION — Cola Elástica (extensión → agarre → balanceo → trepado)      */
@@ -340,9 +341,47 @@ class SeasonsSkill extends Skill {
     this.zone.setProgress(1);
     this.vfx.petals(this.at.x, this.at.y + 0.5, this.at.z, 10);
     audio.whoosh();
+    this.sfx('rumble');
+    this.growGreens();
+  }
+  // árboles y montículos vegetales que brotan del suelo (y se vuelven a hundir al acabar)
+  growGreens() {
+    const s = this.s, trunkM = new THREE.MeshStandardMaterial({ color: 0x7a5232, roughness: 0.9 });
+    const leafs = [0x4cb84a, 0x6ad050, 0x3a9a40].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.75, flatShading: true }));
+    const flower = new THREE.MeshStandardMaterial({ color: 0xff9ad0, roughness: 0.6, emissive: 0x401020 });
+    this.greens = [];
+    const place = (r0, r1) => { const a = rnd(0, TAU), r = rnd(r0, r1); const x = this.at.x + Math.cos(a) * r, z = this.at.z + Math.sin(a) * r; return { x, z, y: this.gy(x, z) }; };
+    for (let i = 0; i < (s.trees || 6); i++) {
+      const q = place(0.6, s.radius * 0.95), g = new THREE.Group(), h = rnd(1.4, 2.4);
+      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.16, h, 7), trunkM);
+      trunk.position.y = h / 2; trunk.castShadow = true;
+      g.add(trunk);
+      for (let j = 0; j < 3; j++) { const f = new THREE.Mesh(new THREE.IcosahedronGeometry(rnd(0.45, 0.7), 0), leafs[j % 3]); f.position.set(rnd(-0.3, 0.3), h + rnd(-0.1, 0.4), rnd(-0.3, 0.3)); f.castShadow = true; g.add(f); }
+      for (let j = 0; j < 4; j++) { const b = new THREE.Mesh(this.vfx.sphGeo, flower); b.scale.setScalar(0.08); b.position.set(rnd(-0.5, 0.5), h + rnd(0, 0.5), rnd(-0.5, 0.5)); g.add(b); }
+      g.position.set(q.x, q.y, q.z);
+      g.rotation.y = rnd(0, TAU);
+      this.prop(g);
+      this.greens.push({ g, delay: i * 0.07 + rnd(0, 0.1), tree: true });
+    }
+    for (let i = 0; i < (s.mounds || 4); i++) { // montañitas vegetales
+      const q = place(0.5, s.radius * 0.8), m = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 6, 0, TAU, 0, Math.PI / 2), leafs[i % 3]);
+      m.scale.set(rnd(0.7, 1.1), 1, rnd(0.7, 1.1));
+      m.position.set(q.x, q.y - 0.02, q.z);
+      m.castShadow = true;
+      this.prop(m);
+      this.greens.push({ g: m, delay: rnd(0, 0.2), mound: rnd(0.5, 0.9) });
+    }
+    this.track({ kill: () => { trunkM.dispose(); leafs.forEach((m) => m.dispose()); flower.dispose(); for (const q of this.greens) q.g.traverse((o) => { if (o.geometry && o.geometry !== this.vfx.sphGeo) o.geometry.dispose(); }); } });
   }
   tickSpring(dt, k) {
     const s = this.s;
+    for (const q of this.greens || []) { // brotan con un pequeño rebote y se hunden al final
+      const lt = clamp((this.t - q.delay) / 0.45, 0, 1), grow = lt < 1 ? 1 - Math.pow(1 - lt, 3) * Math.cos(lt * 6) : 1, sink = k > 0.82 ? 1 - (k - 0.82) / 0.18 : 1;
+      const v = Math.max(0.001, grow * sink);
+      if (q.tree) q.g.scale.set(Math.max(0.001, 0.5 + 0.5 * v), v, Math.max(0.001, 0.5 + 0.5 * v));
+      else q.g.scale.y = Math.max(0.001, q.mound * v);
+      if (lt > 0 && lt < 0.2 && Math.random() < 0.3) this.vfx.dust(q.g.position.x, q.g.position.y + 0.1, q.g.position.z, 2, 1);
+    }
     this.vines.forEach((v, i) => v.setHeight(v.h * ease(clamp(this.t * 3 - i * 0.08, 0, 1)) * (k > 0.85 ? (1 - k) / 0.15 : 1)));
     for (const t of this.combat.inCircle(this.at.x, this.at.z, s.radius)) { this.combat.root(t, 0.4); this.dot(t, s.damage, dt); }
     if (Math.random() < 0.25) this.vfx.petals(this.at.x, this.at.y + 0.5, this.at.z, 2);
@@ -414,7 +453,7 @@ class SeasonsSkill extends Skill {
 class WheelSkill extends Skill {
   begin() { this.start(); return true; }
   build() {
-    const d = this.def, pose = this.pose, seasons = HERO_SKILLS.kyra.skill.seasons, order = HERO_SKILLS.kyra.skill.order;
+    const d = this.def, pose = this.pose, seasons = HERO_SKILLS.kyra.skill.seasons, order = HERO_SKILLS.kyra.skill.wheelOrder;
     return [
       { name: 'preparacion', dur: d.prep, enter: this.enterGather, tick: (dt, k) => { pose.rx = -0.2 * k; this.orbit(0.4 + (1 - k) * 2.6, this.t * 3, 0.3 + 0.7 * k); } },
       { name: 'rueda', dur: d.exec, enter: () => { this.tickT = 0; this.shake(0.3); audio.power('ice'); }, tick: (dt, k) => {
@@ -428,7 +467,7 @@ class WheelSkill extends Skill {
     ];
   }
   enterGather() {
-    const order = HERO_SKILLS.kyra.skill.order, seasons = HERO_SKILLS.kyra.skill.seasons;
+    const order = HERO_SKILLS.kyra.skill.wheelOrder, seasons = HERO_SKILLS.kyra.skill.seasons;
     this.orbs = order.map((key) => {
       const m = new THREE.Mesh(this.vfx.sphGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(seasons[key].color).multiplyScalar(1.6), transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending }));
       m.userData.own = true;
@@ -761,7 +800,7 @@ class BlinkSkill extends Skill {
   }
 }
 
-const SKILLS = { tail: TailSkill, haboob: HaboobSkill, seasons: SeasonsSkill, wheel: WheelSkill, dive: DiveSkill, tongue: TongueSkill, blink: BlinkSkill, ...POWER_CLASSES };
+const SKILLS = { tail: TailSkill, haboob: HaboobSkill, seasons: SeasonsSkill, wheel: WheelSkill, dive: DiveSkill, tongue: TongueSkill, blink: BlinkSkill, ...POWER_CLASSES, ...POWER2_CLASSES };
 
 /* ====================================================================== */
 /*  Gestor: una habilidad principal a la vez + poderes de fondo (vuelo,    */
@@ -776,10 +815,18 @@ export class HeroSkills {
   }
 
   // Habilidades del héroe para la barra: [{ id, key, icon, name, cd }]
+  // en el orden de HERO_BUTTONS (botones 2..N; el botón 1 de velocidad es el poder base)
   entries(heroId) {
-    const set = HERO_SKILLS[heroId];
-    if (!set) return [];
-    return Object.entries(set).map(([key, def]) => ({ id: `hs:${key}`, key, icon: def.icon, name: def.name, cd: def.cd, hs: true }));
+    const set = HERO_SKILLS[heroId], order = HERO_BUTTONS[heroId];
+    if (!set || !order) return [];
+    return order.filter(([key]) => set[key]).map(([key, role]) => { const def = set[key]; return { id: `hs:${key}`, key, icon: def.icon, name: def.name, cd: def.cd, hs: true, role }; });
+  }
+  // animación del botón de velocidad (se superpone mientras dura el impulso del poder base)
+  startSpeedFx() {
+    if (this.bg.some((b) => b.key === '_speed')) return;
+    const sk = new SKILLS.speedfx(this, { id: 'speedfx' });
+    sk.key = '_speed';
+    if (sk.begin()) this.bg.push(sk);
   }
   get busy() { return !!this.cur; }
 

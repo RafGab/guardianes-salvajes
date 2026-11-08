@@ -17,7 +17,8 @@ import { Combat } from './combat.js';
 import { HeroSkills } from './skills/hero.js';
 import { Vfx2 } from './skills/vfx2.js';
 import { Team } from './team.js';
-import { TEAM } from './skills/config.js';
+import { TEAM, HERO_SKILLS } from './skills/config.js';
+const HERO_SKILLS_CD = (id) => (HERO_SKILLS[id] && HERO_SKILLS[id].flight ? HERO_SKILLS[id].flight.cd : 4);
 import { IS_TOUCH } from './platform.js';
 const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
 
@@ -235,11 +236,11 @@ export class Game {
   /* ---------- habilidades (poder del héroe + herramientas) ---------- */
   buildAbilities() {
     const base = heroPowerItem(this.hero);
-    this.abilities = [{ id: 'power', icon: base.icon, name: base.name, cd: this.hero.power.cd }];
+    this.abilities = [{ id: 'power', icon: base.icon, name: base.name, cd: this.hero.power.cd, role: 'velocidad' }]; // botón 1: VELOCIDAD
     this.abilities.push(...this.skills.entries(this.hero.id)); // habilidad propia del héroe (y especial, si la tiene)
     for (const id of Save.items) {
       const it = ITEMS[id];
-      if (it && !it.passive) this.abilities.push({ id: it.id, icon: it.icon, name: it.name, cd: it.cd });
+      if (it && !it.passive) this.abilities.push({ id: it.id, icon: it.icon, name: it.name, cd: it.cd, tool: true }); // herramientas: grupo aparte
     }
     this.abIndex = 0;
     this.toolCd = {};
@@ -473,9 +474,16 @@ export class Game {
           audio.whoosh();
           break;
         case 'power':
+          this.skills.startSpeedFx(); // animación y estela del botón de velocidad
           this.onPower(ev.power);
           if (this.hazards) this.hazards.onPower(ev.power, player.pos, this.hero);
           break;
+        case 'airJump': { // ÁMBAR: doble salto en el aire = Vuelo Libre
+          if (this.state !== 'playing' || (this.toolCd['hs:flight'] || 0) > 0) break;
+          const r = this.skills.use('flight');
+          if (r) this.toolCd['hs:flight'] = (this.hero && HERO_SKILLS_CD(this.hero.id)) * this.player.cdMul;
+          break;
+        }
         case 'fail':
           ui.banner('find', '⚠️', ev.msg);
           break;
@@ -985,6 +993,7 @@ export class Game {
     if (this.state === 'playing') this.skills.update(dtg); // habilidades del héroe (mueven al héroe antes de su actualización)
     player.update(dtg, move, chase.yaw);
     this.handlePlayerEvents();
+    player.events.length = 0;
     if (this.hazards && (this.state === 'playing' || this.state === 'ending')) this.hazards.update(dtg, this.t);
     if (this.playerHitT > 0) this.playerHitT = Math.max(0, this.playerHitT - real);
     if (this.boss && this.state === 'playing') {

@@ -38,6 +38,8 @@ export const HERO_SKILLS = {
       damage: 24, force: 16, rootT: 0.8,
       shake: 0.45,
     },
+    // ARMA — KATANA: tajo rápido en arco delante del héroe
+    katana: { id: 'katana', name: 'Katana', icon: '🗡️', cd: 1.3, prep: 0.12, swing: 0.22, recover: 0.2, range: 3.4, arcDeg: 120, damage: 8, force: 5, color: 0xd8e8ff },
   },
 
   // FENECO — HABOOB AURICULAR: tormenta de arena que avanza empujando, cegando y desviando proyectiles ligeros
@@ -67,16 +69,19 @@ export const HERO_SKILLS = {
       speed: 7, climb: 5.5, sink: 1.1, ceil: 7.5, // velocidad, subida (mantén SALTAR), descenso suave y altura máxima
       flap: 26,                     // velocidad del aleteo de las orejas
     },
+    // ARMA — RIFLE: disparo de arena compactada de largo alcance
+    rifle: { id: 'rifle', name: 'Rifle', icon: '🔫', cd: 1.1, prep: 0.2, recover: 0.25, range: 22, coneDeg: 14, damage: 7, force: 3 },
   },
 
   // ZORRA ÁRTICA — COLAS DE LAS CUATRO ESTACIONES (una por uso, en orden) + RUEDA DE LAS ESTACIONES (especial)
   kyra: {
     skill: {
-      id: 'seasons', name: 'Cuatro Estaciones', icon: '🍃', cd: 6.5,
+      id: 'seasons', name: 'Primavera', icon: '🌷', cd: 6.5,
       prep: 0.3, exec: 0.45, recover: 0.3,
-      order: ['spring', 'summer', 'autumn', 'winter'],
+      order: ['spring'],            // solo primavera (las cuatro estaciones siguen dentro de la Rueda ☸️)
+      wheelOrder: ['spring', 'summer', 'autumn', 'winter'],
       seasons: {
-        spring: { label: '🌸 Primavera', color: 0xff8ac8, range: 9, radius: 3.6, rootT: 1.9, duration: 2.2, damage: 3 },
+        spring: { label: '🌷 Primavera', color: 0xff8ac8, range: 9, radius: 3.6, rootT: 1.9, duration: 2.6, damage: 3, trees: 6, mounds: 4 },
         summer: { label: '☀️ Verano', color: 0xffb02a, radius: 7.2, damage: 9, force: 6, burnT: 1.2 },
         autumn: { label: '🍂 Otoño', color: 0xd8742a, range: 8, radius: 3.4, duration: 2.8, force: 8, damage: 2 },
         winter: { label: '❄️ Invierno', color: 0x8ad8ff, range: 9.5, coneDeg: 38, slowF: 0.45, slowT: 3.2, damage: 4, force: 2 },
@@ -104,6 +109,8 @@ export const HERO_SKILLS = {
       radius: 10, damage: 20, force: 15, burnT: 3, burnDps: 3, // expansión: daño, empuje y quemadura
       rays: 10,
     },
+    // ARMA — HACHA: hachazo de hielo hacia abajo; cristales que ralentizan
+    axe: { id: 'axe', name: 'Hacha', icon: '🪓', cd: 1.5, prep: 0.22, chop: 0.16, recover: 0.25, range: 3.2, arcDeg: 80, damage: 9, slowF: 0.6, slowT: 1.5, force: 4 },
   },
 
   // ÁGUILA — PICADO DEL TRUENO: asciende cargando electricidad y cae en picado; onda de viento y rayo al impactar
@@ -117,13 +124,19 @@ export const HERO_SKILLS = {
       waveRadius: 6.8, damage: 22, force: 14,
       shake: 0.5,                   // sacudida de cámara al impactar
     },
-    // VUELO LIBRE: despega y vuela por el mapa con vista aérea. Vuelve a pulsar para aterrizar.
+    // VUELO LIBRE (sin botón): DOBLE SALTO en el aire para despegar; aterriza al tocar el suelo
     flight: {
       id: 'flight', name: 'Vuelo Libre', icon: '🦅', cd: 4,
       takeoffT: 0.55, flyT: 40,     // despegue y tiempo máximo de vuelo
       speed: 11, climb: 7, sink: 1.6, ceil: 34, // velocidad (SPRINT = más rápido), subida (SALTAR), planeo y techo
       camDist: 15, camPitch: 0.62,  // cámara aérea
     },
+    // ESCUDO — TORNADOS ENVOLVENTES: varios tornados giran a su alrededor; la protegen y apartan a los enemigos
+    tornado: { id: 'tornado', name: 'Tornados Envolventes', icon: '🌪️', cd: 15, prep: 0.4, exec: 5, recover: 0.4, count: 4, orbit: 2.6, radius: 4.2, push: 9, damage: 1.5 },
+    // ARMA — DISCO FUTURISTA: sale disparado y rebota entre enemigos
+    disc: { id: 'disc', name: 'Disco Futurista', icon: '🥏', cd: 1.6, prep: 0.15, recover: 0.2, range: 16, speed: 30, bounces: 2, bounceRange: 8, damage: 6 },
+    // GARRAS DE VIENTO: zarpazo que lanza tres cortes de aire con forma de garra
+    claws: { id: 'claws', name: 'Garras de Viento', icon: '🦅', cd: 6, prep: 0.3, recover: 0.35, cuts: 3, speed: 20, range: 10, spreadDeg: 16, width: 1.3, damage: 4, force: 6 },
   },
 
   // DRAGÓN DE KOMODO — LENGUA CAMALEÓNICA: atrae enemigos ligeros o se impulsa hacia pesados y superficies; remata con giro de cola
@@ -155,6 +168,8 @@ export const HERO_SKILLS = {
       overshoot: 0.12,              // la lengua se pasa un poco y rebota (elasticidad)
       wobble: 0.3,                  // ondulación lateral al salir y al recogerse
     },
+    // ARMA — MARTILLO: salto corto y martillazo que hace temblar el suelo
+    hammer: { id: 'hammer', name: 'Martillo', icon: '🔨', cd: 1.8, prep: 0.3, slam: 0.18, recover: 0.3, range: 2.2, radius: 3.4, damage: 10, force: 8 },
   },
 
   // NUTRIA — BLINK ACUÁTICO: se desvanece en una salpicadura y reaparece más allá, dejando una estela de agua
@@ -181,6 +196,8 @@ export const HERO_SKILLS = {
       dist: 7, radius: 7.5,         // distancia delante del héroe y radio de succión
       pull: 7, dps: 3.5, coreRadius: 1.4, collapseDamage: 8, collapseForce: 12, // en el núcleo los esbirros desaparecen
     },
+    // ARMA — BUMERÁN: sale en arco, golpea a la ida y a la vuelta, y regresa a su mano
+    boomerang: { id: 'boomerang', name: 'Bumerán', icon: '🪃', cd: 2.2, prep: 0.15, flightT: 1.3, recover: 0.15, dist: 11, width: 3.2, hitRadius: 1.4, damage: 6, force: 4 },
   },
 
   // LINCE — PODERES DEL ECLIPSE: equilibrio entre la luz y la oscuridad
@@ -204,8 +221,25 @@ export const HERO_SKILLS = {
       prep: 1.8, exec: 1.4, recover: 0.7,
       radius: 13, damage: 22, force: 18, bolts: 6, boltDamage: 4, markT: 5,
     },
+    // ARMA — BALLESTA: virote de energía verde que atraviesa a los enemigos en línea
+    crossbow: { id: 'crossbow', name: 'Ballesta', icon: '🏹', cd: 1.2, prep: 0.25, recover: 0.2, range: 24, speed: 42, damage: 8, pierce: 2 },
+    // VISIÓN ESPECIAL: ve enemigos, trampas, personas ocultas y puntos débiles a través de las paredes
+    vision: { id: 'vision', name: 'Visión Especial', icon: '👁️', cd: 16, prep: 0.5, exec: 9, recover: 0.3, range: 130, weakMul: 1.5 },
   },
 };
+
+// ORDEN DE LOS BOTONES de cada héroe (el botón 1, VELOCIDAD, es el poder base de heroes.js).
+// 1 Velocidad · 2 Poder principal · 3 Escudo · 4 Arma · 5 Especial. Kyra tiene dos ataques y Lira dos escudos (6 botones).
+export const HERO_BUTTONS = {
+  jago: [['obsidian', 'poder'], ['rock', 'escudo'], ['katana', 'arma'], ['skill', 'especial']],
+  kairo: [['lava', 'poder'], ['geyser', 'escudo'], ['hammer', 'arma'], ['skill', 'especial']],
+  halley: [['skill', 'poder'], ['mirage', 'escudo'], ['rifle', 'arma'], ['ears', 'especial']],
+  nilo: [['tsunami', 'poder'], ['maelstrom', 'escudo'], ['boomerang', 'arma'], ['skill', 'especial']],
+  kyra: [['special', 'poder'], ['solstice', 'escudo'], ['skill', 'poder'], ['axe', 'arma'], ['aurora', 'especial']],
+  lira: [['blood', 'poder'], ['umbra', 'escudo'], ['penumbra', 'escudo'], ['crossbow', 'arma'], ['vision', 'especial']],
+  ambar: [['skill', 'poder'], ['tornado', 'escudo'], ['disc', 'arma'], ['claws', 'especial']],
+};
+export const ROLE_LABEL = { velocidad: 'VEL', poder: 'PODER', escudo: 'ESCUDO', arma: 'ARMA', especial: 'ESPECIAL' };
 
 // Ataques de jefe. Estructura común: telegraph (aviso) → attack → impacto (VFX) → recover.
 export const BOSS_ATTACKS = {

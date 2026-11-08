@@ -36,5 +36,5 @@ for (const l of LEVELS) if (ITEMS[l.reward]) ITEMS[l.reward].level = l.n;
 
 export function heroPowerItem(hero) {
   const el = ELEMENTS[hero.element];
-  return { id: 'power', icon: el.icon, name: hero.power.name, desc: hero.bio, func: hero.power.desc, cd: hero.power.cd, level: 0, base: true };
+  return { id: 'power', icon: hero.power.icon || el.icon, name: hero.power.name, desc: hero.bio, func: hero.power.desc, cd: hero.power.cd, level: 0, base: true };
 }

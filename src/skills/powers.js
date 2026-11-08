@@ -77,6 +77,8 @@ export class GeyserSkill extends Skill {
   }
   tickErupt(dt, k) {
     const d = this.def, t = this.t;
+    this.p.evadeT = Math.max(this.p.evadeT, 0.15); // ESCUDO: las columnas de magma lo protegen
+    this.combat.deflect(this.p.pos.x, this.p.pos.z, d.ring); // y frenan los proyectiles
     this.pose.sy = 0.92; this.pose.rx = 0.2;
     for (const s of this.spots) {
       const lt = t - s.delay;
@@ -242,6 +244,7 @@ export class UmbraSkill extends Skill {
   }
   tickBurst(dt, k) {
     const d = this.def, p = this.p, pose = this.pose;
+    p.evadeT = Math.max(p.evadeT, 0.15); // ESCUDO: oculta en la oscuridad del eclipse
     pose.dy = 0.5; pose.rx = -0.2; pose.spin = Math.sin(this.t * 3) * 0.2;
     this.corona.rotation.z += dt * 0.5;
     this.corona.material.opacity = 0.75 + 0.2 * Math.sin(this.t * 10);
@@ -461,6 +464,7 @@ export class MirageSkill extends Skill {
     p.pos.copy(m.pos);
     p.facing = m.group.rotation.y;
     p.vx = p.vz = 0; p.vy = 0;
+    p.evadeT = Math.max(p.evadeT, 0.8); // ESCUDO: al saltar al espejismo esquiva los golpes
     m.kill();
     this.sfx('warp');
     const q = p.pos;
@@ -510,7 +514,7 @@ export class FlightSkill extends Skill {
     p.fly = { kind: d.id, t: 0, max: d.flyT, speed: d.speed, climb: d.climb, sink: d.sink, ceil: d.ceil, lean: this.ears ? 0.25 : 0.75, minT: 0.6 };
     p.vy = d.climb * 1.4;
     p.grounded = false; p.support = null;
-    if (!this.ears) { this.camWas = { dist: this.g.chase.distTarget }; ui.banner('find', '🦅', 'SALTAR = subir · suelta = planear · SPRINT = más rápido · pulsa 🦅 otra vez para aterrizar'); }
+    if (!this.ears) { this.camWas = { dist: this.g.chase.distTarget }; ui.banner('find', '🦅', 'SALTAR = subir · suelta = planear · SPRINT = más rápido · baja al suelo para aterrizar'); }
     else ui.banner('find', '👂', 'Mantén SALTAR para subir');
     this.flapT = 0;
   }
@@ -559,7 +563,7 @@ export class FlightSkill extends Skill {
       this.earB.R.forEach((b, i) => { fx.rot(b, 0, 0, 1, i === 0 ? open + s * amp : s * amp * 0.4); fx.rot(b, 1, 0, 0, Math.cos(ph) * 0.25); });
     }
   }
-  get canRecast() { return !this.ears && this.p.fly && this.p.fly.kind === this.def.id; }
+  get canRecast() { return false; } // el águila aterriza bajando al suelo; las orejas se cansan solas
   recast() { if (this.p.fly) this.p.fly.ending = true; ui.banner('find', '🦅', 'Aterrizando…'); return true; }
   dispose() {
     this.restoreCam();
@@ -656,6 +660,8 @@ export class SolsticeSkill extends Skill {
   }
   tickAura(dt, k) {
     const d = this.def, pose = this.pose, c = this.center(0.5);
+    this.p.evadeT = Math.max(this.p.evadeT, 0.15); // ESCUDO: el aura solar la protege
+    this.combat.deflect(this.p.pos.x, this.p.pos.z, 3);
     pose.dy = 0.6 * ease(k); pose.rx = 0.15 * Math.sin(this.t * 4) * k; pose.sy = 1 + 0.06 * k;
     this.aura.mesh.position.copy(c);
     this.aura.mesh.scale.setScalar(0.7 + 0.9 * k + 0.08 * Math.sin(this.t * 14));
@@ -690,6 +696,7 @@ export class SolsticeSkill extends Skill {
   }
   tickBurst(dt, k) {
     const d = this.def;
+    this.p.evadeT = Math.max(this.p.evadeT, 0.15);
     this.pose.dy = 0.6; this.pose.rx = 0.15;
     this.aura.mesh.position.copy(this.center(0.5));
     this.dome.mesh.position.copy(this.center(0.4));
@@ -739,6 +746,7 @@ export class RockSkill extends Skill {
     const d = this.def, p = this.p, pose = this.pose, R = this.ballR();
     pose.hidden = true;
     p.moveMul = d.speedMul;
+    p.evadeT = Math.max(p.evadeT, 0.15); // ESCUDO: la coraza de roca anula los golpes
     const b = this.ball.mesh;
     b.position.set(p.pos.x, p.pos.y + R, p.pos.z);
     // rueda según lo que avanza: eje perpendicular a la velocidad
@@ -1010,6 +1018,7 @@ export class MaelstromSkill extends Skill {
   }
   tickPull(dt) {
     const d = this.def, at = this.at, c = this.combat;
+    c.deflect(this.p.pos.x, this.p.pos.z, 3.5); // ESCUDO: los proyectiles que llegan a la nutria se desvían
     for (const t of c.targets()) {
       const dx = at.x - t.pos.x, dz = at.z - t.pos.z, dist = Math.hypot(dx, dz);
       if (dist > d.radius + t.radius) continue;

@@ -465,25 +465,28 @@ export const ui = {
     const bar = $('skillbar');
     bar.innerHTML = '';
     this._abKey = null;
+    const ROLE = { velocidad: 'VEL', poder: 'PODER', escudo: 'ESCUDO', arma: 'ARMA', especial: 'ESPECIAL' };
     list.forEach((a, i) => {
+      if (a.tool && !(list[i - 1] && list[i - 1].tool)) { const sep = document.createElement('i'); sep.className = 'sk-sep'; sep.title = 'Herramientas'; bar.appendChild(sep); } // herramientas: grupo aparte
       const b = document.createElement('button');
-      b.className = 'skill' + (i === index ? ' sel' : '');
-      b.innerHTML = `<span class="sk">${i < 9 ? i + 1 : i === 9 ? 0 : ''}</span><span class="ic">${a.icon}</span><i class="cdo"></i><b class="cdt"></b>`;
-      b.title = `${i < 9 ? i + 1 : i === 9 ? 0 : ''} · ${a.name}`;
+      b.className = 'skill' + (i === index ? ' sel' : '') + (a.tool ? ' tool' : '');
+      const role = a.role ? `<em class="rl rl-${a.role}">${ROLE[a.role] || ''}</em>` : '';
+      b.innerHTML = `<span class="sk">${i < 9 ? i + 1 : i === 9 ? 0 : ''}</span><span class="ic">${a.icon}</span>${role}<i class="cdo"></i><b class="cdt"></b>`;
+      b.title = `${i < 9 ? i + 1 : i === 9 ? 0 : ''} · ${a.name}${a.role ? ' (' + a.role + ')' : a.tool ? ' (herramienta)' : ''}`;
       b.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); onPick(i); });
       bar.appendChild(b);
     });
     bar.style.display = list.length > 1 ? 'flex' : 'none';
   },
   selectAbilityUI(i) {
-    [...$('skillbar').children].forEach((b, k) => b.classList.toggle('sel', k === i));
+    [...$('skillbar').querySelectorAll('.skill')].forEach((b, k) => b.classList.toggle('sel', k === i));
     this._abKey = null;
   },
   // r: fracción de recarga (1 = recién usado) · secs: segundos que faltan · live: poder activo que admite otra pulsación
   setAbilityCds(arr, secs = [], live = []) {
-    const bar = $('skillbar');
+    const btns = $('skillbar').querySelectorAll('.skill');
     arr.forEach((r, i) => {
-      const b = bar.children[i];
+      const b = btns[i];
       if (!b) return;
       const el = b.querySelector('.cdo'), tx = b.querySelector('.cdt');
       if (el) el.style.height = `${Math.round(Math.max(0, Math.min(1, r)) * 100)}%`;
