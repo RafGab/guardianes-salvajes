@@ -17,7 +17,9 @@ import { Combat } from './combat.js';
 import { HeroSkills } from './skills/hero.js';
 import { Vfx2 } from './skills/vfx2.js';
 import { Team } from './team.js';
-import { TEAM, HERO_SKILLS } from './skills/config.js';
+import { TEAM, HERO_SKILLS, HEALTH, HEAL_ITEMS, MINIONS, DESTRUCTIBLE } from './skills/config.js';
+import { Bag, healAmount } from './health.js';
+import { Pickups } from './pickups.js';
 const HERO_SKILLS_CD = (id) => (HERO_SKILLS[id] && HERO_SKILLS[id].flight ? HERO_SKILLS[id].flight.cd : 4);
 import { IS_TOUCH } from './platform.js';
 const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
@@ -94,6 +96,9 @@ export class Game {
     this.combat = new Combat(this);
     this.skills = new HeroSkills(this);
     this.team = new Team();          // equipo del combate de jefe (vida por héroe, cambio en combate)
+    this.bag = new Bag();            // mochila de recuperación (bebidas y botiquines)
+    this.pickups = new Pickups(this); // bebidas y botiquines repartidos por el mapa
+    this.life = { id: null, hp: HEALTH.max, max: HEALTH.max, ko: false }; // vida del héroe en exploración
     this.cdByHero = {};              // recargas guardadas de los héroes en reserva
     this.onBossPrep = null;          // main.js: abre la pantalla de selección/formación del equipo
     this.bossIntroT = 0;
@@ -320,7 +325,13 @@ export class Game {
   addEco(n) {
     this.stats.eco += n;
   }
+  // Un obstáculo de madera se vuelve objetivo destructible para los poderes (el hacha lo sigue rompiendo igual)
+  registerObstacle(o) {
+    if (!o.alive || o.breakBy !== 'axe' || o.prop) return;
+    o.prop = this.combat.addProp({ x: o.x, y: o.y, z: o.z, radius: Math.max(0.9, Math.min(o.w, o.d) * 0.6), hp: DESTRUCTIBLE.obstacle, height: o.h, label: 'Obstáculo', onBreak: () => this.world.breakObstacle(o) });
+  }
   onObstacleBroken(o) {
+    if (o.prop) { o.prop.dead = true; this.combat.removeProp(o.prop); }
     const { fx } = this;
     for (let i = 0; i < 14; i++) { fx.dustPuff(o.x, o.y + 0.5, o.z, 1.2); fx.rock(o.x, o.y + 0.6, o.z); }
     for (let i = 0; i < 6; i++) fx.sparkle(o.x, o.y + 1, o.z, o.breakBy === 'wind' ? 0xdff2ff : 0xd8b878, 2.4);
@@ -386,6 +397,7 @@ export class Game {
     this.boss = null;
     this.skills.reset(); // limpia habilidades, esbirros, proyectiles y efectos de la partida anterior
     this.combat.reset();
+    this.combat.clearProps();
     this.vfx.clear();
     this.team.clear();
     this.cdByHero = {};
@@ -417,6 +429,14 @@ export class Game {
     world.scatterObstacles(level.obstacles, tools);
     this.spawnVictims(slots);
     this.total = this.victims.length;
+    // vida del héroe (se conserva entre partidas) y objetos de recuperación del mapa
+    this.life = { id: def.id, hp: Save.heroHp(def.id, HEALTH.max), max: HEALTH.max, ko: false };
+    this.hpSaveT = 0; this.hpDirty = false; this.dotAcc = 0; this.blockT = 0; this.bossFxDone = false;
+    this.bag.load();
+    ui.bagCounts(this.bag);
+    this.pickups.placeLevel(level, world, slots);
+    // obstáculos de madera (ramas, tablones, troncos): también se rompen con los poderes
+    for (const o of world.obstacles) this.registerObstacle(o);
 
     if (this.hazards) this.hazards.dispose();
     this.hazards = createHazards(level.scenario, {
@@ -672,6 +692,7 @@ export class Game {
   // Comienza el combate con el equipo elegido (ids en orden; el primero sale al campo)
   startBoss(ids) {
     const { scene, world, player, chase, camera } = this;
+    if (!this.team.on) this.saveHp(true); // la vida de la exploración pasa al combate
     if (ids && ids.length) this.team.set(ids);
     else if (!this.team.on) this.team.set([this.hero.id]);
     const leader = this.team.current.id;
@@ -688,6 +709,12 @@ export class Game {
     player.locked = true;
     this.boss = createBoss(this.mission.boss, { scene, world, player, chase, camera, fx: this.fx, audio, ui, game: this }, arena);
     this.boss.introHold = TEAM.introT; // presentación: el jefe no ataca hasta que aparece el equipo
+    // vida adaptada a la dificultad: +6 % por cada nivel
+    const hk = 1 + (this.mission.n - 1) * 0.06;
+    this.boss.hpMax = Math.round(this.boss.hpMax * hk);
+    this.boss.hp = this.boss.hpMax;
+    this.boss.title = this.mission.bossTitle || '';
+    this.pickups.placeArena(this.mission, arena);
     if (this.mission.ally) this.ally = createAlly(this.mission.ally, { scene, world, player, chase, camera, fx: this.fx, audio, ui, game: this });
     this.setBossCamera();
     ui.setGaugeMode(this.mission);
@@ -755,7 +782,7 @@ export class Game {
     if (this.bossHudAcc < 0.06) return;
     this.bossHudAcc = 0;
     const b = this.boss;
-    ui.setBossBar({ icon: b.icon, name: b.name, hp: b.hp, max: b.hpMax, phase: b.phase, slow: b.st.slow > 0, root: b.st.root > 0, blind: b.st.blind > 0, mark: b.st.mark > 0, hurt: b.hitFlash > 0.15 });
+    ui.setBossBar({ icon: b.icon, name: b.name, title: b.title, hp: b.hp, max: b.hpMax, phase: b.phase, slow: b.st.slow > 0, root: b.st.root > 0, blind: b.st.blind > 0, mark: b.st.mark > 0, hurt: b.hitFlash > 0.15 });
     const act = b.actionLabel ? b.actionLabel() : '';
     if (act !== this.lastBossAction) {
       this.lastBossAction = act;
@@ -832,7 +859,7 @@ export class Game {
   // Golpe al héroe. `dmg` en unidades de golpe (1 = golpe normal). En el combate de jefe resta vida al héroe en el campo.
   hitPlayer(dmg, fromPos) {
     if (this.playerHitT > 0) return;
-    if (this.player.shieldT > 0 || this.player.evadeT > 0) return; // el escudo y la esquiva lunar anulan el golpe
+    if (this.player.shieldT > 0 || this.player.evadeT > 0) { this.shieldBlock(fromPos); return; } // el escudo anula el golpe
     if (this.team.on && this.boss) {
       if (this.team.graceT > 0 || this.bossIntroT > 0 || this.state !== 'playing') return;
       const phase = this.boss.phase || 1;
@@ -848,18 +875,144 @@ export class Game {
       ui.setOverlay('heat', 1);
       setTimeout(() => ui.setOverlay('heat', 0), 220);
       audio.noiseBurst(0.3, 180, 0.4, 'lowpass');
+      this.hpDirty = true;
       if (r.ko) this.heroDown(who, r.wipe);
       return;
     }
-    this.playerHitT = 0.9;
-    this.score = Math.max(0, this.score - 10);
-    ui.setScore(this.score);
+    this.hurtHero(Math.round(dmg * TEAM.hitDamage), { from: fromPos, label: '💥 ¡Golpe recibido!', sub: 'Aléjate y busca el momento para contraatacar' });
+  }
+
+  /* ---------- vida del héroe ---------- */
+  // Registro de vida del héroe en el campo: en el combate de jefe, el miembro activo del equipo
+  get hpRef() { return this.team.on ? this.team.current : this.life; }
+  get shielded() { return this.player.shieldT > 0 || this.player.evadeT > 0; }
+
+  // Daño de los peligros del escenario (réplicas, escombros, fuego, lava...). dot = daño continuo por segundo ya multiplicado por dt.
+  // Devuelve true si el héroe ha recibido daño.
+  hurtHero(n, { from = null, label = '', sub = '', dot = false } = {}) {
+    if (this.state !== 'playing' || this.ended || n <= 0) return false;
+    if (this.shielded) { if (!dot) this.shieldBlock(from); return false; }
+    if (!dot && this.playerHitT > 0) return false;
+    if (this.team.on && this.boss) {
+      if (this.team.graceT > 0 || this.bossIntroT > 0) return false;
+      const idx = this.team.active, who = this.hero.name;
+      const r = this.team.hit(n);
+      this.hpDirty = true;
+      this.hurtFeedback(n, dot);
+      if (!dot) ui.hurtTeamCard(idx);
+      if (r.ko) this.heroDown(who, r.wipe);
+      return true;
+    }
+    const L = this.life;
+    if (L.hp <= 0) return false;
+    L.hp = Math.max(0, L.hp - n);
+    this.hpDirty = true;
+    this.hurtFeedback(n, dot);
+    if (!dot) {
+      this.score = Math.max(0, this.score - 10);
+      ui.setScore(this.score);
+      if (label) ui.banner('find', label, sub || `−${Math.round(n)} de vida`);
+    }
+    if (L.hp <= 0) this.heroDefeated();
+    return true;
+  }
+  hurtFeedback(n, dot) {
+    const p = this.player;
+    if (dot) {
+      this.dotAcc += n;
+      if (this.dotAcc >= 3) { this.floatAt(p.pos, p.H + 0.3, `-${Math.round(this.dotAcc)}`, 'taken'); this.dotAcc = 0; }
+      ui.hpHurt(true);
+      return;
+    }
+    this.playerHitT = HEALTH.hitGrace;
+    this.floatAt(p.pos, p.H + 0.3, `-${Math.round(n)}`, 'taken');
     this.chase.shake(0.22);
     this.slowT = Math.max(this.slowT, 0.35);
     ui.setOverlay('heat', 1);
     setTimeout(() => ui.setOverlay('heat', 0), 220);
+    ui.hpHurt();
     audio.noiseBurst(0.3, 180, 0.4, 'lowpass');
-    ui.banner('find', '💥 ¡Golpe recibido!', 'Aléjate y busca el momento para contraatacar');
+    for (let j = 0; j < 10; j++) this.fx.sparkle(p.pos.x, p.pos.y + 0.4 + Math.random() * p.H * 0.8, p.pos.z, 0xff5a4a, 2.4);
+  }
+  // Golpe detenido por el escudo: destello azul, anillo y texto «BLOQUEADO»
+  shieldBlock(from) {
+    if (this.blockT > 0) return;
+    this.blockT = 0.35;
+    const p = this.player.pos, H = this.player.H;
+    let x = p.x, z = p.z;
+    if (from) { const dx = from.x - p.x, dz = from.z - p.z, l = Math.hypot(dx, dz) || 1; x += (dx / l) * 0.8; z += (dz / l) * 0.8; }
+    this.vfx.ring(p.x, null, p.z, { r0: 0.6, r1: 2.4, dur: 0.4, color: 0x8ad8ff });
+    this.vfx.sparks(x, p.y + H * 0.55, z, 0xbfeaff, 16, 3.2);
+    this.floatAt(p, H + 0.4, '🛡️ BLOQUEADO', 'block');
+    ui.hpBlock();
+    audio.sfx('chime');
+  }
+  // Vida a cero fuera de un jefe: derrota
+  heroDefeated() {
+    const p = this.player.pos;
+    for (let j = 0; j < 30; j++) this.fx.sparkle(p.x, p.y + Math.random() * this.player.H, p.z, 0xff6a5a, 2.8);
+    this.saveHp(true);
+    this.end(false, `${this.hero.name} se ha quedado sin vida`);
+  }
+  // Usar un objeto de la mochila sobre el héroe en el campo
+  useItem(type) {
+    const it = HEAL_ITEMS[type];
+    if (!it) return { ok: false };
+    if (this.state !== 'playing' || this.ended) return { ok: false, msg: 'Ahora no se puede usar' };
+    if (this.bag.count(type) <= 0) return { ok: false, msg: 'No te quedan unidades' };
+    const r = this.hpRef;
+    if (!r || r.ko || r.hp <= 0) return { ok: false, msg: 'El héroe no puede usarlo ahora' };
+    if (r.hp >= r.max) { ui.banner('find', '❤️ Vida completa', 'Guárdalo para cuando lo necesites'); return { ok: false, msg: 'La vida ya está completa' }; }
+    const amt = healAmount(type, r.hp, r.max);
+    if (amt <= 0 || !this.bag.take(type)) return { ok: false };
+    r.hp = Math.min(r.max, r.hp + amt);
+    this.hpDirty = true;
+    this.saveHp(true);
+    this.healFx(amt, it);
+    ui.banner('good', `${it.icon === '✚' ? '🩹' : it.icon} ${it.name}`, `+${Math.round(amt)} de vida`);
+    if (this.team.on) ui.setTeamHud(this.team.members, this.team.active, (i) => this.switchTeamTo(i));
+    return { ok: true, amt };
+  }
+  healFx(amt, it) {
+    const p = this.player.pos, H = this.player.H;
+    const col = new THREE.Color(it.color).getHex();
+    const special = it.pct != null;
+    this.floatAt(p, H + 0.3, `+${Math.round(amt)}`, 'heal');
+    for (let j = 0; j < (special ? 40 : 22); j++) this.fx.sparkle(p.x + (Math.random() - 0.5) * 1.4, p.y + Math.random() * H, p.z + (Math.random() - 0.5) * 1.4, j % 3 ? 0x6aff9a : col, special ? 3.2 : 2.2);
+    this.vfx.ring(p.x, null, p.z, { r0: 0.4, r1: special ? 3.2 : 2, dur: special ? 0.8 : 0.5, color: col });
+    if (special) this.vfx.ring(p.x, null, p.z, { r0: 0.2, r1: 2.2, dur: 1.1, color: 0x6aff9a });
+    ui.hpHeal();
+    audio.sfx(special ? 'aurora' : 'shimmer');
+  }
+  // Guarda la vida actual del héroe (o de todo el equipo) en la partida
+  saveHp(force = false) {
+    if (!this.hpDirty && !force) return;
+    this.hpDirty = false;
+    if (this.team.on) for (const m of this.team.members) Save.setHeroHp(m.id, m.ko ? 0 : m.hp);
+    else if (this.life.id) Save.setHeroHp(this.life.id, this.life.hp);
+  }
+  // Recogida de un objeto del mapa → mochila
+  onPickup(p) {
+    if (!this.bag.add(p.type)) return false;
+    const it = HEAL_ITEMS[p.type];
+    const col = new THREE.Color(it.color).getHex();
+    for (let j = 0; j < 18; j++) this.fx.sparkle(p.x, p.y + 0.5 + Math.random() * 0.8, p.z, col, 2.6);
+    this.vfx.ring(p.x, null, p.z, { r0: 0.3, r1: 1.6, dur: 0.4, color: col });
+    this.floatAt({ x: p.x, y: p.y, z: p.z }, 1.6, `🎒 +1 ${it.short}`, 'pick');
+    ui.banner('good', `🎒 ${it.name}`, `Guardado en la mochila (${this.bag.count(p.type)}/${this.bag.cap(p.type)})`);
+    ui.bagCounts(this.bag);
+    audio.found();
+    return true;
+  }
+  onPickupFull(p) {
+    const it = HEAL_ITEMS[p.type];
+    ui.banner('find', '🎒 Mochila llena', `${it.name}: ${this.bag.count(p.type)}/${this.bag.cap(p.type)} · úsalo antes de recoger más`);
+  }
+  // NPC hostil derrotado: deja de combatir; a veces suelta una bebida o un botiquín amarillo
+  onNpcDefeated(m) {
+    ui.battleLog(`💥 ${m.cat.name} derrotado`, 'hero');
+    const chance = m.kind === 'bruto' ? 0.6 : MINIONS.dropChance;
+    if (Math.random() < chance) this.pickups.drop(m.kind === 'bruto' ? 'kit25' : 'drink', m.pos.x, m.pos.z);
   }
   // Un héroe cae: entra el siguiente disponible; si no queda ninguno, el equipo es derrotado
   heroDown(name, wipe) {
@@ -881,6 +1034,8 @@ export class Game {
   }
   finishBoss() {
     this.bossDone = true;
+    Save.markBoss(this.mission.boss);
+    this.saveHp(true);
     this.addScore(300);
     ui.banner('good', `🏆 ¡${this.boss.name} derrotado!`, '+300 puntos de bonus');
     if (this.boss) this.boss.dispose();
@@ -1006,6 +1161,20 @@ export class Game {
       if (this.boss.state === 'dead' && this.boss.deathT > 1.1 && !this.bossDone) this.finishBoss();
     }
     if (this.ally && this.state === 'playing') this.ally.update(dtg);
+    // derrota del jefe: estallido de victoria
+    if (this.boss && this.boss.state === 'dead' && !this.bossFxDone) {
+      this.bossFxDone = true;
+      const b = this.boss, bp = b.pos, h = b.S ? b.S.height : 3;
+      for (let j = 0; j < 60; j++) this.fx.sparkle(bp.x + (Math.random() - 0.5) * 3, bp.y + Math.random() * h, bp.z + (Math.random() - 0.5) * 3, j % 2 ? 0xffe070 : b.color || 0xff6a1a, 4.5);
+      this.vfx.ring(bp.x, null, bp.z, { r0: 1, r1: 9, dur: 1.0, color: 0xffe070 });
+      this.vfx.ring(bp.x, null, bp.z, { r0: 0.5, r1: 6, dur: 1.4, color: b.color || 0xff6a1a });
+      this.chase.shake(0.5);
+      ui.bossDefeatedFx();
+    }
+    this.blockT = Math.max(0, (this.blockT || 0) - real);
+    if (this.state === 'playing') this.pickups.update(dtg, player, (p) => this.onPickup(p), (p) => this.onPickupFull(p));
+    this.hpSaveT = (this.hpSaveT || 0) + real;
+    if (this.hpSaveT > 1.5) { this.hpSaveT = 0; this.saveHp(); }
     this.combat.update(dtg);
     this.vfx.update(dtg);
     this.vfx2.update(dtg);
@@ -1302,6 +1471,18 @@ export class Game {
   updateHud(real, dSafe) {
     const { player, world } = this;
     ui.setTime(this.missionTime - this.t);
+    // barra de vida del héroe (siempre conectada a la vida real) y barras de los NPC / escombros dañados
+    const r = this.hpRef;
+    if (r) ui.setHeroHp(r.hp, r.max);
+    const bars = [];
+    for (const t of this.combat.targets()) {
+      if (t.heavy && !t.prop) continue; // el jefe tiene su propia barra
+      if (t.prop && t.hp >= t.hpMax) continue; // escombros: solo cuando están dañados
+      const sp = this.screenOf(t.pos, t.barH || 1.4);
+      if (!sp) continue;
+      bars.push({ t, x: sp.x, y: sp.y, pct: t.hp / t.hpMax, label: t.prop ? t.label : t.cat.name, prop: !!t.prop, big: t.kind === 'bruto' });
+    }
+    ui.npcBars(bars);
     // anillo de recarga de la habilidad seleccionada
     const a = this.abilities[this.abIndex];
     let ratio = 0;
@@ -1341,6 +1522,7 @@ export class Game {
   /* ---------- final ---------- */
   end(success, reason) {
     if (this.ended) return;
+    this.saveHp(true);
     this.ended = true;
     this.success = success;
     this.state = 'ending';

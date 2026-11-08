@@ -113,6 +113,7 @@
         <div class="hero-info">
           <div id="hud-name" class="hero-name">Lira</div>
           <div id="hud-el" class="hero-el">🌎 Tierra</div>
+          <div id="hp" class="hp ok" title="Vida del héroe"><div class="hp-ghost" id="hp-ghost"></div><div class="hp-fill" id="hp-fill"></div><div class="hp-txt"><span>❤</span> <b id="hp-val">100</b> / <span id="hp-max">100</span></div></div>
         </div>
         <div id="power-btn" class="power-btn">
           <svg viewBox="0 0 44 44"><circle class="bg" cx="22" cy="22" r="19"/><circle id="power-ring" class="fg" cx="22" cy="22" r="19"/></svg>
@@ -147,20 +148,29 @@
 
       <!-- Combate de jefe: barra del jefe, equipo, registro y números de daño -->
       <div id="bossbar" class="bossbar">
-        <div class="bb-head"><span id="bb-icon" class="bb-icon">👹</span><span id="bb-name" class="bb-name">JEFE</span><span class="bb-tag">JEFE DE ZONA</span><span id="bb-phase" class="bb-phase"></span></div>
+        <div class="bb-head"><span id="bb-icon" class="bb-icon">👹</span><span class="bb-names"><span id="bb-name" class="bb-name">JEFE</span><span id="bb-title" class="bb-title"></span></span><span class="bb-tag">JEFE DE ZONA</span><span id="bb-phase" class="bb-phase"></span></div>
         <div class="bb-bar"><div id="bb-ghost" class="bb-ghost"></div><div id="bb-fill" class="bb-fill"></div><div id="bb-text" class="bb-text">100 / 100</div></div>
         <div class="bb-foot"><span id="bb-action" class="bb-action"></span><span id="bb-status" class="bb-status"></span></div>
       </div>
       <div id="teamhud" class="teamhud"></div>
       <div id="battlelog" class="battlelog"></div>
+      <div id="npcbars" class="npcbars"></div>
       <div id="floaters" class="floaters"></div>
+      <!-- Mochila de recuperación: botón propio (no sustituye ningún botón de combate) y panel con los 6 tipos -->
+      <button id="bag-btn" class="bag-btn" type="button" title="Mochila (B)"><span class="bag-ico">🎒</span><span id="bag-total" class="bag-total">0</span><kbd class="bag-key">B</kbd></button>
+      <div id="bag" class="bag panel" aria-hidden="true">
+        <div class="bag-head"><span>🎒 MOCHILA DE RECUPERACIÓN</span><button id="bag-close" class="bag-close" type="button" aria-label="Cerrar">✕</button></div>
+        <div class="bag-hp"><span>❤ Vida</span><b id="bag-hp">100 / 100</b></div>
+        <div id="bag-list" class="bag-list"></div>
+        <div class="bag-foot">Toca un objeto para usarlo · se guardan solos al recogerlos</div>
+      </div>
       <div id="skillbar" class="skillbar"></div>
       <div id="prompt" class="prompt"></div>
       <div id="banner" class="banner"></div>
       <div id="alert" class="alert"></div>
       <div id="tip" class="tip"><div class="tip-head">💡 CONSEJO</div><div id="tip-text"></div><div class="tip-bar"><i id="tip-progress"></i></div></div>
       <div id="edge-markers"></div>
-      <div class="controls-hint">WASD mover · ESPACIO saltar · SHIFT correr · 1 velocidad 2 poder 3 escudo 4 arma 5 especial · F rescatar · E interactuar · C cámara · ESC pausa</div>
+      <div class="controls-hint">WASD mover · ESPACIO saltar · SHIFT correr · 1 velocidad 2 poder 3 escudo 4 arma 5 especial · B mochila · F rescatar · E interactuar · C cámara · ESC pausa</div>
       <div id="click-hint" class="click-hint">Haz clic en la pantalla para controlar la cámara con el ratón</div>
     </section>
 
@@ -211,13 +221,14 @@
           <div>Kyra y Lira tienen 6 botones · <kbd>Q</kbd> repite el último · herramientas detrás de la raya</div>
           <div>Pulsa otra vez: saltar a un espejismo o salir de la roca</div>
           <div>Ámbar: doble <kbd>Espacio</kbd> en el aire para volar · mantén para subir</div>
+          <div><kbd>B</kbd> Mochila: bebidas y botiquines para recuperar vida</div>
           <div><kbd>F</kbd> Rescatar a quien tengas cerca</div>
           <div><kbd>E</kbd> Interactuar / leer carteles</div>
           <div><kbd>C</kbd> Centrar la cámara</div>
           <div><kbd>Rueda</kbd> Acercar / alejar cámara</div>
           <div><kbd>Esc</kbd> Pausa · <kbd>M</kbd> Sonido</div>
         </div>
-        <p class="how-touch">📱 <b>En el móvil:</b> arrastra a la izquierda para moverte (empuja al máximo para correr), arrastra a la derecha para mover la cámara y usa los botones: ⬆ saltar, ⚡ poder, los iconos de arriba a la derecha (cada poder especial, con su recarga), 🐾 rescatar, 💡 interactuar, » correr, ⏸ pausa.</p>
+        <p class="how-touch">📱 <b>En el móvil:</b> arrastra a la izquierda para moverte (empuja al máximo para correr), arrastra a la derecha para mover la cámara y usa los botones: ⬆ saltar, ⚡ poder, los iconos de arriba a la derecha (cada poder especial, con su recarga), 🐾 rescatar, 💡 interactuar, » correr, ⏸ pausa, 🎒 mochila (bebidas y botiquines).</p>
         <p class="how-note">Trepa a coches, contenedores, cajas y balcones tocándolos mientras avanzas. Con mando: stick izquierdo mover, derecho cámara, A saltar, X poder, B rescatar, Y interactuar.</p>
         <button id="btn-how-close" class="btn primary">Entendido</button>
       </div>

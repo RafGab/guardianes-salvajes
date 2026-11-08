@@ -15,6 +15,10 @@ const DEFAULT = () => ({
   eco: 0,
   badges: [],
   bestScore: {},
+  health: {}, // vida actual de cada héroe (id → puntos)
+  bag: {}, // mochila: bebidas y botiquines (tipo → unidades)
+  picked: {}, // objetos ya recogidos de cada nivel (nivel → ids) para no duplicarlos
+  bosses: [], // jefes derrotados (ids)
 });
 
 const BADGES = {
@@ -38,6 +42,8 @@ export const Save = {
     try {
       const raw = localStorage.getItem(KEY);
       if (raw) data = { ...DEFAULT(), ...JSON.parse(raw) };
+      // saneado: la mochila nunca supera su capacidad ni tiene cantidades negativas
+      for (const k of Object.keys(data.bag || {})) data.bag[k] = Math.max(0, Math.min(3, Math.floor(data.bag[k] || 0)));
     } catch (e) { data = DEFAULT(); }
     return data;
   },
@@ -51,6 +57,19 @@ export const Save = {
   get team() { return data.team || []; },
   setTeam(ids) { data.team = ids.slice(); persist(); },
   stars(levelId) { return data.stars[levelId] || 0; },
+  // vida del héroe (si estaba a 0 vuelve con la vida completa)
+  heroHp(id, max) { const v = data.health?.[id]; return v > 0 ? Math.min(max, v) : max; },
+  setHeroHp(id, hp) { data.health = data.health || {}; data.health[id] = Math.max(0, Math.round(hp * 10) / 10); persist(); },
+  get bag() { return { ...(data.bag || {}) }; },
+  setBag(bag) { data.bag = { ...bag }; persist(); },
+  pickedIn(levelId) { return new Set((data.picked && data.picked[levelId]) || []); },
+  markPicked(levelId, pid) {
+    data.picked = data.picked || {};
+    const l = data.picked[levelId] || (data.picked[levelId] = []);
+    if (!l.includes(pid)) { l.push(pid); persist(); }
+  },
+  bossDefeated(id) { return (data.bosses || []).includes(id); },
+  markBoss(id) { data.bosses = data.bosses || []; if (!data.bosses.includes(id)) { data.bosses.push(id); persist(); } },
   toolSet() { return new Set(data.items); },
 
   // Devuelve { newReward, unlockedNext, newBadges }

@@ -39,6 +39,17 @@ Lira (Lince · Tierra), Kairo (Komodo · Fuego), Jago (Jaglión · Roca), Halley
 
 Números en `src/skills/config.js`, lógica en `src/skills/hero.js`, `src/skills/powers.js` y `src/skills/powers2.js`, efectos en `src/skills/vfx.js` y `src/skills/vfx2.js`. Los poderes especiales tienen sonidos sintetizados propios (`Audio3D.sfx`); el resto del juego sigue solo con la melodía.
 
+## Vida, escudo y mochila
+- **Vida del héroe** (100): barra permanente bajo el nombre (verde > 60 %, amarilla 30–60 %, roja < 30 %). Se pierde con los golpes del jefe y sus esbirros y con los peligros del escenario (escombros de las réplicas, objetos que vuelan, rocas volcánicas, fuego, lava). A 0: derrota. Se guarda por héroe; si cae, vuelve con la vida completa.
+- **Escudo**: el 🛡️ Escudo elemental y el botón 3 de cada héroe (mientras está activo) bloquean los golpes y muestran «BLOQUEADO».
+- **NPC hostiles** con vida y barra: Esbirro (12) y Bruto (34, fase final del jefe). Al caer pueden soltar una bebida o un botiquín amarillo.
+- **Jefes**: barra especial con nombre, título y fases; vida +6 % por nivel (Minotauro 100 … Cataclismo 281).
+- **Destructibles**: los poderes y armas rompen escombros del terremoto y obstáculos de madera (ramas, tablones, troncos). Los montones de arena/ceniza siguen necesitando viento.
+- **Mochila** (botón 🎒 o tecla **B**): 🥤 bebida +20, botiquín +50, amarillo 25 %, azul 50 %, rojo 75 %, verde 100 % (de la vida máxima). Máximo 3 de cada tipo, almacenamientos independientes; si está lleno, el objeto se queda en el suelo. Nunca se consume con la vida completa.
+- Cada nivel reparte 12 objetos (uno o dos cerca del jefe) y 2 más dentro de la arena. Los recogidos no vuelven a aparecer.
+
+Valores en `src/skills/config.js` (`HEALTH`, `HEAL_ITEMS`, `PICKUP_SPAWN`, `NPC_KINDS`, `DESTRUCTIBLE`); lógica en `src/game.js`, `src/health.js` y `src/pickups.js`.
+
 ## Ejecutar
     npm install
     npm run dev   # http://127.0.0.1:5180

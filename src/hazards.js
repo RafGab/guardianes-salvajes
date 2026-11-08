@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { CFG, terrainH } from './terrain.js';
 import { clamp, damp, smoothstep, makeRng, TAU } from './utils.js';
 import { VolcanoHazard, HurricaneHazard, SandstormHazard, DroughtHazard } from './hazards2.js';
+import { HEALTH, DESTRUCTIBLE } from './skills/config.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 
@@ -158,6 +159,7 @@ class FireHazard {
         const dp = Math.hypot(player.pos.x - z.x, player.pos.z - z.z);
         const flying = player.pos.y > z.y + 3.2;
         if (dp < z.r && !immune && !flying) {
+          ctx.game.hurtHero(HEALTH.fireDps * dt, { dot: true });
           const nx = (player.pos.x - z.x) / (dp || 1), nz = (player.pos.z - z.z) / (dp || 1);
           player.pos.x += nx * 7 * dt;
           player.pos.z += nz * 7 * dt;
@@ -255,7 +257,21 @@ class QuakeHazard {
     this.nextQ = this.quakes[0].t;
   }
 
+  breakDebris(d) {
+    const i = this.debris.indexOf(d);
+    if (i >= 0) this.debris.splice(i, 1);
+    this.removeDebris(d);
+    for (let q = 0; q < 8; q++) this.ctx.fx.rock(d.x, d.y, d.z);
+  }
+  breakStatic(o) {
+    const i = this.static.indexOf(o);
+    if (i >= 0) this.static.splice(i, 1);
+    this.removeStatic(o);
+    for (let q = 0; q < 10; q++) { this.ctx.fx.rock(o.x, o.mesh.position.y, o.z); this.ctx.fx.dustPuff(o.x, o.mesh.position.y, o.z, 1.8); }
+    this.ctx.world.recomputeReach && 0;
+  }
   removeDebris(d) {
+    if (d.prop) { d.prop.dead = true; this.ctx.game.combat.removeProp(d.prop); }
     this.group.remove(d.mesh);
     if (d.solid) {
       const i = this.ctx.world.dynSolids.indexOf(d.solid);
@@ -263,6 +279,7 @@ class QuakeHazard {
     }
   }
   removeStatic(o) {
+    if (o.prop) { o.prop.dead = true; this.ctx.game.combat.removeProp(o.prop); }
     this.group.remove(o.mesh);
     const i = this.ctx.world.dynSolids.indexOf(o.solid);
     if (i >= 0) this.ctx.world.dynSolids.splice(i, 1);
@@ -320,7 +337,10 @@ class QuakeHazard {
       this.group.add(m);
       const solid = { x0: x - w / 2 * 0.95, x1: x + w / 2 * 0.95, y0: gy - 1, y1: gy + h - 0.1, z0: z - d / 2 * 0.95, z1: z + d / 2 * 0.95, tag: 'rubble', dyn: true, dx: 0, dy: 0, dz: 0, _q: 0 };
       world.dynSolids.push(solid);
-      this.static.push({ mesh: m, solid, x, z });
+      const o = { mesh: m, solid, x, z };
+      // bloque de escombros destructible con los poderes
+      o.prop = this.ctx.game.combat.addProp({ x, y: gy, z, radius: Math.min(w, d) * 0.6, hp: DESTRUCTIBLE.rubble, height: h, label: 'Escombros', onBreak: () => this.breakStatic(o) });
+      this.static.push(o);
       for (let q = 0; q < 6; q++) fx.dustPuff(x, gy + 0.5, z, 1.8);
     }
   }
@@ -398,13 +418,21 @@ class QuakeHazard {
         d.mesh.rotation.x += dt * 2;
         // ¿golpea al héroe?
         const dx = d.x - player.pos.x, dz = d.z - player.pos.z;
-        if (!(player.shieldT > 0) && Math.abs(dx) < 1.3 && Math.abs(dz) < 1.3 && d.y < player.pos.y + 2.4 && d.y > player.pos.y - 0.2) {
-          const l = Math.hypot(dx, dz) || 1;
-          player.vx = -dx / l * 9;
-          player.vz = -dz / l * 9;
-          chase.shake(0.4);
-          audio.noiseBurst(0.3, 300, 0.4, 'lowpass');
-          ctx.ui.banner('find', '💥 ¡Cuidado!', 'Aléjate de los objetos que caen');
+        if (!d.hitDone && Math.abs(dx) < 1.3 && Math.abs(dz) < 1.3 && d.y < player.pos.y + 2.4 && d.y > player.pos.y - 0.2) {
+          d.hitDone = true;
+          if (ctx.game.shielded) {
+            // ESCUDO: el escombro rebota y se deshace sin hacer daño
+            ctx.game.shieldBlock({ x: d.x, z: d.z });
+            for (let q = 0; q < 6; q++) fx.rock(d.x, d.y, d.z);
+            this.removeDebris(d); this.debris.splice(i, 1); continue;
+          } else {
+            const l = Math.hypot(dx, dz) || 1;
+            player.vx = -dx / l * 9;
+            player.vz = -dz / l * 9;
+            chase.shake(0.4);
+            audio.noiseBurst(0.3, 300, 0.4, 'lowpass');
+            ctx.game.hurtHero(HEALTH.debris, { from: { x: d.x, z: d.z }, label: '💥 ¡Escombro!', sub: 'Aléjate de los objetos que caen · usa un escudo' });
+          }
         }
         const gy = Math.max(terrainH(d.x, d.z), this.supportAt(d.x, d.z, d.y));
         if (d.y - d.size * 0.4 <= gy) {
@@ -418,6 +446,8 @@ class QuakeHazard {
           if (d.size > 0.9) {
             d.solid = { x0: d.x - d.size * 0.6, x1: d.x + d.size * 0.6, y0: gy - 1, y1: gy + d.size * 0.7, z0: d.z - d.size * 0.6, z1: d.z + d.size * 0.6, tag: 'rubble', dyn: true, dx: 0, dy: 0, dz: 0, _q: 0 };
             ctx.world.dynSolids.push(d.solid);
+            // escombro destructible con los poderes
+            d.prop = ctx.game.combat.addProp({ x: d.x, y: gy, z: d.z, radius: d.size * 0.8, hp: DESTRUCTIBLE.debris, height: d.size, label: 'Escombro', onBreak: () => this.breakDebris(d) });
           }
         }
       } else if (d.age > 20 && !d.solid) {

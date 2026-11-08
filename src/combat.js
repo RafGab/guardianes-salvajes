@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clamp, damp } from './utils.js';
 import { terrainH } from './terrain.js';
-import { MINIONS, TEAM } from './skills/config.js';
+import { MINIONS, TEAM, NPC_KINDS } from './skills/config.js';
 import { ui } from './ui.js';
 
 // COMBATE COMPARTIDO: objetivos (jefes y esbirros), estados (empuje, ralentizar, inmovilizar, cegar, marcar),
@@ -25,13 +25,19 @@ export function tickStatus(st, dt) {
 /*  Esbirro ligero: se puede atraer, empujar, ralentizar, marcar...    */
 /* ------------------------------------------------------------------ */
 class Minion {
-  constructor(combat, x, z) {
+  constructor(combat, x, z, kind = 'esbirro') {
     this.combat = combat;
     this.heavy = false;
-    this.radius = MINIONS.radius;
+    this.npc = true;
+    this.kind = kind;
+    this.cat = NPC_KINDS[kind] || NPC_KINDS.esbirro;
+    this.radius = MINIONS.radius * this.cat.scale;
+    this.barH = 1.35 * this.cat.scale;
     this.pos = new THREE.Vector3(x, terrainH(x, z), z);
     this.vel = new THREE.Vector3();
-    this.hp = MINIONS.hp;
+    this.hp = this.cat.hp;
+    this.hpMax = this.cat.hp;
+    this.flash = 0;
     this.st = newStatus();
     this.pullT = 0;
     this.pullTo = new THREE.Vector3();
@@ -53,6 +59,8 @@ class Minion {
     this.markRing.position.y = 0.1;
     this.markRing.visible = false;
     this.group.add(this.markRing);
+    this.bodyMat = body;
+    this.group.scale.setScalar(this.cat.scale);
     combat.scene.add(this.group);
     this.group.position.copy(this.pos);
   }
@@ -75,7 +83,7 @@ class Minion {
       let dx = player.pos.x - this.pos.x, dz = player.pos.z - this.pos.z;
       const l = Math.hypot(dx, dz) || 1;
       if (this.st.blind > 0) { dx = Math.sin(this.t * 2.3) * 3; dz = Math.cos(this.t * 1.9) * 3; } // cegado: deambula
-      const k = (MINIONS.speed * slow) / (Math.hypot(dx, dz) || 1);
+      const k = (this.cat.speed * slow) / (Math.hypot(dx, dz) || 1);
       this.pos.x += dx * k * dt;
       this.pos.z += dz * k * dt;
     }
@@ -88,25 +96,80 @@ class Minion {
     const dpx = player.pos.x - this.pos.x, dpz = player.pos.z - this.pos.z;
     if (this.hitCd <= 0 && Math.hypot(dpx, dpz) < MINIONS.contact + player.R && Math.abs(player.pos.y - this.pos.y) < 1.8) {
       this.hitCd = 1.4;
-      c.game.hitPlayer(TEAM.minionHit, this.pos);
+      c.game.hitPlayer(this.cat.hit, this.pos);
       const l = Math.hypot(dpx, dpz) || 1;
       player.vx += (dpx / l) * 5; player.vz += (dpz / l) * 5;
     }
     this.group.position.copy(this.pos);
     this.group.position.y += Math.sin(this.t * 5) * 0.08;
     this.group.rotation.y = Math.atan2(dpx, dpz);
+    // destello de impacto
+    this.flash = Math.max(0, this.flash - dt);
+    this.bodyMat.emissive.setHex(this.flash > 0 ? 0xffffff : 0x2a0a3a);
+    this.bodyMat.emissiveIntensity = this.flash > 0 ? 1.2 : 0.6;
     this.markRing.visible = this.st.mark > 0;
     if (this.markRing.visible) this.markRing.rotation.z += dt * 3;
   }
 
+  // Daño recibido (lo llama Combat.damage): destello y número
+  hurt(n) {
+    if (this.dead) return;
+    this.hp = Math.max(0, this.hp - n);
+    this.flash = 0.12;
+    if (this.hp <= 0) this.kill();
+  }
+
+  // Derrota: deja de combatir, explota en chispas, da puntos y a veces suelta una bebida
   kill() {
     if (this.dead) return;
     this.dead = true;
+    this.hp = 0;
     const c = this.combat;
-    c.vfx.sparks(this.pos.x, this.pos.y + 0.6, this.pos.z, 0xb070ff, 10, 3);
-    c.vfx.dust(this.pos.x, this.pos.y + 0.2, this.pos.z, 4, 1.2);
-    c.game.addScore(MINIONS.score);
+    c.vfx.sparks(this.pos.x, this.pos.y + 0.6, this.pos.z, 0xb070ff, 18, 3.4);
+    c.vfx.dust(this.pos.x, this.pos.y + 0.2, this.pos.z, 6, 1.4);
+    if (c.vfx.ring) c.vfx.ring(this.pos.x, null, this.pos.z, { r0: 0.3, r1: 1.8 * this.cat.scale, dur: 0.45, color: 0xb070ff });
+    c.game.addScore(this.cat.score);
     c.scene.remove(this.group);
+    if (c.game.onNpcDefeated) c.game.onNpcDefeated(this);
+  }
+}
+
+/* ------------------------------------------------------------------ */
+/*  Objeto destructible (escombros, troncos, tablones): recibe el daño  */
+/*  de los poderes como un objetivo inmóvil y se rompe al llegar a 0.   */
+/* ------------------------------------------------------------------ */
+class Prop {
+  constructor(combat, { x, y, z, radius = 1.2, hp = 10, height = 1.5, label = 'Escombro', onBreak }) {
+    this.combat = combat;
+    this.prop = true;
+    this.heavy = true; // inmóvil: no se empuja ni se atrae
+    this.pos = new THREE.Vector3(x, y, z);
+    this.radius = radius;
+    this.hp = hp;
+    this.hpMax = hp;
+    this.S = { height };
+    this.barH = height + 0.4;
+    this.label = label;
+    this.st = newStatus();
+    this.state = 'idle';
+    this.dead = false;
+    this.onBreak = onBreak;
+  }
+  takeDamage(n) {
+    if (this.dead) return;
+    this.hp = Math.max(0, this.hp - n);
+    this.combat.vfx.dust(this.pos.x, this.pos.y + 0.5, this.pos.z, 3, 1);
+    if (this.hp <= 0) this.destroy();
+  }
+  destroy() {
+    if (this.dead) return;
+    this.dead = true;
+    this.state = 'dead';
+    const c = this.combat;
+    c.vfx.dust(this.pos.x, this.pos.y + 0.4, this.pos.z, 10, 2);
+    c.vfx.sparks(this.pos.x, this.pos.y + 0.8, this.pos.z, 0xd8b878, 12, 3);
+    if (this.onBreak) this.onBreak();
+    c.game.addScore(5);
   }
 }
 
@@ -126,7 +189,14 @@ export class Combat {
     this._stoneAmt = 0;
     this._stoneMats = null;
     this.projGeo = new THREE.SphereGeometry(1, 12, 10);
+    this.props = [];
+    this.frame = 0;
+    this.src = null; // habilidad que está golpeando ahora (evita daño duplicado del mismo impacto)
   }
+  // Registra un objeto destructible; devuelve el objetivo creado
+  addProp(o) { const p = new Prop(this, o); this.props.push(p); return p; }
+  removeProp(p) { const i = this.props.indexOf(p); if (i >= 0) this.props.splice(i, 1); }
+  clearProps() { this.props.length = 0; }
 
   reset() {
     for (const m of this.minions) { if (!m.dead) this.scene.remove(m.group); }
@@ -145,8 +215,11 @@ export class Combat {
     const b = this.game.boss;
     if (b && b.state !== 'dead' && b.state !== 'enter') out.push(b);
     for (const m of this.minions) if (!m.dead) out.push(m);
+    for (const p of this.props) if (!p.dead) out.push(p);
     return out;
   }
+  // Solo enemigos (jefe y NPC hostiles), sin escombros
+  enemies() { return this.targets().filter((t) => !t.prop); }
   // Objetivos dentro de un círculo (se cuenta el radio del cuerpo)
   inCircle(x, z, r) {
     return this.targets().filter((t) => Math.hypot(t.pos.x - x, t.pos.z - z) < r + t.radius);
@@ -167,7 +240,7 @@ export class Combat {
   aimTarget(x, z, facing, half, range) {
     let best = null, bd = 1e9;
     for (const t of this.inCone(x, z, facing, half, range)) {
-      const d = Math.hypot(t.pos.x - x, t.pos.z - z);
+      const d = Math.hypot(t.pos.x - x, t.pos.z - z) + (t.prop ? 1000 : 0); // los enemigos tienen prioridad sobre los escombros
       if (d < bd) { bd = d; best = t; }
     }
     return best;
@@ -176,6 +249,11 @@ export class Combat {
   /* ---------- efectos sobre objetivos ---------- */
   damage(t, n, { quiet = false } = {}) {
     if (!t || (t.dead)) return;
+    // un mismo impacto de una habilidad solo cuenta una vez por objetivo y fotograma
+    if (!quiet && this.src) {
+      if (t._hitSrc === this.src && t._hitF === this.frame) return;
+      t._hitSrc = this.src; t._hitF = this.frame;
+    }
     const mul = (t.st.mark > 0 ? 1.5 : 1) * this.damageMul;
     if (t.heavy) {
       t.takeDamage(n * mul, quiet);
@@ -186,7 +264,12 @@ export class Combat {
         t._acc = 0;
         if (shown >= 1) this.game.floatAt(t.pos, t.S.height * 0.85 + (t.flyHeight || 0), `-${shown}`, shown >= 10 ? 'big' : 'dmg');
       }
-    } else { t.hp -= n; if (t.hp <= 0) t.kill(); }
+    } else {
+      const dmg = n * mul;
+      t.hurt(dmg);
+      t._acc = (t._acc || 0) + dmg;
+      if (!quiet || t._acc >= 2) { const shown = Math.round(t._acc); t._acc = 0; if (shown >= 1) this.game.floatAt(t.pos, t.barH + 0.2, `-${shown}`, 'dmg'); }
+    }
   }
   push(t, dx, dz, force) {
     const l = Math.hypot(dx, dz) || 1;
@@ -253,12 +336,14 @@ export class Combat {
   }
 
   /* ---------- esbirros ---------- */
-  spawnMinions(n, around) {
+  spawnMinions(n, around, kind = null) {
     const b = this.game.boss;
     const arena = b ? b.arena : { x: around.x, z: around.z, r: 12 };
     for (let i = 0; i < n && this.minions.filter((m) => !m.dead).length < MINIONS.max; i++) {
       const a = Math.random() * TAU, r = arena.r * rnd(0.55, 0.95);
-      const m = new Minion(this, arena.x + Math.cos(a) * r, arena.z + Math.sin(a) * r);
+      // categoría: en la fase final del jefe aparece a veces un bruto (más vida, más lento, golpea más fuerte)
+      const k = kind || (b && b.phase >= 3 && Math.random() < 0.4 ? 'bruto' : 'esbirro');
+      const m = new Minion(this, arena.x + Math.cos(a) * r, arena.z + Math.sin(a) * r, k);
       this.minions.push(m);
       this.vfx.sparks(m.pos.x, m.pos.y + 0.5, m.pos.z, 0xb070ff, 8, 2.5);
     }
@@ -303,6 +388,7 @@ export class Combat {
   update(dt) {
     const g = this.game;
     const { player } = g;
+    this.frame++;
     // esbirros: aparecen mientras dura el combate de jefe
     if (g.boss && g.boss.state !== 'dead' && g.boss.state !== 'enter') {
       this.spawnT += dt;
@@ -344,7 +430,7 @@ export class Combat {
         if (Math.hypot(dx, dz) < p.radius + player.R && Math.abs(dy) < player.H * 0.6 + p.radius) { this.killProjectile(p); g.hitPlayer(TEAM.projectileHit, p.pos); }
       } else {
         for (const t of this.targets()) {
-          if (Math.hypot(t.pos.x - p.pos.x, t.pos.z - p.pos.z) < t.radius + p.radius) { this.damage(t, t.heavy ? 8 : 2, { quiet: false }); this.killProjectile(p); break; }
+          if (Math.hypot(t.pos.x - p.pos.x, t.pos.z - p.pos.z) < t.radius + p.radius) { const s0 = this.src; this.src = null; this.damage(t, t.heavy ? 8 : 4, { quiet: false }); this.src = s0; this.killProjectile(p); break; }
         }
       }
     }

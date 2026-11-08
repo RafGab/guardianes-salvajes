@@ -303,7 +303,12 @@ export const BOSS_ATTACKS = {
 };
 
 // Esbirros ligeros que aparecen en los combates de jefe (dan sentido a atraer / desviar / ralentizar)
-export const MINIONS = { max: 3, speed: 2.7, radius: 0.55, contact: 0.95, spawnEvery: 14, firstAt: 8, hp: 1, score: 10 };
+export const MINIONS = { max: 3, speed: 2.7, radius: 0.55, contact: 0.95, spawnEvery: 14, firstAt: 8, hp: 12, score: 10, dropChance: 0.25 };
+// Categorías de NPC hostiles: cada una con su vida, tamaño, velocidad y fuerza de golpe (unidades de golpe de TEAM)
+export const NPC_KINDS = {
+  esbirro: { name: 'Esbirro', hp: 12, scale: 1, speed: 2.7, hit: 0.5, score: 10 },
+  bruto: { name: 'Bruto', hp: 34, scale: 1.55, speed: 1.9, hit: 0.9, score: 30 },
+};
 
 // Equipo y vida en los combates de jefe. Cada héroe tiene su propia barra; los golpes del jefe se miden en "golpes" (1 = golpe normal).
 export const TEAM = {
@@ -318,3 +323,34 @@ export const TEAM = {
   switchGrace: 1.0,     // invulnerabilidad breve tras entrar en combate
   introT: 4.8,          // duración de la presentación del jefe y la aparición del equipo
 };
+
+// VIDA DEL HÉROE fuera de los jefes (exploración): daño de los peligros del escenario en puntos de vida
+export const HEALTH = {
+  max: TEAM.hp,          // vida máxima (la misma que en el combate de jefe)
+  hitGrace: 0.9,         // invulnerabilidad breve tras un golpe
+  debris: 12,            // escombro que cae en una réplica
+  flying: 10,            // objeto que vuela con el viento
+  bomb: 14,              // roca volcánica
+  weed: 4,               // planta rodadora / objeto ligero
+  fireDps: 7,            // fuego (por segundo, dentro de las llamas)
+  lavaDps: 9,            // lava (por segundo)
+};
+
+// BOTIQUINES Y BEBIDAS: recuperación, capacidad de la mochila y aspecto. `flat` = puntos; `pct` = % de la vida máxima.
+export const HEAL_ITEMS = {
+  drink: { id: 'drink', name: 'Bebida energética', short: '+20', flat: 20, cap: 3, color: '#3de0c8', icon: '🥤' },
+  kit: { id: 'kit', name: 'Botiquín', short: '+50', flat: 50, cap: 3, color: '#f4f4f4', icon: '✚' },
+  kit25: { id: 'kit25', name: 'Botiquín amarillo', short: '25 %', pct: 0.25, cap: 3, color: '#ffd23a', icon: '✚' },
+  kit50: { id: 'kit50', name: 'Botiquín azul', short: '50 %', pct: 0.5, cap: 3, color: '#3a8cff', icon: '✚' },
+  kit75: { id: 'kit75', name: 'Botiquín rojo', short: '75 %', pct: 0.75, cap: 3, color: '#ff3a3a', icon: '✚' },
+  kit100: { id: 'kit100', name: 'Botiquín verde', short: '100 %', pct: 1, cap: 3, color: '#2ee06a', icon: '✚' },
+};
+export const HEAL_ORDER = ['drink', 'kit', 'kit25', 'kit50', 'kit75', 'kit100'];
+// Reparto por nivel (cuántos de cada tipo aparecen en el mapa) y objetos extra dentro de la arena del jefe
+export const PICKUP_SPAWN = {
+  perLevel: { drink: 4, kit: 3, kit25: 2, kit50: 1, kit75: 1, kit100: 1 },
+  arena: ['drink', 'kit25'],
+  radius: 1.7,           // distancia de recogida
+};
+// Escombros y obstáculos que los poderes pueden destruir (vida de cada uno)
+export const DESTRUCTIBLE = { rubble: 14, debris: 6, obstacle: 9 };

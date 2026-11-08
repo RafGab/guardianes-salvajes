@@ -6,7 +6,8 @@ import { Save, BADGES } from './save.js';
 import { ITEMS, heroPowerItem } from './items.js';
 import { IS_TOUCH } from './platform.js';
 import { HERO_SCALE } from './scale.js';
-import { TEAM } from './skills/config.js';
+import { TEAM, HEAL_ITEMS, HEAL_ORDER } from './skills/config.js';
+import { hpTier } from './health.js';
 
 const $ = (id) => document.getElementById(id);
 export const HERO_ICON = { jago: '🐆', kairo: '🦎', lira: '🐈', halley: '🦊', nilo: '🦦', kyra: '❄️', ambar: '🦅' };
@@ -202,6 +203,7 @@ export const ui = {
   },
   hud(on) {
     $('hud').classList.toggle('show', on);
+    if (!on) { this.bagOpen(false); this.npcBars([]); }
     $('touch').classList.toggle('show', on && IS_TOUCH);
   },
   loadingMsg(t) {
@@ -313,6 +315,9 @@ export const ui = {
     $('bb-text').textContent = `${Math.ceil(b.hp)} / ${b.max}  ·  ${Math.ceil(pct * 100)}%`;
     $('bb-phase').innerHTML = [1, 2, 3].map((k) => `<i class="${k <= b.phase ? 'on' : ''}"></i>`).join('');
     $('bb-fill').style.filter = b.hurt ? 'brightness(1.6)' : '';
+    if ($('bb-title').textContent !== (b.title || '')) $('bb-title').textContent = b.title || '';
+    if (b.hurt && !this._bbHurt) { const bb = $('bossbar'); bb.classList.remove('hit'); void bb.offsetWidth; bb.classList.add('hit'); }
+    this._bbHurt = b.hurt;
     const st = [];
     if (b.slow) st.push('<span class="chip slow">🐢 Ralentizado</span>');
     if (b.root) st.push('<span class="chip root">🌿 Inmovilizado</span>');
@@ -350,7 +355,7 @@ export const ui = {
       const pct = m.hp / m.max;
       const f = c.querySelector('.hpfill');
       f.style.width = `${pct * 100}%`;
-      f.className = 'hpfill' + (pct < 0.25 ? ' low' : pct < 0.55 ? ' mid' : '');
+      f.className = 'hpfill' + (pct < 0.3 ? ' low' : pct <= 0.6 ? ' mid' : '');
       c.querySelector('.hptxt').textContent = `${Math.ceil(m.hp)} / ${m.max}`;
       c.querySelector('.ko-tag').textContent = m.ko ? 'FUERA DE COMBATE' : '';
     });
@@ -371,6 +376,126 @@ export const ui = {
     while (box.children.length > 5) box.removeChild(box.firstChild);
     setTimeout(() => d.remove(), 5200);
   },
+  /* ---------- vida del héroe ---------- */
+  setHeroHp(hp, max) {
+    const v = Math.max(0, Math.ceil(hp)), key = `${v}/${max}`;
+    if (key === this._hpKey) return;
+    this._hpKey = key;
+    const pct = Math.max(0, Math.min(1, hp / max));
+    $('hp-fill').style.width = `${pct * 100}%`;
+    $('hp-ghost').style.width = `${pct * 100}%`;
+    $('hp-val').textContent = v;
+    $('hp-max').textContent = max;
+    const el = $('hp');
+    el.classList.remove('ok', 'mid', 'low');
+    el.classList.add(hpTier(pct));
+    if ($('bag').classList.contains('show')) $('bag-hp').textContent = `${v} / ${max}`;
+  },
+  _hpFlash(cls, ms) {
+    const el = $('hp');
+    el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls);
+    clearTimeout(this['_t' + cls]);
+    this['_t' + cls] = setTimeout(() => el.classList.remove(cls), ms);
+  },
+  hpHurt(soft = false) {
+    if (soft) { if (!this._softT || performance.now() - this._softT > 400) { this._softT = performance.now(); this._hpFlash('hurt', 350); } return; }
+    this._hpFlash('hurt', 350);
+    const h = $('hud'); h.classList.add('hurt-edge'); clearTimeout(this._edgeT); this._edgeT = setTimeout(() => h.classList.remove('hurt-edge'), 260);
+  },
+  hpHeal() { this._hpFlash('heal', 900); },
+  hpBlock() { this._hpFlash('block', 500); },
+
+  /* ---------- barras de vida de NPC y escombros (sobre la cabeza, en pantalla) ---------- */
+  npcBars(list) {
+    const box = $('npcbars');
+    this._npc = this._npc || new Map();
+    const seen = new Set();
+    for (const b of list) {
+      let el = this._npc.get(b.t);
+      if (!el) {
+        el = document.createElement('div');
+        el.className = `npcbar${b.prop ? ' prop' : ''}${b.big ? ' big' : ''}`;
+        el.innerHTML = `<div class="nm"></div><div class="bar"><i></i></div>`;
+        el.querySelector('.nm').textContent = b.label;
+        box.appendChild(el);
+        this._npc.set(b.t, el);
+      }
+      seen.add(b.t);
+      el.style.left = `${b.x}px`;
+      el.style.top = `${b.y}px`;
+      el.querySelector('i').style.width = `${Math.max(0, b.pct) * 100}%`;
+    }
+    for (const [t, el] of this._npc) if (!seen.has(t)) { el.remove(); this._npc.delete(t); }
+  },
+
+  /* ---------- mochila ---------- */
+  // onUse(type) → { ok, msg, amt }
+  buildBag(bag, onUse, onClose) {
+    this._bag = bag;
+    const list = $('bag-list');
+    list.innerHTML = '';
+    for (const type of HEAL_ORDER) {
+      const it = HEAL_ITEMS[type];
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.className = 'bag-item';
+      b.dataset.type = type;
+      b.style.setProperty('--ic', it.color);
+      const ico = type === 'drink' ? `<span class="ico">${it.icon}</span>` : `<span class="ico kit${type === 'kit' ? ' white' : ''}">✚</span>`;
+      const fx = it.flat != null ? `+${it.flat} vida` : `+${Math.round(it.pct * 100)} % vida`;
+      b.innerHTML = `${ico}<span class="nm">${it.name}</span><span class="fx">${fx}</span><span class="qty"></span>`;
+      b.title = `${it.name}: recupera ${fx} · capacidad ${it.cap}`;
+      b.addEventListener('pointerdown', (e) => {
+        e.preventDefault(); e.stopPropagation();
+        const r = onUse(type);
+        if (r && r.ok) { b.classList.remove('used'); void b.offsetWidth; b.classList.add('used'); }
+        else if (r && r.msg) this.bagMsg(r.msg);
+        this.bagCounts(this._bag);
+      });
+      list.appendChild(b);
+    }
+    $('bag-close').onclick = (e) => { e.preventDefault(); onClose(); };
+    $('bag-btn').onpointerdown = (e) => { e.preventDefault(); e.stopPropagation(); if (this.onBagToggle) this.onBagToggle(); };
+    this.bagCounts(bag);
+  },
+  bagMsg(text) {
+    let m = $('bag').querySelector('.bag-msg');
+    if (!m) { m = document.createElement('div'); m.className = 'bag-msg'; $('bag').appendChild(m); }
+    m.textContent = text;
+    clearTimeout(this._bagMsgT);
+    this._bagMsgT = setTimeout(() => { m.textContent = ''; }, 1800);
+  },
+  bagCounts(bag) {
+    if (!bag) return;
+    this._bag = bag;
+    let total = 0;
+    for (const b of $('bag-list').children) {
+      const type = b.dataset.type, n = bag.count(type), cap = bag.cap(type);
+      total += n;
+      const q = b.querySelector('.qty');
+      q.textContent = `${n}/${cap}`;
+      q.classList.toggle('full', n >= cap);
+      b.classList.toggle('empty', n <= 0);
+    }
+    const t = $('bag-total');
+    if (t.textContent !== String(total)) {
+      t.textContent = total;
+      const btn = $('bag-btn'); btn.classList.remove('bump'); void btn.offsetWidth; btn.classList.add('bump');
+    }
+    t.classList.toggle('zero', total === 0);
+  },
+  bagOpen(on, hp, max) {
+    $('bag').classList.toggle('show', on);
+    $('bag').setAttribute('aria-hidden', on ? 'false' : 'true');
+    $('bag-btn').classList.toggle('open', on);
+    if (on) { $('bag-hp').textContent = `${Math.ceil(hp)} / ${max}`; this.bagCounts(this._bag); }
+  },
+  get bagIsOpen() { return $('bag').classList.contains('show'); },
+  bossDefeatedFx() {
+    const b = $('bossbar'); b.classList.add('down');
+    setTimeout(() => b.classList.remove('down'), 1600);
+  },
+
   // Número flotante en pantalla (x, y en píxeles)
   floatText(x, y, text, kind = 'dmg') {
     const d = document.createElement('div');

@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { CFG, terrainH } from './terrain.js';
 import { clamp, damp, smoothstep, TAU } from './utils.js';
+import { HEALTH } from './skills/config.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const protectedNow = (ctx) => ctx.player.shieldT > 0;
@@ -123,9 +124,11 @@ export class VolcanoHazard {
         fx.rock(b.tx, gy + 0.4, b.tz);
         for (let q = 0; q < 6; q++) fx.flame(b.tx + rnd(-1, 1), gy + 0.2, b.tz + rnd(-1, 1), 1.2, 0.1);
         const d = Math.hypot(b.tx - player.pos.x, b.tz - player.pos.z);
-        if (d < 3 && !protectedNow(ctx)) {
+        if (d < 3 && ctx.game.shielded) ctx.game.shieldBlock({ x: b.tx, z: b.tz });
+        if (d < 3 && !protectedNow(ctx) && !ctx.game.shielded) {
           const nx = (player.pos.x - b.tx) / (d || 1), nz = (player.pos.z - b.tz) / (d || 1);
           player.vx = nx * 10; player.vz = nz * 10;
+          ctx.game.hurtHero(HEALTH.bomb, { from: { x: b.tx, z: b.tz } });
           chase.shake(0.4);
           this.heat = Math.min(1, this.heat + 0.4);
           ctx.ui.banner('find', '🌋 ¡Roca ardiente!', 'Mira el cielo y aléjate de la sombra que crece');
@@ -152,6 +155,7 @@ export class VolcanoHazard {
         if (dCam < nd) { nd = dCam; nearest = p; }
         const dp = Math.hypot(player.pos.x - p.x, player.pos.z - p.z);
         if (dp < p.r && !immune && player.pos.y < p.y + 2.6) {
+          ctx.game.hurtHero(HEALTH.lavaDps * dt, { dot: true });
           const nx = (player.pos.x - p.x) / (dp || 1), nz = (player.pos.z - p.z) / (dp || 1);
           player.pos.x += nx * 8 * dt; player.pos.z += nz * 8 * dt;
           player.vx = nx * 5; player.vz = nz * 5;
@@ -263,8 +267,10 @@ export class HurricaneHazard {
       d.mesh.position.y += (d.vy + Math.sin(d.life * 3) * 1.5) * dt;
       d.mesh.rotation.x += d.spin * dt; d.mesh.rotation.z += d.spin * 0.7 * dt;
       const dx = d.mesh.position.x - player.pos.x, dz = d.mesh.position.z - player.pos.z, dy = d.mesh.position.y - (player.pos.y + 1);
+      if (dx * dx + dz * dz < 1.3 && Math.abs(dy) < 1.6 && this.hit <= 0 && (protectedNow(ctx) || ctx.game.shielded)) { this.hit = 0.6; ctx.game.shieldBlock(d.mesh.position); }
       if (dx * dx + dz * dz < 1.3 && Math.abs(dy) < 1.6 && this.hit <= 0 && !protectedNow(ctx)) {
         this.hit = 1.2;
+        ctx.game.hurtHero(HEALTH.flying, { from: d.mesh.position });
         const l = Math.hypot(d.vx, d.vz) || 1;
         player.vx = (d.vx / l) * 9; player.vz = (d.vz / l) * 9;
         chase.shake(0.4);
@@ -374,6 +380,7 @@ export class SandstormHazard {
       const dx = w.x - player.pos.x, dz = w.z - player.pos.z;
       if (dx * dx + dz * dz < 1.6 && this.hit <= 0 && !protectedNow(ctx)) {
         this.hit = 1;
+        ctx.game.hurtHero(HEALTH.weed, { from: { x: w.x, z: w.z } });
         player.vx = w.vx * 0.9; player.vz = w.vz * 0.9;
         chase.shake(0.2);
       }

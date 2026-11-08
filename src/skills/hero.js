@@ -869,7 +869,8 @@ export class HeroSkills {
   update(dt) {
     const p = this.g.player;
     Object.assign(p.pose, NEUTRAL);
-    for (let i = this.bg.length - 1; i >= 0; i--) { const b = this.bg[i]; if (b.update(dt)) { b.dispose(); this.bg.splice(i, 1); } }
-    if (this.cur && this.cur.update(dt)) { this.cur.dispose(); this.cur = null; }
+    const c = this.g.combat;
+    for (let i = this.bg.length - 1; i >= 0; i--) { const b = this.bg[i]; c.src = b; const done = b.update(dt); c.src = null; if (done) { b.dispose(); this.bg.splice(i, 1); } }
+    if (this.cur) { c.src = this.cur; const done = this.cur.update(dt); c.src = null; if (done) { this.cur.dispose(); this.cur = null; } }
   }
 }

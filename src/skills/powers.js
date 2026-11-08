@@ -1019,6 +1019,7 @@ export class MaelstromSkill extends Skill {
   tickPull(dt) {
     const d = this.def, at = this.at, c = this.combat;
     c.deflect(this.p.pos.x, this.p.pos.z, 3.5); // ESCUDO: los proyectiles que llegan a la nutria se desvían
+    this.p.evadeT = Math.max(this.p.evadeT, 0.15); // ESCUDO: mientras gira el remolino la nutria queda protegida
     for (const t of c.targets()) {
       const dx = at.x - t.pos.x, dz = at.z - t.pos.z, dist = Math.hypot(dx, dz);
       if (dist > d.radius + t.radius) continue;

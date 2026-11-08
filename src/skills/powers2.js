@@ -643,7 +643,7 @@ export class VisionSkill extends Skill {
     for (const h of this.marks.values()) h.seen = false;
     let ne = 0, nt = 0, nv = 0;
     const near = (x, z) => Math.hypot(x - p.pos.x, z - p.pos.z) < R;
-    for (const t of this.combat.targets()) {
+    for (const t of this.combat.enemies()) {
       if (!near(t.pos.x, t.pos.z)) continue;
       ne++;
       const h = this.sprite(t, t.heavy ? '👹' : '👾', '#ff4a4a', t.heavy ? 1.6 : 0.9);
@@ -688,7 +688,7 @@ export class VisionSkill extends Skill {
       h.s.scale.setScalar(s);
     }
     // el punto débil queda expuesto: el jefe recibe más daño mientras Lira lo ve
-    for (const t of this.combat.targets()) if (t.heavy && Math.hypot(t.pos.x - this.p.pos.x, t.pos.z - this.p.pos.z) < d.range) this.combat.mark(t, 0.3);
+    for (const t of this.combat.enemies()) if (t.heavy && Math.hypot(t.pos.x - this.p.pos.x, t.pos.z - this.p.pos.z) < d.range) this.combat.mark(t, 0.3);
   }
 }
 

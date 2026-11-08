@@ -583,9 +583,19 @@ function bindUi() {
     player.vy = 0;
     ui.banner('find', '↩️', 'De vuelta al punto de inicio');
   });
-  input.on('pause', pauseGame);
-  input.on('unlocked', pauseGame);
-  input.on('lockchange', (l) => { if (l) hintDismissed = true; });
+  // MOCHILA: se abre con B o con su botón; mientras está abierta el ratón queda libre (el juego sigue)
+  const bagToggle = (force) => {
+    const can = mode === 'playing' && game.state === 'playing';
+    const open = can && (force ?? !ui.bagIsOpen);
+    if (open) { const r = game.hpRef; ui.bagOpen(true, r.hp, r.max); input.releaseLock(); }
+    else if (ui.bagIsOpen) { ui.bagOpen(false); if (can) input.requestLock(); }
+  };
+  ui.buildBag(null, (type) => game.useItem(type), () => bagToggle(false)); // el inventario real lo conecta game.start
+  ui.onBagToggle = () => bagToggle();
+  input.on('bag', () => bagToggle());
+  input.on('pause', () => { if (ui.bagIsOpen) { bagToggle(false); return; } pauseGame(); });
+  input.on('unlocked', () => { if (!ui.bagIsOpen) pauseGame(); });
+  input.on('lockchange', (l) => { if (l) { hintDismissed = true; if (ui.bagIsOpen) ui.bagOpen(false); } });
   window.addEventListener('mousemove', () => (lastMouseT = clockT));
   // arrastrar para girar al héroe en la selección
   const cvs = renderer.domElement;

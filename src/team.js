@@ -1,4 +1,5 @@
 import { TEAM } from './skills/config.js';
+import { Save } from './save.js';
 
 // EQUIPO DE COMBATE: hasta 3 héroes, cada uno con su vida. Solo uno está en el campo; los demás esperan en reserva
 // (y se recuperan poco a poco). La estatura de cada héroe es siempre la oficial (scale.js): aquí no se toca.
@@ -12,7 +13,7 @@ export class Team {
   }
   clear() { this.members = []; this.active = 0; this.switchT = 0; this.graceT = 0; }
   set(ids) {
-    this.members = ids.slice(0, TEAM.size).map((id) => ({ id, hp: TEAM.hp, max: TEAM.hp, ko: false }));
+    this.members = ids.slice(0, TEAM.size).map((id) => ({ id, hp: Save.heroHp(id, TEAM.hp), max: TEAM.hp, ko: false })); // cada héroe entra con su vida guardada
     this.active = 0;
     this.switchT = 0;
     this.graceT = 0;
