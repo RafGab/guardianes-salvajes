@@ -467,8 +467,8 @@ export const ui = {
     list.forEach((a, i) => {
       const b = document.createElement('button');
       b.className = 'skill' + (i === index ? ' sel' : '');
-      b.innerHTML = `<span class="sk">${i < 9 ? i + 1 : i === 9 ? 0 : ''}</span><span class="ic">${a.icon}</span><i class="cdo"></i>`;
-      b.title = a.name;
+      b.innerHTML = `<span class="sk">${i < 9 ? i + 1 : i === 9 ? 0 : ''}</span><span class="ic">${a.icon}</span><i class="cdo"></i><b class="cdt"></b>`;
+      b.title = `${i < 9 ? i + 1 : i === 9 ? 0 : ''} · ${a.name}`;
       b.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); onPick(i); });
       bar.appendChild(b);
     });
@@ -478,11 +478,21 @@ export const ui = {
     [...$('skillbar').children].forEach((b, k) => b.classList.toggle('sel', k === i));
     this._abKey = null;
   },
-  setAbilityCds(arr) {
+  // r: fracción de recarga (1 = recién usado) · secs: segundos que faltan · live: poder activo que admite otra pulsación
+  setAbilityCds(arr, secs = [], live = []) {
     const bar = $('skillbar');
     arr.forEach((r, i) => {
-      const el = bar.children[i] && bar.children[i].querySelector('.cdo');
+      const b = bar.children[i];
+      if (!b) return;
+      const el = b.querySelector('.cdo'), tx = b.querySelector('.cdt');
       if (el) el.style.height = `${Math.round(Math.max(0, Math.min(1, r)) * 100)}%`;
+      const s = secs[i] || 0;
+      if (tx) tx.textContent = s > 0.05 ? (s < 9.95 ? s.toFixed(1) : String(Math.ceil(s))) : '';
+      const cooling = s > 0.05;
+      if (b._cool && !cooling) { b.classList.remove('ready-flash'); void b.offsetWidth; b.classList.add('ready-flash'); } // ¡listo otra vez!
+      b._cool = cooling;
+      b.classList.toggle('cooling', cooling);
+      b.classList.toggle('live', !!live[i]);
     });
   },
   setRescued(n, total) {

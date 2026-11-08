@@ -15,6 +15,7 @@ import { bossScale, bossCameraFor } from './scale.js';
 import { Vfx } from './skills/vfx.js';
 import { Combat } from './combat.js';
 import { HeroSkills } from './skills/hero.js';
+import { Vfx2 } from './skills/vfx2.js';
 import { Team } from './team.js';
 import { TEAM } from './skills/config.js';
 import { IS_TOUCH } from './platform.js';
@@ -88,6 +89,7 @@ export class Game {
     this.toolCd = {};
     // habilidades de héroe y ataques de jefe: capa visual, combate compartido y gestor de habilidades
     this.vfx = new Vfx(scene, fx);
+    this.vfx2 = new Vfx2(this); // cielo, aurora, lava, olas... de los poderes especiales
     this.combat = new Combat(this);
     this.skills = new HeroSkills(this);
     this.team = new Team();          // equipo del combate de jefe (vida por héroe, cambio en combate)
@@ -241,13 +243,19 @@ export class Game {
     }
     this.abIndex = 0;
     this.toolCd = {};
-    ui.setAbilities(this.abilities, this.abIndex, (i) => this.selectAbility(i));
+    ui.setAbilities(this.abilities, this.abIndex, (i) => this.triggerAbility(i));
   }
   selectAbility(i) {
     if (i < 0 || i >= this.abilities.length) return;
     this.abIndex = i;
     ui.selectAbilityUI(i);
     audio.click();
+  }
+  // Cada poder tiene su propio botón: tecla 1-9 o botón de la barra = seleccionar y usar
+  triggerAbility(i) {
+    if (i < 0 || i >= this.abilities.length) return false;
+    if (this.abIndex !== i) { this.abIndex = i; ui.selectAbilityUI(i); }
+    return this.useAbility();
   }
   cycleAbility(dir = 1) {
     if (this.abilities.length < 2) return;
@@ -257,8 +265,10 @@ export class Game {
     if (this.state !== 'playing' || this.player.locked || this.player.scripted) return false;
     const a = this.abilities[this.abIndex];
     if (!a) return false;
+    if (a.hs && this.skills.canRecast(a.key)) return this.skills.recast(a.key); // segunda pulsación (espejismo, aterrizar, salir de la roca)
     if (a.id === 'power') {
       const p = this.player;
+      if (p.fly) { ui.banner('find', a.icon, 'No disponible mientras vuelas'); return false; }
       const nEv = p.events.length;
       let used = p.usePower(this.fx);
       // Los poderes de agua/hielo solo funcionan sobre agua; en un combate de jefe no pueden dejar al héroe sin ataque.
@@ -989,6 +999,7 @@ export class Game {
     if (this.ally && this.state === 'playing') this.ally.update(dtg);
     this.combat.update(dtg);
     this.vfx.update(dtg);
+    this.vfx2.update(dtg);
     world.update(dtg, performance.now() / 1000, camera.position, player.pos, missionT, true);
     const p = player.pos;
 
@@ -1294,7 +1305,11 @@ export class Game {
       if (gg) ui.setGauge(gg);
       else ui.setWater(world.waterY, 8, this.victims);
       ui.setCarry(player.carrying, player.capacity);
-      ui.setAbilityCds(this.abilities.map((ab, i) => (i === 0 ? (player.cdMaxEff > 0 ? player.cd / player.cdMaxEff : 0) : ab.cd > 0 ? (this.toolCd[ab.id] || 0) / (ab.cd * player.cdMul) : 0)));
+      ui.setAbilityCds(
+        this.abilities.map((ab, i) => (i === 0 ? (player.cdMaxEff > 0 ? player.cd / player.cdMaxEff : 0) : ab.cd > 0 ? (this.toolCd[ab.id] || 0) / (ab.cd * player.cdMul) : 0)),
+        this.abilities.map((ab, i) => (i === 0 ? player.cd : this.toolCd[ab.id] || 0)),
+        this.abilities.map((ab) => !!(ab.hs && this.skills.canRecast(ab.key))),
+      );
     }
     ui.minimap.draw(real, {
       waterY: world.waterY,

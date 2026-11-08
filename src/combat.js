@@ -121,7 +121,7 @@ export class Combat {
     this.minions = [];
     this.projectiles = [];
     this.lingering = [];
-    this.damageMul = 1; // lo sube el Ojo Solar del Lince
+    this.damageMul = 1; // multiplicador global de daño del equipo (reservado para poderes)
     this.spawnT = 0;
     this._stoneAmt = 0;
     this._stoneMats = null;

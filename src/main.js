@@ -568,7 +568,7 @@ function bindUi() {
   input.on('confirm', () => mode === 'select' && beginMission());
   input.on('mute', toggleSound);
   input.on('power', () => mode === 'playing' && game.state === 'playing' && game.useAbility());
-  input.on('ability', (i) => mode === 'playing' && game.selectAbility(i));
+  input.on('ability', (i) => mode === 'playing' && game.state === 'playing' && game.triggerAbility(i)); // cada poder, su tecla
   input.on('abilityNext', () => mode === 'playing' && game.cycleAbility(1));
   input.on('teamPrev', () => mode === 'playing' && game.cycleTeam(-1));
   input.on('teamNext', () => mode === 'playing' && game.cycleTeam(1));

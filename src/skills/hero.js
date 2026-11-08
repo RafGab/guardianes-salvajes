@@ -10,68 +10,13 @@ import { ui } from '../ui.js';
 // La lógica (objetivos, daño, estados) está aquí; lo visual sale de skills/vfx.js y los números de skills/config.js.
 // La pose del cuerpo (inclinar, aplastar, girar, desaparecer) se superpone a la animación del modelo mediante player.pose.
 
-const DEG = Math.PI / 180;
-const ease = (k) => k * k * (3 - 2 * k);
-const lerp = (a, b, k) => a + (b - a) * k;
-const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-const V = (x, y, z) => new THREE.Vector3(x, y, z);
-const NEUTRAL = { rx: 0, rz: 0, sy: 1, dy: 0, spin: 0, hidden: false };
-const SKIP_TAGS = new Set(['tree', 'rail', 'fence', 'obstacle']);
+import { Skill, DEG, ease, lerp, clamp, V, NEUTRAL, SKIP_TAGS, makeElastic, boneWorld } from './base.js';
+import { POWER_CLASSES } from './powers.js';
 
 /* ====================================================================== */
-/*  Base                                                                   */
-/* ====================================================================== */
-class Skill extends Staged {
-  constructor(hs, def) {
-    super(hs.g.vfx, hs.g.combat);
-    this.hs = hs;
-    this.g = hs.g;
-    this.p = hs.g.player;
-    this.def = def;
-    this.pose = this.p.pose;
-    this.cdFactor = 1;
-    this._lock = false;
-    this._script = false;
-  }
-  // Intenta empezar. Devuelve false si no se puede (no se gasta recarga).
-  begin() { return false; }
-
-  get fwd() { return { x: Math.sin(this.p.facing), z: Math.cos(this.p.facing) }; }
-  center(h = 0.5) { return V(this.p.pos.x, this.p.pos.y + this.p.H * h, this.p.pos.z); }
-  gy(x, z) { return terrainH(x, z); }
-  face(x, z) { this.p.facing = Math.atan2(x - this.p.pos.x, z - this.p.pos.z); }
-  lock(on) {
-    if (on && !this.p.locked) { this.p.locked = true; this._lock = true; }
-    else if (!on && this._lock) { this.p.locked = false; this._lock = false; }
-  }
-  script(on) {
-    this.p.scripted = on;
-    this._script = on;
-    if (on) { this.p.vx = this.p.vz = this.p.vy = 0; this.p.grounded = false; this.p.support = null; }
-  }
-  // Suelta al héroe del movimiento guiado con una velocidad de salida
-  release(vx = 0, vy = 0, vz = 0) {
-    this.script(false);
-    this.p.vx = vx; this.p.vy = vy; this.p.vz = vz;
-  }
-  shake(n) { this.g.chase.shake(n); }
-  hit(t, dmg) { this.combat.damage(t, dmg); }
-  // daño continuo: solo a los pesados, para no matar de golpe a los esbirros
-  dot(t, perSec, dt) { if (t.heavy) this.combat.damage(t, perSec * dt, { quiet: true }); }
-  awayFrom(t, x, z) { return { dx: t.pos.x - x, dz: t.pos.z - z }; }
-  // empuje continuo equivalente a `speed` m/s (la velocidad del esbirro decae 4/s)
-  shove(t, dx, dz, speed, dt) { this.combat.push(t, dx, dz, speed * dt * 4); }
-
-  dispose() {
-    this.killHandles();
-    this.cleanup();
-    this.lock(false);
-    if (this._script) this.p.scripted = false;
-  }
-}
-
-/* ====================================================================== */
-/*  JAGLION — Cola Elástica                                                */
+/*  JAGLION — Cola Elástica (extensión → agarre → balanceo → trepado)      */
+/*  La cola real se recoge y sale una cola elástica de muchas articulaciones */
+/*  desde el propio hueso de la cola.                                      */
 /* ====================================================================== */
 class TailSkill extends Skill {
   begin() {
@@ -83,7 +28,9 @@ class TailSkill extends Skill {
       this.mode = this.anchor ? 'swing' : 'whiff';
     }
     if (this.mode === 'whiff') { this.cdFactor = d.whiffCdFactor; ui.banner('find', '🪢', 'No hay nada al alcance de la cola'); }
-    this.rope = this.track(this.vfx.rope({ radius: 0.08, color: 0xe8a040 }));
+    this.rope = makeElastic(this, { n: d.segments || 30, r0: 0.13, r1: 0.05, color: 0xc8913e, rough: 0.85, tipR: 0.09 });
+    const tb = this.chain('tail_');
+    if (tb.length > 1) this.setBones((bones, dt, t, fx) => fx.scale(tb[1], 0.04)); // la cola real se recoge dentro de la elástica
     this.start();
     return true;
   }
@@ -105,7 +52,13 @@ class TailSkill extends Skill {
     }
     return best;
   }
-  origin() { return this.center(0.55); }
+  // la cola sale del hueso de la cola (o de detrás del cuerpo en el modelo de reserva)
+  origin() {
+    const b = boneWorld(this, 'tail_1');
+    if (b) return b;
+    const f = this.fwd;
+    return V(this.p.pos.x - f.x * this.p.R, this.p.pos.y + this.p.H * 0.45, this.p.pos.z - f.z * this.p.R);
+  }
   hookPoint() {
     const p = this.p, d = this.def;
     if (this.mode === 'swing') return this.anchor;
@@ -115,59 +68,103 @@ class TailSkill extends Skill {
   }
   build() {
     const d = this.def, p = this.p, pose = this.pose;
-    const st = [{ name: 'preparacion', dur: d.prep, enter: () => { if (this.target) this.face(this.target.pos.x, this.target.pos.z); }, tick: (dt, k) => { pose.rx = -0.25 * k; pose.sy = 1 - 0.06 * k; } }];
+    const st = [{ name: 'preparacion', dur: d.prep, enter: () => { if (this.target) this.face(this.target.pos.x, this.target.pos.z); }, tick: (dt, k) => {
+      pose.rx = -0.25 * k; pose.sy = 1 - 0.06 * k;
+      const o = this.origin(), f = this.fwd; // la cola se enrosca hacia arriba antes de salir
+      this.rope.set(o, V(o.x - f.x * 0.4, o.y + 0.9 * k, o.z - f.z * 0.4), { wobble: 0.12, phase: this.t * 20, waves: 1 });
+    } }];
     const dist = this.origin().distanceTo(this.hookPoint());
-    st.push({ name: 'lanzamiento', dur: Math.max(0.08, dist / d.hookSpeed), enter: () => { audio.whoosh(); }, tick: (dt, k) => {
-      const o = this.origin(), h = this.hookPoint();
-      this.rope.set(o, o.clone().lerp(h, k));
+    // extensión: sale disparada, ondula y se pasa un poco antes de tensarse
+    st.push({ name: 'extension', dur: Math.max(0.12, dist / d.hookSpeed), enter: () => { audio.whoosh(); this.sfx('flap'); }, tick: (dt, k) => {
+      const o = this.origin(), h = this.hookPoint(), e = 1 - Math.pow(1 - k, 3) + 0.1 * Math.sin(k * Math.PI) * k;
+      this.rope.set(o, o.clone().lerp(h, Math.min(1.08, e)), { wobble: (d.wobble || 0.5) * (1 - k * 0.7), phase: this.t * 26, waves: 2.5 });
       pose.rx = lerp(-0.25, 0.3, k);
-      pose.sy = 1 + 0.12 * k; // la cola se estira
-    } });
+      pose.sy = 1 + 0.12 * k;
+    }, exit: () => this.grab() });
     if (this.mode === 'swing') {
-      const flight = this.p.pos.distanceTo(this.anchor);
-      st.push({ name: 'balanceo', dur: flight / d.swingSpeed, enter: this.enterSwing, tick: this.tickSwing, exit: this.exitSwing });
-      st.push({ name: 'estela', dur: d.trailTime, tick: (dt, k) => { this.trail(1 - k); pose.sy = lerp(1.1, 1, k); pose.rx = lerp(0.3, 0, k); } });
+      st.push({ name: 'balanceo', dur: Math.max(0.35, this.p.pos.distanceTo(this.anchor) / d.swingSpeed * 1.25), enter: this.enterSwing, tick: this.tickSwing });
+      st.push({ name: 'trepado', dur: d.climbT || 0.35, tick: this.tickClimb, exit: this.exitClimb });
+      st.push({ name: 'estela', dur: d.trailTime, tick: (dt, k) => { this.rope.kill(); this.trail(1 - k); pose.sy = lerp(1.1, 1, k); pose.rx = lerp(0.3, 0, k); } });
     } else if (this.mode === 'pull') {
       st.push({ name: 'atraer', dur: Math.min(0.9, dist / d.pullSpeed + 0.2), tick: this.tickPull, exit: this.exitPull });
     } else if (this.mode === 'hit') {
-      st.push({ name: 'golpe', dur: 0.3, enter: this.enterHit, tick: (dt, k) => { this.rope.set(this.origin(), this.hookPoint()); pose.rx = lerp(0.5, 0, k); } });
-    } else {
-      st.push({ name: 'recoger', dur: Math.max(0.08, dist / d.hookSpeed), tick: (dt, k) => { const o = this.origin(), h = this.hookPoint(); this.rope.set(o, h.clone().lerp(o, k)); pose.sy = lerp(1.1, 1, k); } });
+      st.push({ name: 'golpe', dur: 0.3, enter: this.enterHit, tick: (dt, k) => { this.rope.set(this.origin(), this.hookPoint(), { wobble: 0.3 * (1 - k), phase: this.t * 30 }); pose.rx = lerp(0.5, 0, k); } });
     }
-    st.push({ name: 'recuperacion', dur: d.recover, tick: (dt, k) => { this.rope.kill(); pose.rx = lerp(pose.rx, 0, k); pose.sy = lerp(pose.sy, 1, k); } });
+    // retracción: vuelve ondulando hasta su sitio
+    st.push({ name: 'retraccion', dur: Math.max(0.12, dist / d.hookSpeed * 0.8), tick: (dt, k) => {
+      if (this.rope.dead) return;
+      const o = this.origin(), h = this.lastTip || this.hookPoint();
+      this.rope.set(o, h.clone().lerp(o, ease(k)), { wobble: 0.35 * (1 - k), phase: this.t * 22, waves: 3 });
+      pose.sy = lerp(pose.sy, 1, k);
+    } });
+    st.push({ name: 'recuperacion', dur: d.recover, enter: () => { this.rope.kill(); this.clearBones(); }, tick: (dt, k) => { pose.rx = lerp(pose.rx, 0, k); pose.sy = lerp(pose.sy, 1, k); } });
     return st;
   }
-  // balanceo hacia el anclaje: arco suave, cola tensa y estela de velocidad
+  // la punta se agarra: enrollado, polvo y sonido
+  grab() {
+    if (this.mode === 'whiff') return;
+    const h = this.hookPoint();
+    this.sfx('stick');
+    this.vfx.ring(h.x, h.y + 0.05, h.z, { r0: 0.15, r1: 0.9, dur: 0.35, color: 0xffd080 });
+    this.vfx.ring(h.x, h.y + 0.25, h.z, { r0: 0.15, r1: 0.7, dur: 0.3, color: 0xffd080 });
+    this.vfx.dust(h.x, h.y, h.z, 4, 1);
+  }
+  // balanceo: péndulo bajo el anclaje hasta colgar del borde
   enterSwing() {
-    this.from = this.p.pos.clone();
+    const p = this.p, a = this.anchor;
+    this.from = p.pos.clone();
     this.script(true);
-    this.face(this.anchor.x, this.anchor.z);
+    this.face(a.x, a.z);
+    const hx = this.from.x - a.x, hz = this.from.z - a.z, hl = Math.hypot(hx, hz) || 1;
+    this.dirH = { x: hx / hl, z: hz / hl };
+    this.u0 = hl; this.w0 = this.from.y - a.y;
+    this.u1 = 0.75; this.w1 = Math.max(-p.H * 0.95, terrainH(a.x + this.dirH.x * 0.75, a.z + this.dirH.z * 0.75) + 0.2 - a.y);
+    this.r0 = Math.hypot(this.u0, this.w0); this.r1 = Math.hypot(this.u1, this.w1);
+    this.a0 = Math.atan2(this.w0, this.u0); this.a1 = Math.atan2(this.w1, this.u1);
+  }
+  swingPos(k) {
+    const a = this.anchor, e = ease(k);
+    const ang = lerp(this.a0, this.a1, e), r = lerp(this.r0, this.r1, e);
+    const u = Math.cos(ang) * r, w = Math.sin(ang) * r - Math.sin(k * Math.PI) * 0.18 * this.r0; // el péndulo baja y vuelve a subir
+    return V(a.x + this.dirH.x * u, Math.max(terrainH(a.x + this.dirH.x * u, a.z + this.dirH.z * u) + 0.05, a.y + w), a.z + this.dirH.z * u);
   }
   tickSwing(dt, k) {
-    const d = this.def, p = this.p, e = ease(k), dist = this.from.distanceTo(this.anchor);
-    p.pos.lerpVectors(this.from, this.anchor, e);
-    p.pos.y += Math.sin(k * Math.PI) * d.arc * dist;
-    this.rope.set(this.origin(), this.anchor);
-    this.pose.rx = 0.5; this.pose.sy = 1.12;
+    const p = this.p;
+    p.pos.copy(this.swingPos(k));
+    this.rope.set(this.origin(), this.anchor, { wobble: 0.04, phase: this.t * 10, sag: 0.05 });
+    this.pose.rx = lerp(0.6, -0.2, k); this.pose.sy = 1.12; this.pose.rz = Math.sin(k * Math.PI) * 0.15;
     this.trail(1);
   }
-  exitSwing() {
+  // trepado: sube por la cola hasta lo alto del saliente
+  tickClimb(dt, k) {
+    const p = this.p, from = this.swingPos(1), a = this.anchor, e = ease(k);
+    p.pos.lerpVectors(from, a, e);
+    p.pos.y += Math.sin(e * Math.PI) * 0.45;
+    const o = this.origin();
+    this.rope.set(o, a, { wobble: 0.02, phase: this.t * 8 });
+    this.pose.rx = lerp(-0.5, 0.2, k); this.pose.sy = lerp(1.08, 1, k); this.pose.rz = 0;
+    if (k > 0.85) this.rope.kill();
+  }
+  exitClimb() {
     const d = this.def, f = this.fwd;
     this.p.pos.copy(this.anchor);
-    this.release(f.x * d.releaseBoost, d.releaseUp, f.z * d.releaseBoost);
+    this.release(f.x * d.releaseBoost * 0.5, d.releaseUp * 0.6, f.z * d.releaseBoost * 0.5);
     this.rope.kill();
     this.vfx.ring(this.anchor.x, this.anchor.y, this.anchor.z, { r0: 0.4, r1: 2.4, dur: 0.4, color: 0xffd080 });
+    this.vfx.dust(this.anchor.x, this.anchor.y + 0.1, this.anchor.z, 6, 1.4);
   }
-  trail(k) {
+  trail(k) { // estela de velocidad discreta (no debe tapar al héroe)
     const c = this.center(0.5);
-    this.vfx.orb(c, { r: 0.28 * k + 0.1, color: 0xffd080, life: 0.3 });
-    if (Math.random() < 0.6) this.vfx.sparks(c.x, c.y, c.z, 0xffe0a0, 1, 2);
+    this._tr = (this._tr || 0) + 1;
+    if (this._tr % 3 === 0) this.vfx.orb(c, { r: 0.12 * k + 0.05, color: 0xffd080, opacity: 0.35, life: 0.25 });
+    if (Math.random() < 0.35) this.vfx.sparks(c.x, c.y, c.z, 0xffe0a0, 1, 1.5);
   }
   // enemigos ligeros: la cola los trae hasta el héroe y los golpea
   tickPull(dt) {
     const t = this.target, p = this.p, f = this.fwd;
     if (t.dead) { this.endStage(); return; }
-    this.rope.set(this.origin(), V(t.pos.x, t.pos.y + 0.6, t.pos.z));
+    this.lastTip = V(t.pos.x, t.pos.y + 0.6, t.pos.z);
+    this.rope.set(this.origin(), this.lastTip, { wobble: 0.08, phase: this.t * 18, sag: 0.25 });
     const to = V(p.pos.x + f.x * (p.R + t.radius + 0.2), p.pos.y, p.pos.z + f.z * (p.R + t.radius + 0.2));
     this.combat.pull(t, to, this.def.pullSpeed, 0.2);
     this.pose.rx = 0.2; this.pose.sy = 1.05;
@@ -188,7 +185,7 @@ class TailSkill extends Skill {
     const t = this.target, d = this.def;
     this.hit(t, d.damage);
     this.combat.push(t, t.pos.x - this.p.pos.x, t.pos.z - this.p.pos.z, d.force);
-    this.shake(0.28); audio.noiseBurst(0.25, 300, 0.3, 'lowpass');
+    this.shake(0.28); audio.noiseBurst(0.25, 300, 0.3, 'lowpass'); this.sfx('snap');
     this.vfx.sparks(t.pos.x, t.pos.y + t.S.height * 0.45, t.pos.z, 0xffd080, 14, 3.4);
     this.vfx.ring(t.pos.x, null, t.pos.z, { r0: 0.6, r1: 3.4, dur: 0.4, color: 0xffd080 });
   }
@@ -556,6 +553,8 @@ class DiveSkill extends Skill {
 
 /* ====================================================================== */
 /*  DRAGÓN DE KOMODO — Lengua Camaleónica                                  */
+/*  Lengua elástica de muchas articulaciones: sale, se pasa y rebota,      */
+/*  se pega al objetivo y se recoge ondulando.                             */
 /* ====================================================================== */
 class TongueSkill extends Skill {
   begin() {
@@ -574,7 +573,7 @@ class TongueSkill extends Skill {
       if (s) { this.dest = s; this.mode = 'propel'; } else this.mode = 'whiff';
     }
     if (this.mode === 'whiff') { this.cdFactor = 0.45; ui.banner('find', '👅', 'No hay nada al alcance de la lengua'); }
-    this.tongue = this.track(this.vfx.rope({ radius: 0.09, color: 0xff6a8a }));
+    this.tongue = makeElastic(this, { n: d.segments || 32, r0: 0.1, r1: 0.065, color: 0xff5a7c, rough: 0.22, emissive: 0x3a0010, tipR: 0.15 });
     this.start();
     return true;
   }
@@ -604,30 +603,51 @@ class TongueSkill extends Skill {
     if (this.mode === 'propel') return this.target ? V(this.target.pos.x, this.target.pos.y + this.target.S.height * 0.45, this.target.pos.z) : V(this.dest.x, this.dest.y + 0.4, this.dest.z);
     return V(p.pos.x + f.x * d.range * 0.6, p.pos.y + p.H * 0.45, p.pos.z + f.z * d.range * 0.6);
   }
-  mouth() { const f = this.fwd; return V(this.p.pos.x + f.x * this.p.R * 0.9, this.p.pos.y + this.p.H * 0.55, this.p.pos.z + f.z * this.p.R * 0.9); }
+  // boca: punta del hueso de la cabeza (o delante del cuerpo en el modelo de reserva)
+  mouth() {
+    const f = this.fwd, b = boneWorld(this, 'head_end');
+    if (b) return b.add(V(f.x * 0.12, -0.05, f.z * 0.12));
+    return V(this.p.pos.x + f.x * this.p.R * 0.9, this.p.pos.y + this.p.H * 0.55, this.p.pos.z + f.z * this.p.R * 0.9);
+  }
   build() {
-    const d = this.def, pose = this.pose;
+    const d = this.def, pose = this.pose, ov = d.overshoot || 0.12, wob = d.wobble || 0.45;
     const st = [
       { name: 'preparacion', dur: d.prep, tick: (dt, k) => { pose.rx = -0.18 * k; pose.sy = 1 - 0.05 * k; } },
-      { name: 'disparo', dur: d.shootT, enter: () => { audio.whoosh(); }, tick: (dt, k) => { const m = this.mouth(), t = this.tip(); this.tongue.set(m, m.clone().lerp(t, ease(k))); pose.rx = lerp(-0.18, 0.2, k); } },
+      // extensión: rápida, se pasa del objetivo y rebota (elasticidad)
+      { name: 'extension', dur: d.shootT * 1.4, enter: () => { audio.whoosh(); this.sfx('slurp'); }, tick: (dt, k) => {
+        const m = this.mouth(), t = this.tip(), e = 1 - Math.pow(1 - k, 3) + ov * Math.sin(k * Math.PI) * k;
+        this.tongue.set(m, m.clone().lerp(t, e), { wobble: wob * (1 - k), phase: this.t * 34, waves: 2.5 });
+        pose.rx = lerp(-0.18, 0.22, k);
+      }, exit: () => this.stick() },
     ];
-    if (this.mode === 'pull') st.push({ name: 'atraer', dur: Math.min(0.9, d.retractT + this.p.pos.distanceTo(this.target.pos) / d.pullSpeed), tick: this.tickPull });
+    if (this.mode === 'pull') st.push({ name: 'agarre-y-retraccion', dur: Math.min(0.9, d.retractT + this.p.pos.distanceTo(this.target.pos) / d.pullSpeed), tick: this.tickPull });
     else if (this.mode === 'propel') {
       const away = this.dest.distanceTo(this.p.pos);
       st.push({ name: 'impulso', dur: Math.max(0.1, away / d.propelSpeed), enter: this.enterPropel, tick: this.tickPropel, exit: this.exitPropel });
-    } else st.push({ name: 'recoger', dur: d.retractT, tick: (dt, k) => { const m = this.mouth(), t = this.tip(); this.tongue.set(m, t.clone().lerp(m, ease(k))); } });
-    if (this.mode !== 'whiff') st.push({ name: 'giro-de-cola', dur: d.spinT, enter: () => { this.spun = false; this.tongue.kill(); }, tick: this.tickSpin });
+    } else st.push({ name: 'retraccion', dur: d.retractT, tick: (dt, k) => { const m = this.mouth(), t = this.tip(); this.tongue.set(m, t.clone().lerp(m, ease(k)), { wobble: wob * 0.8 * Math.sin(k * Math.PI), phase: this.t * 28, waves: 3 }); } });
+    if (this.mode !== 'whiff') st.push({ name: 'giro-de-cola', dur: d.spinT, enter: () => { this.spun = false; this.tongue.kill(); this.sfx('snap'); }, tick: this.tickSpin });
     st.push({ name: 'recuperacion', dur: d.recover, tick: (dt, k) => { this.tongue.kill(); pose.spin = 0; pose.rx = lerp(pose.rx, 0, k); pose.sy = lerp(pose.sy, 1, k); } });
     return st;
   }
-  tickPull(dt) {
+  // la punta se pega al objetivo: salpicadura rosa y chasquido
+  stick() {
+    if (this.mode === 'whiff') return;
+    const t = this.tip();
+    this.sfx('stick');
+    this.vfx.ring(t.x, t.y, t.z, { r0: 0.1, r1: 1.1, dur: 0.3, color: 0xff7aa0 });
+    this.vfx.sparks(t.x, t.y, t.z, 0xffa0c0, 10, 2.4);
+    this.vfx.orb(t, { r: 0.35, color: 0xff6a9a, life: 0.25, grow: 1 });
+  }
+  tickPull(dt, k) {
     const t = this.target, p = this.p, f = this.fwd;
     if (t.dead) { this.endStage(); return; }
     const m = this.mouth();
-    this.tongue.set(m, V(t.pos.x, t.pos.y + 0.6, t.pos.z));
+    // tensa y con un leve rebote mientras arrastra
+    this.tongue.set(m, V(t.pos.x, t.pos.y + 0.6, t.pos.z), { wobble: 0.08 * Math.sin(this.t * 20), phase: this.t * 18, sag: 0.15 });
     const to = V(p.pos.x + f.x * (p.R + t.radius + 0.4), p.pos.y, p.pos.z + f.z * (p.R + t.radius + 0.4));
     this.combat.pull(t, to, this.def.pullSpeed, 0.2);
-    if (Math.hypot(t.pos.x - to.x, t.pos.z - to.z) < 0.6) this.endStage();
+    this.pose.rx = -0.12; // tira con el cuello
+    if (Math.hypot(t.pos.x - to.x, t.pos.z - to.z) < 0.6) { this.sfx('slurp'); this.endStage(); }
   }
   enterPropel() {
     this.from = this.p.pos.clone();
@@ -638,7 +658,7 @@ class TongueSkill extends Skill {
     const e = ease(k), p = this.p;
     p.pos.lerpVectors(this.from, this.dest, e);
     p.pos.y += Math.sin(k * Math.PI) * 0.6;
-    this.tongue.set(this.mouth(), this.tip());
+    this.tongue.set(this.mouth(), this.tip(), { wobble: 0.05, phase: this.t * 12 });
     this.pose.rx = 0.5; this.pose.sy = 1.1;
     this.vfx.orb(this.center(0.5), { r: 0.3, color: 0xffb070, life: 0.25 });
   }
@@ -741,89 +761,18 @@ class BlinkSkill extends Skill {
   }
 }
 
-/* ====================================================================== */
-/*  LINCE — Mirada del Eclipse (ojo solar / lunar) y Eclipse Total         */
-/* ====================================================================== */
-class EclipseSkill extends Skill {
-  begin() {
-    const hs = this.hs;
-    this.mode = hs.liraMode;
-    hs.liraMode = this.mode === 'solar' ? 'lunar' : 'solar'; // se alternan
-    this.start();
-    return true;
-  }
-  build() {
-    const d = this.def, pose = this.pose, spec = d[this.mode];
-    return [
-      { name: 'preparacion', dur: d.prep, tick: (dt, k) => { // el ojo se enciende
-        pose.rx = -0.22 * k;
-        const h = V(this.p.pos.x, this.p.pos.y + this.p.H * 1.05, this.p.pos.z);
-        this.vfx.orb(h, { r: 0.1 + 0.4 * k, color: spec.color, life: 0.18, grow: 1 });
-      }, exit: () => this.hs.setBuff({ mode: this.mode, t: spec.duration, spec }) },
-      { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.rx = lerp(-0.22, 0, k); } },
-    ];
-  }
-}
-
-class TotalSkill extends Skill {
-  begin() { this.start(); return true; }
-  build() {
-    const d = this.def, pose = this.pose, sk = HERO_SKILLS.lira.skill;
-    return [
-      { name: 'preparacion', dur: d.prep, tick: (dt, k) => {
-        pose.rx = -0.3 * k; pose.sy = 1 + 0.06 * k;
-        const h = V(this.p.pos.x, this.p.pos.y + this.p.H * 1.05, this.p.pos.z);
-        this.vfx.orb(V(h.x - 0.18, h.y, h.z), { r: 0.1 + 0.4 * k, color: sk.solar.color, life: 0.18, grow: 1 });
-        this.vfx.orb(V(h.x + 0.18, h.y, h.z), { r: 0.1 + 0.4 * k, color: sk.lunar.color, life: 0.18, grow: 1 });
-      } },
-      { name: 'eclipse', dur: d.exec, enter: this.enterTotal, tick: this.tickTotal },
-      { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.rx = lerp(-0.3, 0, k); } },
-    ];
-  }
-  enterTotal() {
-    const d = this.def, p = this.p, cam = this.g.camera;
-    this.hs.setBuff({ mode: 'both', t: d.exec, spec: d });
-    this.zoneA = this.track(this.vfx.telegraph('disc', { x: p.pos.x, z: p.pos.z, r: d.radius, color: 0xffd24a, opacity: 0.3 }));
-    this.zoneB = this.track(this.vfx.telegraph('disc', { x: p.pos.x, z: p.pos.z, r: d.radius * 0.8, color: 0x8a9aff, opacity: 0.3 }));
-    this.zoneA.setProgress(1); this.zoneB.setProgress(1);
-    const away = V(p.pos.x - cam.position.x, 0, p.pos.z - cam.position.z).normalize();
-    this.vfx.eclipse(cam, V(p.pos.x + away.x * 7, p.pos.y + p.H + 8, p.pos.z + away.z * 7), { r: 3.4, life: d.exec, color: 0xffc24a }); // el eclipse se ve detrás
-    this.tickT = 0;
-    this.shake(0.25); audio.power('ice');
-  }
-  tickTotal(dt) {
-    const d = this.def, p = this.p;
-    this.pose.rx = -0.25; this.pose.sy = 1.04;
-    this.zoneA.set(p.pos.x, p.pos.z);
-    this.zoneB.set(p.pos.x, p.pos.z);
-    this.tickT -= dt;
-    if (this.tickT <= 0) {
-      this.tickT = d.tick;
-      this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 1, r1: d.radius, dur: 0.6, color: Math.random() < 0.5 ? 0xffd24a : 0x8a9aff });
-      for (const t of this.combat.inCircle(p.pos.x, p.pos.z, d.radius)) { // combina los dos ojos: ralentiza, marca y daña
-        this.combat.slow(t, d.slowF, 1.0);
-        this.combat.mark(t, 1.2);
-        this.hit(t, d.damage);
-      }
-    }
-    const a = this.t * 1.5;
-    this.vfx.orb(V(p.pos.x + Math.cos(a) * 1.3, p.pos.y + p.H * 0.9, p.pos.z + Math.sin(a) * 1.3), { r: 0.25, color: 0xffd24a, life: 0.3 });
-    this.vfx.orb(V(p.pos.x - Math.cos(a) * 1.3, p.pos.y + p.H * 0.9, p.pos.z - Math.sin(a) * 1.3), { r: 0.25, color: 0x8a9aff, life: 0.3 });
-  }
-}
-
-const SKILLS = { tail: TailSkill, haboob: HaboobSkill, seasons: SeasonsSkill, wheel: WheelSkill, dive: DiveSkill, tongue: TongueSkill, blink: BlinkSkill, eclipse: EclipseSkill, total: TotalSkill };
+const SKILLS = { tail: TailSkill, haboob: HaboobSkill, seasons: SeasonsSkill, wheel: WheelSkill, dive: DiveSkill, tongue: TongueSkill, blink: BlinkSkill, ...POWER_CLASSES };
 
 /* ====================================================================== */
-/*  Gestor: una habilidad activa a la vez + efectos persistentes del Lince */
+/*  Gestor: una habilidad principal a la vez + poderes de fondo (vuelo,    */
+/*  espejismos) que conviven con ella                                      */
 /* ====================================================================== */
 export class HeroSkills {
   constructor(game) {
     this.g = game;
     this.cur = null;
-    this.buff = null;
+    this.bg = [];          // poderes de fondo activos
     this.seasonIdx = 0;
-    this.liraMode = 'solar';
   }
 
   // Habilidades del héroe para la barra: [{ id, key, icon, name, cd }]
@@ -836,76 +785,44 @@ export class HeroSkills {
 
   reset() {
     if (this.cur) { this.cur.dispose(); this.cur = null; }
-    this.endBuff();
+    for (const b of this.bg) b.dispose();
+    this.bg.length = 0;
     this.seasonIdx = 0;
-    this.liraMode = 'solar';
-    Object.assign(this.g.player.pose, NEUTRAL);
+    if (this.g.vfx2) this.g.vfx2.clear();
+    const p = this.g.player;
+    Object.assign(p.pose, NEUTRAL);
+    p.fly = null; p.moveMul = 1; p.speedBuff = 1;
+    if (p.model) p.model.boneFx = null;
   }
+
+  // ¿Este poder está activo y admite una segunda pulsación? (saltar a un espejismo, aterrizar, salir de la roca)
+  canRecast(key) { return !!this.recastTarget(key); }
+  recastTarget(key) {
+    for (const s of [this.cur, ...this.bg]) if (s && s.key === key && s.recast && s.canRecast) return s;
+    return null;
+  }
+  recast(key) { const s = this.recastTarget(key); return s ? s.recast() : false; }
 
   // Devuelve false (no se pudo usar) o { cdFactor }
   use(key) {
     const g = this.g, hero = g.hero && g.hero.id, def = HERO_SKILLS[hero] && HERO_SKILLS[hero][key];
     if (!def) return false;
-    if (this.cur) { ui.banner('find', def.icon, 'Termina primero la habilidad en curso'); return false; }
     const Cls = SKILLS[def.id];
+    if (!Cls) return false;
+    if (Cls.background) {
+      if (this.bg.some((b) => b.key === key)) return false;
+    } else if (this.cur) { ui.banner('find', def.icon, 'Termina primero la habilidad en curso'); return false; }
     const sk = new Cls(this, def);
+    sk.key = key;
     if (!sk.begin()) { sk.dispose(); return false; }
-    this.cur = sk;
+    if (Cls.background) this.bg.push(sk); else this.cur = sk;
     return { cdFactor: sk.cdFactor };
   }
 
   update(dt) {
     const p = this.g.player;
     Object.assign(p.pose, NEUTRAL);
+    for (let i = this.bg.length - 1; i >= 0; i--) { const b = this.bg[i]; if (b.update(dt)) { b.dispose(); this.bg.splice(i, 1); } }
     if (this.cur && this.cur.update(dt)) { this.cur.dispose(); this.cur = null; }
-    this.updateBuff(dt);
-  }
-
-  /* ----- Lince: ojo solar / ojo lunar / ambos (eclipse total) ----- */
-  setBuff(b) {
-    this.endBuff();
-    this.buff = { ...b, tick: 0, evade: 0, ring: 0 };
-    const c = this.g.combat, p = this.g.player, s = b.spec;
-    if (b.mode === 'solar') c.damageMul = s.damageMul;
-    else if (b.mode === 'lunar') p.speedBuff = s.speedMul;
-    else { c.damageMul = s.markMul; p.speedBuff = s.speedMul; }
-    audio.found();
-  }
-  endBuff() {
-    if (!this.buff) return;
-    this.g.combat.damageMul = 1;
-    this.g.player.speedBuff = 1;
-    this.buff = null;
-  }
-  updateBuff(dt) {
-    const b = this.buff;
-    if (!b) return;
-    const g = this.g, c = g.combat, p = g.player, s = b.spec, vfx = g.vfx;
-    b.t -= dt;
-    if (b.t <= 0) { this.endBuff(); return; }
-    const solar = b.mode === 'solar' || b.mode === 'both', lunar = b.mode === 'lunar' || b.mode === 'both';
-    const head = V(p.pos.x, p.pos.y + p.H * 1.1 + 0.15 * Math.sin(b.t * 5), p.pos.z);
-    if (solar) vfx.orb(V(head.x + (lunar ? -0.16 : 0), head.y, head.z), { r: 0.17, color: 0xffd24a, life: 0.12 });
-    if (lunar) vfx.orb(V(head.x + (solar ? 0.16 : 0), head.y, head.z), { r: 0.17, color: 0x8a9aff, life: 0.12 });
-    b.tick -= dt;
-    b.ring -= dt;
-    if (b.tick <= 0) {
-      b.tick = 0.35;
-      if (solar && b.mode === 'solar') for (const t of c.targets()) if (Math.hypot(t.pos.x - p.pos.x, t.pos.z - p.pos.z) < s.markRange) c.mark(t, 0.9); // marca a los enemigos
-      if (lunar && b.mode === 'lunar') for (const t of c.targets()) if (Math.hypot(t.pos.x - p.pos.x, t.pos.z - p.pos.z) < s.range) c.slow(t, s.slowF, 0.7); // los enfría
-    }
-    if (b.ring <= 0) {
-      b.ring = 0.6;
-      if (b.mode === 'solar') for (const t of c.targets()) if (t.st.mark > 0) vfx.ring(t.pos.x, null, t.pos.z, { r0: t.radius * 0.8, r1: t.radius * 1.4 + 0.5, dur: 0.5, color: 0xffd24a, opacity: 0.6 });
-    }
-    if (b.mode === 'lunar') { // esquiva automática cada cierto tiempo
-      b.evade -= dt;
-      if (b.evade <= 0) {
-        b.evade = s.evadeEvery;
-        p.evadeT = 0.7;
-        vfx.ring(p.pos.x, p.pos.y + 0.6, p.pos.z, { r0: 0.3, r1: 2, dur: 0.5, color: 0x8a9aff });
-        vfx.sparks(p.pos.x, p.pos.y + p.H * 0.6, p.pos.z, 0x8a9aff, 8, 2.4);
-      }
-    }
   }
 }

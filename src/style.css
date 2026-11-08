@@ -342,6 +342,12 @@ html.touch .how-grid, html.touch .controls-hint, html.touch .click-hint, html.to
 .skill.sel { border-color: var(--el); box-shadow: 0 0 16px var(--el); background: rgba(40,60,90,.85); transform: translateY(-3px); }
 .skill .sk { position: absolute; left: 4px; top: 1px; font-size: 10px; font-weight: 700; color: #cfe0f2; }
 .skill .cdo { position: absolute; left: 0; right: 0; bottom: 0; height: 0; background: rgba(0,0,0,.6); pointer-events: none; }
+.skill .cdt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 800 15px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #000; pointer-events: none; }
+.skill.cooling .ic { filter: grayscale(.7) brightness(.7); }
+.skill.live { border-color: #ffe27a; box-shadow: 0 0 18px #ffd24a; animation: sk-live 0.8s ease-in-out infinite alternate; }
+@keyframes sk-live { from { transform: translateY(-2px) scale(1); } to { transform: translateY(-4px) scale(1.07); } }
+.skill.ready-flash { animation: sk-ready 0.55s ease-out; }
+@keyframes sk-ready { 0% { box-shadow: 0 0 0 0 rgba(255,255,255,.9); transform: scale(1.18); } 100% { box-shadow: 0 0 0 14px rgba(255,255,255,0); transform: scale(1); } }
 
 /* Selector de niveles */
 .progress-line { color: #cfe0f2; margin-bottom: 14px; }

@@ -65,13 +65,17 @@ export class Player {
     this.swingT = 0;
     this.petrifyT = 0; this.petrifyFade = 1; // petrificado (Basilisco, Medusa)
     this.slowT = 0; this.slowF = 1;           // ralentizado (hielo de Cerbero y Fenrir...)
-    this.speedBuff = 1;                       // bonus de velocidad (Ojo Lunar del Lince)
+    this.speedBuff = 1;                       // bonus de velocidad (Penumbra del Lince)
     this.driftX = 0; this.driftZ = 0;         // tirón externo por fotograma (remolino del Kraken, vientos del Dragón Long)
-    this.evadeT = 0;                          // esquiva (Ojo Lunar del Lince): ignora los golpes
+    this.evadeT = 0;                          // intocable (esfera de Penumbra del Lince): ignora los golpes
     this.pose = { rx: 0, rz: 0, sy: 1, dy: 0, spin: 0, hidden: false }; // pose extra de las habilidades (skills/hero.js)
     this._wasHidden = false;
     this.capBonus = 0;
     this.cdMul = 1;
+    // VUELO (Águila: vuelo libre · Fénec: vuelo de orejas). Lo activa/termina skills/hero.js.
+    // { kind, t, max, speed, climb, sink, ceil, lean, minT, ending }
+    this.fly = null;
+    this.moveMul = 1; // velocidad extra de una transformación (bola de roca del Jaglion)
   }
 
   setHero(def, model) {
@@ -113,6 +117,8 @@ export class Player {
     this.petrifyT = 0; this.slowT = 0; this.slowF = 1; this.speedBuff = 1; this.evadeT = 0;
     this.driftX = this.driftZ = 0;
     this.env = { slip: 1, wind: { x: 0, z: 0 }, speedMul: 1 };
+    this.fly = null;
+    this.moveMul = 1;
   }
 
   // Superpone la pose de una habilidad (inclinación, aplastamiento, giro, desaparición) sobre la animación del modelo
@@ -140,7 +146,7 @@ export class Player {
 
   /* ------------------------ poderes ------------------------ */
   usePower(fx) {
-    if (this.cd > 0 || this.locked || this.rescueT > 0) return false;
+    if (this.cd > 0 || this.locked || this.rescueT > 0 || this.fly) return false;
     const type = this.hero.power.type;
     const w = this.world;
     const depthHere = w.waterY - terrainH(this.pos.x, this.pos.z);
@@ -280,10 +286,13 @@ export class Player {
     if (w.slowAt && this.grounded) maxSpeed *= w.slowAt(pos.x, pos.z);
     if (this.dashT > 0) maxSpeed = 20;
     if (this.gliding) maxSpeed = st.speed * 1.6;
+    const fly = this.fly;
+    if (fly) maxSpeed = fly.speed * (inp.sprint ? 1.4 : 1) * (this.slowT > 0 ? this.slowF : 1);
+    maxSpeed *= this.moveMul;
     const tvx = dx * maxSpeed + this.driftX, tvz = dz * maxSpeed + this.driftZ; // drift: tirón externo (remolino, viento) que se aplica cada fotograma
     this.driftX = this.driftZ = 0;
     const slip = this.grip || this.climbT > 0 ? 1 : this.env.slip;
-    const accel = this.dashT > 0 ? 0 : this.grounded ? 16 * slip : this.swimming ? 5 : 4.5;
+    const accel = this.dashT > 0 ? 0 : fly ? 5.5 : this.grounded ? 16 * slip : this.swimming ? 5 : 4.5;
     if (this.dashT <= 0) {
       this.vx = damp(this.vx, tvx, accel, dt);
       this.vz = damp(this.vz, tvz, accel, dt);
@@ -312,7 +321,15 @@ export class Player {
     this.gliding = !frozen && this.glideT > 0 && !this.grounded && !this.swimming && inp.jump && this.vy < 3;
 
     // vertical
-    if (this.swimming && this.mantling <= 0 && this.vy < 4) {
+    if (fly) {
+      fly.t += dt;
+      if (fly.t >= fly.max) fly.ending = true; // se acaba el tiempo: desciende suave hasta aterrizar
+      const alt = pos.y - this.floorY(pos.x, pos.z, pos.y);
+      let tv = !frozen && inp.jump && !fly.ending ? fly.climb : -fly.sink * (fly.ending ? 2.2 : 1);
+      if (alt > fly.ceil && tv > 0) tv = Math.min(tv, (fly.ceil - alt) * 2); // techo de vuelo
+      if (fly.t < 0.45) tv = Math.max(tv, fly.climb * 1.2); // despegue
+      this.vy = damp(this.vy, tv, 4, dt);
+    } else if (this.swimming && this.mantling <= 0 && this.vy < 4) {
       const target = w.waterY - 1.05;
       this.vy = damp(this.vy, (target - pos.y) * 6, 9, dt);
     } else if (this.gliding) {
@@ -355,6 +372,12 @@ export class Player {
     // movimiento vertical
     this.moveVertical(dt, surfing);
 
+    // aterrizaje: tras el despegue, tocar el suelo descendiendo termina el vuelo
+    if (fly && this.fly === fly && (this.grounded || this.swimming) && fly.t > (fly.minT || 0.8) && !(inp.jump && !fly.ending)) {
+      this.fly = null;
+      this.events.push({ type: 'flyEnd', kind: fly.kind });
+    }
+
     // límites del mundo
     pos.x = clamp(pos.x, -120, 120);
     pos.z = clamp(pos.z, -120, 120);
@@ -371,6 +394,7 @@ export class Player {
         swimming: this.swimming,
         vy: this.vy,
         gliding: this.gliding || (this.glideT > 0 && !this.grounded && this.hero.id === 'ambar'),
+        flying: !!fly, flyLean: fly ? fly.lean * Math.min(1, hs / Math.max(1, fly.speed)) : 0,
         dashing: this.dashT > 0,
         surfing: this.surfing,
         carrying: this.carrying.length,

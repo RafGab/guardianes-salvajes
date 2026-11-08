@@ -1397,6 +1397,27 @@ class GLBHero {
       this.action = null;
       this.actionName = '';
     }
+    // Huesos por nombre (orejas, alas, colas...): los poderes pueden moverlos encima de la animación (boneFx)
+    this.bones = {};
+    model.traverse((o) => { if (o.isBone) { this.bones[o.name] = o; o.userData.q0 = o.quaternion.clone(); o.userData.s0 = o.scale.clone(); } });
+    this.boneFx = null; // (bones, dt, t, fx) => void · lo fija una habilidad y lo quita al terminar
+    this._touched = new Set();
+    const qa = new THREE.Quaternion(), qp = new THREE.Quaternion(), qb = new THREE.Quaternion(), ax = new THREE.Vector3();
+    // Herramientas para las habilidades: giran o estiran un hueso en el espacio del personaje
+    // (X = su izquierda, Y = arriba, Z = delante), sea cual sea la orientación propia del hueso.
+    this.boneTools = {
+      rot: (b, x, y, z, ang) => {
+        if (!b || !ang) return;
+        this._touched.add(b);
+        this.body.getWorldQuaternion(qb);
+        ax.set(x, y, z).normalize().applyQuaternion(qb);
+        qa.setFromAxisAngle(ax, ang);
+        b.parent.getWorldQuaternion(qp);
+        // local' = P⁻¹ · giro · P · local
+        b.quaternion.premultiply(qp).premultiply(qa).premultiply(qp.invert());
+      },
+      scale: (b, s) => { if (!b) return; this._touched.add(b); b.scale.copy(b.userData.s0).multiplyScalar(s); },
+    };
   }
   setVisible(v) {
     this.root.visible = v;
@@ -1428,14 +1449,19 @@ class GLBHero {
       else if (s.power > 0.2 && this.clips.power) name = 'power';
       else if (run > 0.15) { name = run > 0.8 ? 'run' : 'walk'; sp = clamp(run * 1.1, 0.5, 1.6); }
       this.play(name, 0.22, sp);
+      // los huesos que movió una habilidad vuelven a su reposo antes de animar (así no se acumulan giros)
+      for (const bn of this._touched) { bn.quaternion.copy(bn.userData.q0); bn.scale.copy(bn.userData.s0); }
+      this._touched.clear();
       this.mixer.update(dt);
     }
+    if (this.boneFx) { this.root.updateMatrixWorld(true); this.boneFx(this.bones, dt, this.t, this.boneTools); }
     // movimiento procedural adicional (inclinación y rebote) que se suma a las animaciones del GLB
     const b = this.body;
     const bob = this.mixer ? 0 : Math.abs(Math.sin(this.phase)) * 0.07 * Math.min(run, 1.3);
     let lean = 0.14 * run;
     let y = bob;
     if (swim) { lean = 1.2; y = -0.25; }
+    else if (s.flying) lean = 0.12 + (s.flyLean || 0);
     else if (s.gliding) lean = 0.9;
     else if (s.dashing) lean = 1.0;
     else if (air) lean = 0.15;
