@@ -71,6 +71,9 @@ kbd { display: inline-block; min-width: 26px; padding: 2px 8px; border-radius: 7
 .cards { display: flex; gap: 10px; }
 .card { width: 108px; padding: 10px 6px 9px; text-align: center; border-radius: 16px; cursor: pointer; background: var(--bg); border: 2px solid var(--line); transition: transform .15s, border-color .15s, box-shadow .15s; backdrop-filter: blur(8px); }
 .card:hover { transform: translateY(-4px); }
+.card, .tm-card { position: relative; }
+.card .lead, .tm-card .lead { position: absolute; top: 3px; left: 50%; transform: translateX(-50%); padding: 1px 7px; border-radius: 9px; background: linear-gradient(#ffe27a, #e8a020); color: #3a2400; font: 800 10px/16px system-ui, sans-serif; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,.4); pointer-events: none; z-index: 2; }
+.card.leader { border-color: rgba(255,210,90,.75); }
 .card.sel { border-color: var(--cel); box-shadow: 0 0 22px var(--cel), inset 0 0 18px rgba(255,255,255,.06); transform: translateY(-8px); }
 .card .em { font-size: 34px; line-height: 1.1; width: 56px; height: 56px; margin: 0 auto; border-radius: 50%; overflow: hidden; display: flex; align-items: center; justify-content: center; }
 .card .em img { width: 100%; height: 100%; object-fit: cover; object-position: center 30%; display: block; }

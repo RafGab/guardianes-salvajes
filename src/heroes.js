@@ -20,11 +20,13 @@ export const ELEMENTS = {
 // Los 7 guardianes de CATAC 7 (canon: nombre, especie, elemento y poder fijados
 // por las fichas de personaje proporcionadas — no inventar ni reasignar sin indicación).
 export const HEROES = [
+// ORDEN FIJO de la sala de selección (indicado por Viviana): Jaglion (líder), Komodo, Zorra ártica, Fénec, Lince, Águila, Nutria.
+// Toda la interfaz recorre esta lista tal cual: no reordenar.
   {
-    id: 'lira', name: 'Lira', species: 'Lince', element: 'tierra',
-    power: { type: 'pillar', name: 'Pilar de Tierra', cd: 5, desc: 'Su guadaña canaliza la energía de la tierra: hace brotar una columna de roca bajo sus pies, una plataforma segura sobre el peligro.' },
-    stats: { speed: 7.3, jump: 8.8, swim: 4.6, carry: 2 },
-    bio: 'Lince valiente, fuerte, ágil y leal. Su guadaña de energía manipula el terreno, crea barreras y aumenta su fuerza en combate. "La fuerza de la tierra también habita en la agilidad."',
+    id: 'jago', name: 'Jago', species: 'Jaglión', element: 'roca', leader: true, // líder del grupo: siempre el primero
+    power: { type: 'dash', name: 'Impulso de Roca', cd: 4, desc: 'Usa su cola como cuerda natural y su ala deslizadora para lanzarse con fuerza: un gran salto para trepar riscos y cruzar huecos.' },
+    stats: { speed: 7.6, jump: 9.0, swim: 3.9, carry: 2 },
+    bio: 'Jaglión valiente, leal, audaz, resistente y explorador. Su cola es su herramienta principal para escalar, trepar y moverse en terrenos difíciles. "La montaña no es un límite… es mi hogar."',
   },
   {
     id: 'kairo', name: 'Kairo', species: 'Komodo', element: 'fuego',
@@ -33,10 +35,10 @@ export const HEROES = [
     bio: 'Komodo valiente, fuerte, leal, estratégico e indomable. Su piel es casi impenetrable y su aliento puede encender lo que toca. "El fuego también es una forma de sobrevivir."',
   },
   {
-    id: 'jago', name: 'Jago', species: 'Jaglión', element: 'roca',
-    power: { type: 'dash', name: 'Impulso de Roca', cd: 4, desc: 'Usa su cola como cuerda natural y su ala deslizadora para lanzarse con fuerza: un gran salto para trepar riscos y cruzar huecos.' },
-    stats: { speed: 7.6, jump: 9.0, swim: 3.9, carry: 2 },
-    bio: 'Jaglión valiente, leal, audaz, resistente y explorador. Su cola es su herramienta principal para escalar, trepar y moverse en terrenos difíciles. "La montaña no es un límite… es mi hogar."',
+    id: 'kyra', name: 'Kyra', species: 'Zorro ártico', element: 'hielo',
+    power: { type: 'ice', name: 'Hacha de Hielo', cd: 6, desc: 'Su hacha de hielo cristalino congela el agua a su alrededor y crea una plataforma que sube con la inundación.' },
+    stats: { speed: 7.0, jump: 8.8, swim: 3.8, carry: 2 },
+    bio: 'Zorro ártico valiente, curiosa, amigable, leal, inteligente y resistente. Su hacha de hielo cristalino puede crear o manipular el hielo. "El hielo también tiene un corazón."',
   },
   {
     id: 'halley', name: 'Halley', species: 'Fénec', element: 'arena',
@@ -45,22 +47,22 @@ export const HEROES = [
     bio: 'Fénec siniestra, inteligente, manipuladora, ambiciosa y vengativa. Controla la arena a su alrededor y lee el terreno del desierto. "Pequeña en tamaño… gigante en espíritu."',
   },
   {
-    id: 'nilo', name: 'Nilo', species: 'Nutria', element: 'agua',
-    power: { type: 'surf', name: 'Impulso Acuático', cd: 7, desc: 'Su cola con tecnología y su flyboard calman la corriente: durante unos segundos corre sobre el agua sin que lo arrastre.' },
-    stats: { speed: 6.6, jump: 8.4, swim: 5.0, carry: 3 },
-    bio: 'Nutria valiente, curiosa, amigable, leal y cariñosa. "La emoción de descubrir el mundo… también se vive en el agua."',
-  },
-  {
-    id: 'kyra', name: 'Kyra', species: 'Zorro ártico', element: 'hielo',
-    power: { type: 'ice', name: 'Hacha de Hielo', cd: 6, desc: 'Su hacha de hielo cristalino congela el agua a su alrededor y crea una plataforma que sube con la inundación.' },
-    stats: { speed: 7.0, jump: 8.8, swim: 3.8, carry: 2 },
-    bio: 'Zorro ártico valiente, curiosa, amigable, leal, inteligente y resistente. Su hacha de hielo cristalino puede crear o manipular el hielo. "El hielo también tiene un corazón."',
+    id: 'lira', name: 'Lira', species: 'Lince', element: 'tierra',
+    power: { type: 'pillar', name: 'Pilar de Tierra', cd: 5, desc: 'Su guadaña canaliza la energía de la tierra: hace brotar una columna de roca bajo sus pies, una plataforma segura sobre el peligro.' },
+    stats: { speed: 7.3, jump: 8.8, swim: 4.6, carry: 2 },
+    bio: 'Lince valiente, fuerte, ágil y leal. Su guadaña de energía manipula el terreno, crea barreras y aumenta su fuerza en combate. "La fuerza de la tierra también habita en la agilidad."',
   },
   {
     id: 'ambar', name: 'Ámbar', species: 'Águila', element: 'aire',
     power: { type: 'glide', name: 'Ráfaga Celeste', cd: 6, desc: 'Una corriente de aire la lanza hacia el cielo y planea con sus discos de viento. Mantén SALTAR para seguir planeando.' },
     stats: { speed: 7.2, jump: 9.4, swim: 3.4, carry: 1 },
     bio: 'Águila valiente, curiosa, ágil, estratégica y libre. Sus discos de viento y su módulo de alas le permiten volar a grandes alturas. "El viento no me detiene… me lleva más alto."',
+  },
+  {
+    id: 'nilo', name: 'Nilo', species: 'Nutria', element: 'agua',
+    power: { type: 'surf', name: 'Impulso Acuático', cd: 7, desc: 'Su cola con tecnología y su flyboard calman la corriente: durante unos segundos corre sobre el agua sin que lo arrastre.' },
+    stats: { speed: 6.6, jump: 8.4, swim: 5.0, carry: 3 },
+    bio: 'Nutria valiente, curiosa, amigable, leal y cariñosa. "La emoción de descubrir el mundo… también se vive en el agua."',
   },
 ];
 

@@ -221,7 +221,8 @@ export const ui = {
       const c = document.createElement('div');
       c.className = 'card';
       c.style.setProperty('--cel', el.css);
-      c.innerHTML = `<div class="em"><img src="${HERO_FACE(h.id)}" alt="${h.name}" /></div><div class="nm">${h.name}</div><div class="sp">${h.species}</div><div class="el">${el.icon} ${el.name}</div>`;
+      c.innerHTML = `${h.leader ? '<span class="lead">👑 Líder</span>' : ''}<div class="em"><img src="${HERO_FACE(h.id)}" alt="${h.name}" /></div><div class="nm">${h.name}</div><div class="sp">${h.species}</div><div class="el">${el.icon} ${el.name}</div>`;
+      if (h.leader) c.classList.add('leader');
       c.addEventListener('click', () => onPick(i));
       box.appendChild(c);
     });
@@ -263,7 +264,7 @@ export const ui = {
       c.className = 'tm-card';
       c.dataset.id = h.id;
       c.style.setProperty('--cel', el.css);
-      c.innerHTML = `<div class="em"><img src="${HERO_FACE(h.id)}" alt="${h.name}" /></div><div class="nm">${h.name}</div><div class="el">${el.icon} ${el.name}</div><div class="ht">${fmtH(h.id)}</div>`;
+      c.innerHTML = `${h.leader ? '<span class="lead">👑</span>' : ''}<div class="em"><img src="${HERO_FACE(h.id)}" alt="${h.name}" /></div><div class="nm">${h.name}</div><div class="el">${el.icon} ${el.name}</div><div class="ht">${fmtH(h.id)}</div>`;
       c.addEventListener('click', () => onToggle(h.id));
       box.appendChild(c);
     });
