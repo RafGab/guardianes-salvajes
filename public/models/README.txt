@@ -35,3 +35,11 @@ PERSONAJES CON ESQUELETO (rig) Y ANIMACIONES
     (npm i @gltf-transform/core @gltf-transform/extensions; node tools/make_anims.mjs ENTRADA.glb SALIDA.glb;
      luego aligerar con el comando de arriba). Detecta colas (tail_N o tail_<color>_N), orejas (ear_L/R_N) y arma.
   jago.glb (Jaglioner: cola de 7 huesos, mochila, katana) también lleva esqueleto (40 huesos) y las 7 animaciones.
+
+LOS 7 HÉROES YA TIENEN ESQUELETO Y ANIMACIONES (idle, walk, run, swim, jump, power, cele)
+  Halley, Kyra y Jaglion: rigs hechos a mano (otra sesión); Nilo, Lira, Ámbar y Kairo: rigs generados con tools/rig.mjs.
+  La CARA es rígida (tools/faceFix.mjs): los rasgos de la cara no se estiran al animar. Mallas ~35-45 mil triángulos,
+  texturas WebP de 2048 para que la cara se vea nítida.
+  Proceso completo de un personaje: tools/pipe.sh NOMBRE MODELO.glb ESPECIFICACION.json RATIO
+    (ESPECIFICACION '-' si el GLB ya trae esqueleto). La especificación solo da la posición de cada articulación
+    (ver tools/rigspec.js); el resto (jerarquía, pesos de piel, cara rígida, animaciones) es automático.

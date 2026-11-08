@@ -39,6 +39,7 @@ function makeClip(name, duration, pose) {
     const t = f / frames; // el último fotograma = el primero (bucle perfecto)
     times[f] = f / FPS;
     const p = pose(t % 1);
+    if (WING_N && WING_PROFILE[name]) Object.assign(p.bones, wings(t % 1, ...WING_PROFILE[name]));
     for (const [b, e] of Object.entries(p.bones)) {
       if (!bones[b]) continue;
       (rot[b] = rot[b] || new Float32Array((frames + 1) * 4)).set(quat(e[0] || 0, e[1] || 0, e[2] || 0), f * 4);
@@ -91,6 +92,19 @@ const ears = (t, amp, speed = 1, back = 0, phase = 0) => {
   }
   return o;
 };
+// Alas (águila): wing_L_k / wing_R_k. spread = apertura hacia fuera (rad), flap = aleteo, speed = ciclos por clip.
+const WING_N = Math.max(...Object.keys(bones).map((n) => { const m = n.match(/^wing_L_(\d+)$/); return m ? Number(m[1]) : 0; }), 0);
+const wings = (t, spread, flap, speed, back = 0) => {
+  const o = {};
+  for (let k = 1; k <= WING_N; k++) {
+    const ph = t * TAU * speed - k * 0.45;
+    const a = spread * (k === 1 ? 1 : 0.55) + flap * S(ph) * (0.45 + 0.55 * k / WING_N);
+    o['wing_L_' + k] = [-back * (k === 1 ? 1 : 0.4), 0, a];
+    o['wing_R_' + k] = [-back * (k === 1 ? 1 : 0.4), 0, -a];
+  }
+  return o;
+};
+const WING_PROFILE = { idle: [0.05, 0.03, 1, 0], walk: [0.09, 0.05, 2, 0], run: [0.25, 0.1, 3, -0.25], swim: [0.4, 0.5, 2, -0.1], jump: [0.9, 0.3, 2, -0.2], power: [1.1, 0.5, 4, -0.1], cele: [0.8, 0.5, 3, 0] };
 const merge = (...objs) => Object.assign({}, ...objs);
 
 // REPOSO: respiración, cola que ondula y orejas que se mueven de vez en cuando
