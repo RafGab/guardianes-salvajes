@@ -867,6 +867,7 @@ export class HeroSkills {
     const sk = new Cls(this, def);
     sk.key = key;
     if (!sk.begin()) { sk.dispose(); return false; }
+    sk.role = (HERO_BUTTONS[hero] || []).find(([k]) => k === key)?.[1] || null; // papel del botón (solo para animar al héroe)
     if (Cls.background) this.bg.push(sk); else this.cur = sk;
     // con el arma fuera, las demás habilidades también hacen estallar su energía
     const role = (HERO_BUTTONS[hero] || []).find(([k]) => k === key);
@@ -881,5 +882,6 @@ export class HeroSkills {
     const c = this.g.combat;
     for (let i = this.bg.length - 1; i >= 0; i--) { const b = this.bg[i]; c.src = b; const done = b.update(dt); c.src = null; if (done) { b.dispose(); this.bg.splice(i, 1); } }
     if (this.cur) { c.src = this.cur; const done = this.cur.update(dt); c.src = null; if (done) { this.cur.dispose(); this.cur = null; } }
+    p.skillRole = (this.cur && this.cur.role) || (this.bg.find((b) => b.role && b.role !== 'velocidad') || {}).role || null;
   }
 }

@@ -5,6 +5,7 @@ import { HERO_SCALE, modelUrl } from './scale.js';
 import { makeCanvas, texFromCanvas, makeRng, clamp, lerp, damp, TAU } from './utils.js';
 import STRIP from './weapons/strip.json';
 import { augmentSkeleton, poseAnatomy } from './anatomy.js';
+import { upgradeLira } from './characters/lira.js';
 
 /* Quita de la malla de los GLB las armas que venían incrustadas (katana, hacha, lanza a la espalda,
    bumerán): cada héroe solo debe llevar el arma nueva de src/weapons, y únicamente cuando la saca.
@@ -1429,6 +1430,13 @@ class GLBHero {
     model.traverse((o) => { if (o.isBone) { this.bones[o.name] = o; o.userData.q0 = o.quaternion.clone(); o.userData.s0 = o.scale.clone(); } });
     this.boneFx = null; // (bones, dt, t, fx) => void · lo fija una habilidad y lo quita al terminar
     this.armFx = null;  // capa del arma (guardia, golpes, combos): se aplica después de boneFx
+    // Mejoras propias de un personaje (Lira H3.1: ojos 3D, accesorios, brillo, animaciones nuevas y movimiento secundario)
+    this.upgrade = null;
+    if (def.id === 'lira') {
+      try { this.upgrade = upgradeLira(this, model); } catch (e) { console.warn('Lira H3.1: no se pudo aplicar la mejora', e); }
+      if (this.upgrade && this.clips) Object.assign(this.clips, this.upgrade.clips);
+    }
+    this.landT = 0; this.airT = 0;
     this._touched = new Set();
     const qa = new THREE.Quaternion(), qp = new THREE.Quaternion(), qb = new THREE.Quaternion(), ax = new THREE.Vector3();
     // Herramientas para las habilidades: giran o estiran un hueso en el espacio del personaje
@@ -1470,12 +1478,24 @@ class GLBHero {
     const air = !s.grounded && !swim && !s.surfing;
     this.phase += dt * (3 + run * 7) * (run > 0.05 ? 1 : 0);
     if (this.mixer) {
+      // aterrizaje: tras un rato en el aire, al tocar el suelo
+      if (air) this.airT += dt; else { if (this.airT > 0.35 && this.clips.land) this.landT = 0.3; this.airT = 0; }
+      this.landT = Math.max(0, this.landT - dt);
+      // Las animaciones extra (caída, aterrizaje, esquiva, escudo, especial, ataque, impacto, sprint) solo se usan
+      // si el modelo las tiene (Lira H3.1); para el resto de héroes la elección es la de siempre.
+      const C = this.clips;
       let name = 'idle', sp = 1;
-      if (s.celebrate && this.clips.cele) name = 'cele';
-      else if (swim && this.clips.swim) name = 'swim';
-      else if (air && this.clips.jump) name = 'jump';
-      else if (s.power > 0.2 && this.clips.power) name = 'power';
-      else if (run > 0.15) { name = run > 0.8 ? 'run' : 'walk'; sp = clamp(run * 1.1, 0.5, 1.6); }
+      if (s.celebrate && C.cele) name = 'cele';
+      else if (swim && C.swim) name = 'swim';
+      else if (s.hurt && C.hit) name = 'hit';
+      else if (air && (C.jump || C.fall)) name = (s.vy < -1.5 && C.fall) || !C.jump ? 'fall' : 'jump';
+      else if (this.landT > 0 && C.land) name = 'land';
+      else if (s.dashing && C.dodge) name = 'dodge';
+      else if (s.role === 'escudo' && C.shield) name = 'shield';
+      else if (s.role === 'especial' && C.special) name = 'special';
+      else if (s.role === 'arma' && C.attack) name = 'attack';
+      else if (s.power > 0.2 && C.power) name = 'power';
+      else if (run > 0.15) { name = run > 0.8 ? (s.sprint && C.sprint ? 'sprint' : 'run') : 'walk'; sp = clamp(run * 1.1, 0.5, 1.6); }
       this.play(name, 0.22, sp);
       // los huesos que movió una habilidad vuelven a su reposo antes de animar (así no se acumulan giros)
       for (const bn of this._touched) { bn.quaternion.copy(bn.userData.q0); bn.scale.copy(bn.userData.s0); }
@@ -1485,6 +1505,7 @@ class GLBHero {
     if (this.boneFx) { this.root.updateMatrixWorld(true); this.boneFx(this.bones, dt, this.t, this.boneTools); }
     if (this.armFx) { this.root.updateMatrixWorld(true); this.armFx(this.bones, dt, this.t, this.boneTools); }
     if (this.anatomy) poseAnatomy(this.anatomy, { ...this.handPose, walk: this.phase, speed: run, grounded: !air && !swim });
+    if (this.upgrade) this.upgrade.update(dt, { ...s, grounded: !air, swimming: swim }, run);
     // movimiento procedural adicional (inclinación y rebote) que se suma a las animaciones del GLB
     const b = this.body;
     const bob = this.mixer ? 0 : Math.abs(Math.sin(this.phase)) * 0.07 * Math.min(run, 1.3);

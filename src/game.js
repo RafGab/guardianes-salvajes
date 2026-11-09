@@ -935,6 +935,7 @@ export class Game {
   }
   hurtFeedback(n, dot) {
     const p = this.player;
+    if (!dot) p.hurtAnim = 0.4; // animación de impacto del héroe (solo visual)
     if (dot) {
       this.dotAcc += n;
       if (this.dotAcc >= 3) { this.floatAt(p.pos, p.H + 0.3, `-${Math.round(this.dotAcc)}`, 'taken'); this.dotAcc = 0; }

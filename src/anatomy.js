@@ -322,12 +322,12 @@ export function augmentSkeleton(model) {
 /* Pose de los huesos nuevos (cada fotograma, después de la animación del GLB).
    grip 0 = mano relajada · 1 = puño cerrado sobre el mango · walk = fase de la zancada */
 const _q = new THREE.Quaternion();
-export function poseAnatomy(an, { gripL = 0, gripR = 0, wristL = 0, wristR = 0, walk = 0, speed = 0, grounded = true } = {}) {
+export function poseAnatomy(an, { gripL = 0, gripR = 0, fistL = 0, fistR = 0, wristL = 0, wristR = 0, walk = 0, speed = 0, grounded = true } = {}) {
   if (!an) return;
   for (const S of ['L', 'R']) {
     const h = an.hands[S];
     if (h) {
-      const gr = S === 'L' ? gripL : gripR;
+      const gr = Math.max(S === 'L' ? gripL : gripR, S === 'L' ? fistL : fistR); // agarre del arma o puño (expresión)
       const c = h.curlSign;
       const relax = 0.12;
       h.fingers.forEach((ch, f) => {

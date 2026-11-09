@@ -429,7 +429,10 @@ export class Player {
         rescue: this.rescueT,
         power: Math.max(this.powerAnim, this.swingT > 0 ? 0.5 : 0),
         celebrate: this.celebrate,
+        // solo para elegir animaciones (no cambian nada del juego)
+        sprint: this.boostT > 0, role: this.skillRole || null, hurt: (this.hurtAnim || 0) > 0,
       });
+      if (this.hurtAnim > 0) this.hurtAnim = Math.max(0, this.hurtAnim - dt);
       this.applyPose();
     }
   }

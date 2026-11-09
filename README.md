@@ -56,6 +56,16 @@ Jaglion · Katana · Kyra · Hacha de cristal · Kairo · Martillo de esmeralda 
 
 Lógica en `src/weapons/system.js`; ataques en `src/skills/powers2.js`; números en `src/skills/config.js`.
 
+## Lira la Lince · H3.1
+Mejora del modelo de Lira hecha en código (`src/characters/lira.js`), sin herramientas externas y sin tocar el sistema de juego:
+- **Ojos 3D:** globo ocular con iris (verde = eclipse solar con anillo dorado; azul = eclipse lunar con media luna y destellos plateados), pupila, reflejo de estrella y brillo suave. El ojo azul sustituye a la mancha de textura rota del modelo original.
+- **Párpados 3D y expresiones:** parpadeo natural y expresiones (neutral, feliz, concentrada, dolor, sorpresa) según lo que hace; la mirada se mueve. Marcas de rayo luminosas alrededor de los ojos.
+- **Accesorios 3D:** aros azules y colgante de estrella en la oreja, colgante de los eclipses (sol y media luna) en el pecho.
+- **Armadura:** brillo azul eléctrico generado desde su propia textura, que late y se intensifica en combate.
+- **Animaciones nuevas** con su esqueleto: sprint (botón de velocidad), caída, aterrizaje, esquiva, ataque, escudo, habilidad especial e impacto, además de reposo, caminar, correr, nadar, salto, poder y celebración. Se eligen leyendo el estado del juego, sin cambiar la lógica de los botones.
+- **Movimiento secundario:** cola expresiva (meneo feliz, alzada al concentrarse, punta impaciente si está quieta), orejas independientes (tics y posturas por expresión), dedos (puño en guardia, relajados con leve movimiento) y huellas luminosas verde y azul al correr.
+- **Límites:** la malla y la textura son las del modelo original (no se generó un modelo nuevo); la boca no tiene expresiones; el esqueleto original de Lira está desplazado respecto a la malla (≈14 cm hacia su derecha), por lo que en algunas posturas extremas los brazos se estiran un poco.
+
 ## Esqueleto de manos y pies
 Al cargar cada héroe (`src/anatomy.js`) se completa su esqueleto:
 - **Mano:** carpo (muñeca) → metacarpo (palma) → índice, corazón, anular y meñique con falange proximal, media y distal; el **pulgar solo con proximal y distal**.
