@@ -859,7 +859,11 @@ export class HeroSkills {
     if (!Cls) return false;
     if (Cls.background) {
       if (this.bg.some((b) => b.key === key)) return false;
-    } else if (this.cur) { ui.banner('find', def.icon, 'Termina primero la habilidad en curso'); return false; }
+    } else if (this.cur) {
+      // combo de arma: pulsar otra vez mientras se recupera del golpe encadena el siguiente movimiento
+      if (this.cur.key === key && this.cur.chainReady) { this.cur.dispose(); this.cur = null; }
+      else { ui.banner('find', def.icon, 'Termina primero la habilidad en curso'); return false; }
+    }
     const sk = new Cls(this, def);
     sk.key = key;
     if (!sk.begin()) { sk.dispose(); return false; }
@@ -867,6 +871,7 @@ export class HeroSkills {
     // con el arma fuera, las demás habilidades también hacen estallar su energía
     const role = (HERO_BUTTONS[hero] || []).find(([k]) => k === key);
     if (g.weapons && !(role && role[1] === 'arma')) g.weapons.skillBurst();
+    if (g.weapons && role && role[1] === 'escudo') g.weapons.defend(1.4); // con el arma fuera: postura de defensa
     return { cdFactor: sk.cdFactor };
   }
 

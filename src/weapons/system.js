@@ -15,8 +15,10 @@ import { ui } from '../ui.js';
    ====================================================================== */
 
 const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
+const _col = new THREE.Color(); // color de la estela (antes se usaba un Vector3 → colores NaN → pantalla negra con el bloom)
 const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4(), _s = new THREE.Vector3();
 const AUTO_HOLSTER = 20; // s sin usar el arma → se guarda sola
+const ZERO = { x: 0, y: 0, f: 0, w: 0 };
 
 const easeBack = (k) => { const c = 1.9; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); };
 
@@ -55,10 +57,10 @@ export class Trail {
       P.setXYZ(i * 2, p[0].x, p[0].y, p[0].z);
       P.setXYZ(i * 2 + 1, p[1].x, p[1].y, p[1].z);
       // la base (cerca de la mano) apenas brilla; la punta, a tope
-      _c.copy(this.c2).lerp(this.c1, i / this.n).multiplyScalar(f * 0.25);
-      Cc.setXYZ(i * 2, _c.r, _c.g, _c.b);
-      _c.copy(this.c1).lerp(this.c2, 0.15).multiplyScalar(f * 2.2);
-      Cc.setXYZ(i * 2 + 1, _c.r, _c.g, _c.b);
+      _col.copy(this.c2).lerp(this.c1, i / this.n).multiplyScalar(f * 0.25);
+      Cc.setXYZ(i * 2, _col.r, _col.g, _col.b);
+      _col.copy(this.c1).lerp(this.c2, 0.15).multiplyScalar(f * 2.2);
+      Cc.setXYZ(i * 2 + 1, _col.r, _col.g, _col.b);
     }
     P.needsUpdate = true; Cc.needsUpdate = true;
   }
@@ -76,8 +78,18 @@ export class WeaponSystem {
     this.t = 0;
     this.boost = 0;            // destello (ataques y habilidades)
     this.swingT = 0;
+    // la luz del arma está SIEMPRE en la escena (intensidad 0 si no hay arma): añadir o quitar una luz
+    // obliga a recompilar todos los materiales del nivel → tirón al sacar el arma
     this.light = new THREE.PointLight(0xffffff, 0, 4.5, 1.8);
+    game.scene.add(this.light);
     this.sparkT = 0;
+    // capa del brazo (guardia, golpes, defensa): objetivo que fija la habilidad en curso
+    this.armTarget = { x: 0, y: 0, f: 0, w: 0 };
+    this.armT = 0;          // > 0 mientras una habilidad está mandando el brazo
+    this.armPart = -1;      // brazo que manda la habilidad (-1 = todos)
+    this.defT = 0;          // > 0: postura de defensa (botón de escudo con el arma fuera)
+    // combos: cada pulsación encadenada a tiempo pasa al siguiente movimiento (3 por arma)
+    this.comboStep = -1; this.comboHero = null; this.lastEnd = -9;
   }
 
   /* ---------------- montaje en el esqueleto ---------------- */
@@ -112,6 +124,29 @@ export class WeaponSystem {
       const hb = this.handBones(model, side);
       if (!hb) continue;
       const w = W.build();
+      const an = model.anatomy && model.anatomy.hands[side];
+      if (an) {
+        // AGARRE REAL: el arma cuelga del metacarpo (la palma) y su mango pasa por el centro del puño,
+        // a lo ancho de la mano (del meñique al pulgar): los dedos se cierran alrededor de él.
+        const Y = an.axis.w.clone().normalize();
+        const X = an.axis.a.clone().multiplyScalar(W.axisX || 1);
+        X.addScaledVector(Y, -X.dot(Y)).normalize();
+        const Z = new THREE.Vector3().crossVectors(X, Y).normalize();
+        _m.makeBasis(X, Y, Z);
+        const holder = new THREE.Group();
+        holder.name = `soporte_${W.id}_${side}`;
+        holder.quaternion.setFromRotationMatrix(_m);
+        holder.position.copy(an.gripLocal);
+        if (W.tilt) holder.quaternion.multiply(new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 0, 1), W.tilt));
+        if (W.gripOffset) holder.position.add(new THREE.Vector3(...W.gripOffset).applyQuaternion(holder.quaternion).multiplyScalar(1 / this.boneScale(an.metacarpo)));
+        holder.scale.setScalar(1 / this.boneScale(an.metacarpo));
+        holder.add(w.group);
+        holder.visible = false;
+        an.metacarpo.add(holder);
+        hb.hand.getWorldPosition(_a); frame.worldToLocal(_a);
+        parts.push({ w, holder, side: Math.sign(_a.x) || (side === 'R' ? -1 : 1), S: side, bones: hb, scale: w.group.scale.x, home: true });
+        continue;
+      }
       // punto de agarre: el centro del puño (entre la mano y la punta de la mano)
       hb.hand.getWorldPosition(_a);
       if (hb.end) { hb.end.getWorldPosition(_b); _a.lerp(_b, 0.55); }
@@ -139,15 +174,72 @@ export class WeaponSystem {
       holder.add(w.group);
       holder.visible = false;
       hb.hand.add(holder);
-      parts.push({ w, holder, side: sx, bones: hb, scale: w.group.scale.x, home: true });
+      parts.push({ w, holder, side: sx, S: side, bones: hb, scale: w.group.scale.x, home: true });
     }
     model.root.rotation.copy(savedRot); model.root.scale.copy(savedScale); frame.rotation.copy(savedLean);
     restore();
     model.root.updateMatrixWorld(true);
-    const inst = { heroId, model, W, parts, k: 0, trails: parts.map((p) => new Trail(this.g.scene, p.w.trail.color, p.w.trail.color2)) };
+    const inst = { heroId, model, W, parts, k: 0, arm: { x: 0, y: 0, f: 0, w: 0 }, grip: 0, trails: parts.map((p) => new Trail(this.g.scene, p.w.trail.color, p.w.trail.color2)) };
     this.inst.set(model, inst);
+    // capa del brazo: se aplica en cada fotograma después de la animación del modelo
+    model.armFx = (bones, dt, t, fx) => this.applyArm(inst, dt, fx);
     return inst;
   }
+  boneScale(b) { b.updateWorldMatrix(true, false); b.getWorldScale(_s); const r = this.g.player && this.g.player.model && this.g.player.model.root; void r; return _s.x || 1; }
+
+  /* ---------------- brazo: guardia, golpes y defensa ---------------- */
+  // la habilidad en curso fija la postura del brazo (x = alzar hacia delante, y = barrer: + hacia el otro lado,
+  // f = codo, w = muñeca); si deja de fijarla, el brazo vuelve con suavidad a la guardia
+  setArm(o, part = -1) { this.armTarget.x = o.x || 0; this.armTarget.y = o.y || 0; this.armTarget.f = o.f || 0; this.armTarget.w = o.w || 0; this.armT = 0.12; this.armPart = part; }
+  defend(t = 1) { if (this.out) this.defT = Math.max(this.defT, t); }
+  applyArm(inst, dt, fx) {
+    const active = this.cur === inst && inst.k > 0.02;
+    const W = inst.W, s = inst.arm;
+    const show = active && inst.parts.some((p) => p.holder.visible);
+    for (let i = 0; i < inst.parts.length; i++) {
+      const pt = inst.parts[i];
+      let tg = ZERO, rate = 7;
+      if (active && this.armT > 0 && (this.armPart < 0 || this.armPart === i)) { tg = this.armTarget; rate = 26; }
+      else if (active && this.out && this.defT > 0) { tg = W.defense || W.guard; rate = 14; }
+      else if (active && this.out) tg = W.guard || ZERO;
+      const st = pt.arm || (pt.arm = { x: 0, y: 0, f: 0, w: 0 });
+      const k = 1 - Math.exp(-rate * dt);
+      st.x += (tg.x - st.x) * k; st.y += (tg.y - st.y) * k; st.f += ((tg.f || 0) - st.f) * k; st.w += ((tg.w || 0) - st.w) * k;
+      st.r = (st.r || 0) + ((tg.r || 0) - (st.r || 0)) * k;
+      const hb = pt.bones;
+      const us = W.upperScale ?? 1; // Ámbar: sus alas van unidas al brazo → el hombro se mueve poco (sin estirar plumas)
+      if (Math.abs(st.x) + Math.abs(st.y) + Math.abs(st.f) + Math.abs(st.r) > 0.002 && hb.upper) {
+        fx.rot(hb.upper, 0, 1, 0, -pt.side * st.y * us);
+        fx.rot(hb.upper, 1, 0, 0, st.x * us);
+        if (hb.fore && st.f) fx.rot(hb.fore, 1, 0, 0, st.f);
+        // r: giro del antebrazo sobre su eje (pronación / supinación) → orienta el mango
+        if (hb.fore && hb.end && st.r) {
+          inst.model.root.updateMatrixWorld(true);
+          hb.hand.getWorldPosition(_a); hb.fore.getWorldPosition(_b);
+          _c.subVectors(_a, _b).normalize();
+          (inst.model.body || inst.model.root).getWorldQuaternion(_q).invert();
+          _c.applyQuaternion(_q);
+          fx.rot(hb.fore, _c.x, _c.y, _c.z, -pt.side * st.r);
+        }
+      }
+      // dedos cerrados sobre el mango (y muñeca) — los huesos de la mano de src/anatomy.js
+      const hp = inst.model.handPose;
+      if (hp) {
+        const key = `grip${pt.S}`;
+        hp[key] += ((show && pt.home ? 1 : 0) - hp[key]) * (1 - Math.exp(-12 * dt));
+        hp[`wrist${pt.S}`] = st.w;
+      }
+    }
+    void s;
+  }
+  // combos: devuelve el movimiento que toca (0, 1, 2) y lo deja apuntado
+  nextStep(id) {
+    const chain = this.comboHero === id && this.comboStep >= 0 && this.comboStep < 2 && this.t - this.lastEnd < 0.8;
+    this.comboStep = chain ? this.comboStep + 1 : 0;
+    this.comboHero = id;
+    return this.comboStep;
+  }
+  endAttack() { this.lastEnd = this.t; }
   get(model, heroId) { return this.inst.get(model) || this.attach(model, heroId); }
 
   /* ---------------- estado ---------------- */
@@ -183,7 +275,10 @@ export class WeaponSystem {
   reset() {
     for (const inst of this.inst.values()) { inst.k = 0; for (const pt of inst.parts) { pt.holder.visible = false; pt.home = true; } for (const tr of inst.trails) { tr.pts.length = 0; tr.update(0, false); } }
     this.out = false; this.cur = null; this.boost = 0; this.swingT = 0; this.idleT = 0;
-    if (this.light.parent) this.light.parent.remove(this.light);
+    this.armT = 0; this.defT = 0; this.comboStep = -1; this.lastEnd = -9;
+    for (const inst of this.inst.values()) { for (const pt of inst.parts) pt.arm = null; if (inst.model.handPose) Object.assign(inst.model.handPose, { gripL: 0, gripR: 0, wristL: 0, wristR: 0 }); }
+    if (this.light.parent !== this.g.scene) this.g.scene.add(this.light);
+    this.light.intensity = 0;
     ui.setWeaponOut(false);
   }
 
@@ -275,6 +370,8 @@ export class WeaponSystem {
       this.cur = null;
     }
     const inst = this.cur;
+    this.armT = Math.max(0, this.armT - dt);
+    this.defT = Math.max(0, this.defT - dt);
     if (!inst) { this.light.intensity = 0; return; }
     if (this.out) { this.idleT += dt; if (this.idleT > AUTO_HOLSTER && this.swingT <= 0) this.holster(); }
     // aparecer (rebote) / desaparecer (encoger)
@@ -312,7 +409,6 @@ export class WeaponSystem {
     }
     // luz del arma (ilumina al héroe y al entorno cercano)
     if (n) {
-      if (!this.light.parent) this.g.scene.add(this.light);
       this.partCenter(inst.parts[0], _a);
       this.light.position.copy(_a);
       this.light.color.setHex(inst.W.color);

@@ -200,36 +200,61 @@ class WeaponSkill extends Skill {
     return t;
   }
   get W() { return this.g.weapons; }
-  // saca el arma del héroe (aparece en su mano si estaba guardada) y prepara el brazo
+  // Saca el arma (si estaba guardada), decide qué movimiento del combo toca y desde qué postura parte el brazo
   draw() {
     const W = this.W;
-    if (!W) return false;
-    const just = W.equip();
-    this.arm = { x: 0, y: 0, f: 0 };
-    const hb = W.armBones(0), pt = W.cur && W.cur.parts[0];
+    this.drawn = W ? W.equip() : false;
+    this.step = W ? W.nextStep(this.g.hero.id) : 0;
+    this.mul = [1, 0.9, 1.5][this.step];
+    this.cdFactor = this.step < 2 ? 0.25 : 1;   // golpes 1 y 2: se pueden encadenar enseguida; el 3.º cierra el combo
+    this.armPart = -1;
+    const pt = W && W.cur && W.cur.parts[0];
     this.side = pt ? pt.side : -1;
-    if (hb && hb.upper) {
-      // golpe por huesos: el brazo que empuña se mueve encima de la animación (x = alzar, y = barrer, f = codo)
-      this.setBones((bones, dt, t, fx) => {
-        const a = this.arm;
-        if (!a) return;
-        fx.rot(hb.upper, 0, 1, 0, a.y);
-        fx.rot(hb.upper, 1, 0, 0, a.x);
-        if (hb.fore && a.f) fx.rot(hb.fore, 1, 0, 0, a.f);
-      });
-    }
-    return just;
+    this.armCur = pt && pt.arm ? { ...pt.arm } : { x: 0, y: 0, f: 0, w: 0, r: 0 };
+    this.poseCur = { spin: 0, rx: 0, dy: 0, sy: 1 };
+    this.chainReady = false;
+    return this.drawn;
   }
-  // barrido horizontal: s = −1 en su lado, +1 al lado contrario
-  sweep(s) { return -this.side * s; }
-  setArm(x, ySide, f = 0) { if (this.arm) { this.arm.x = x; this.arm.y = this.sweep(ySide); this.arm.f = f; } }
+  get guard() { return (this.W && this.W.cur && this.W.cur.W.guard) || { x: 0, y: 0, f: 0, w: 0, r: 0 }; }
+  /* Etapa de animación: el brazo (x alzar, y cruzar, f codo, w muñeca, r giro del antebrazo) y el cuerpo
+     (spin, rx, dy, sy) van desde donde estaban hasta la postura indicada, con la curva `easeFn`.
+     Así cada movimiento enlaza con el anterior sin cortes (también entre golpes de un combo). */
+  stage(name, dur, to, { spin, rx, dy, sy, easeFn = ease, enter, tick, exit, recover = false } = {}) {
+    let from, pf;
+    return {
+      name, dur,
+      enter: () => {
+        from = { ...this.armCur };
+        pf = { ...this.poseCur };
+        if (recover) this.chainReady = true; // desde aquí se puede encadenar el siguiente golpe
+        if (enter) enter.call(this);
+      },
+      tick: (dt, k) => {
+        const e = easeFn(k), a = {};
+        for (const key of ['x', 'y', 'f', 'w', 'r']) a[key] = lerp(from[key] || 0, to[key] ?? from[key] ?? 0, e);
+        this.armCur = a;
+        if (this.W) this.W.setArm(a, this.armPart);
+        const P = this.pose, pc = this.poseCur;
+        pc.spin = spin !== undefined ? lerp(pf.spin, spin, e) : pf.spin * (1 - e);
+        pc.rx = rx !== undefined ? lerp(pf.rx, rx, e) : pf.rx * (1 - e);
+        pc.dy = dy !== undefined ? lerp(pf.dy, dy, e) : pf.dy * (1 - e);
+        pc.sy = sy !== undefined ? lerp(pf.sy, sy, e) : lerp(pf.sy, 1, e);
+        P.spin = pc.spin; P.rx = pc.rx; P.dy = pc.dy; P.sy = pc.sy;
+        if (tick) tick.call(this, dt, k);
+      },
+      exit: exit ? () => exit.call(this) : undefined,
+    };
+  }
+  // vuelta a la guardia (recuperación): se puede encadenar el siguiente golpe del combo
+  recover(dur) { return this.stage('recuperacion', dur, this.guard, { spin: 0, rx: 0, dy: 0, sy: 1, recover: true }); }
   tipPos(i = 0) { return (this.W && this.W.partTip(i)) || this.center(0.6); }
   impactAt(t, k = 1) { if (this.W) this.W.impact(t.pos.x, t.pos.y + (t.heavy ? t.S.height * 0.45 : 0.7), t.pos.z, k); }
+  lunge(v, dt) { const f = this.fwd; this.p.vx += f.x * v * dt * 8; this.p.vz += f.z * v * dt * 8; }
   // tajo en arco: media luna brillante delante del héroe (katana, hacha, garras, guadaña)
   crescent(y, { r = 3, arc = 120, color = 0xffffff, life = 0.25, tilt = 0, width = 0.35, vertical = false } = {}) {
     const p = this.p;
     const geo = new THREE.RingGeometry(r * (1 - width), r, 32, 1, -arc * DEG / 2, arc * DEG);
-    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
+    const mat = new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
     const m = new THREE.Mesh(geo, mat);
     m.userData.own = true;
     const g = new THREE.Group();
@@ -237,7 +262,7 @@ class WeaponSkill extends Skill {
     g.position.set(p.pos.x, y, p.pos.z);
     if (vertical) { m.rotation.y = Math.PI / 2; g.rotation.y = p.facing; m.rotation.z = Math.PI / 2 + tilt; }
     else { m.rotation.x = -Math.PI / 2 + tilt; g.rotation.y = p.facing - Math.PI / 2; m.rotation.z = Math.PI / 2; }
-    return this.vfx.add(g, life, (it) => { const k = it.t / life; mat.opacity = 0.9 * (1 - k); m.scale.setScalar(0.85 + 0.25 * k); if (it.t >= life - 0.001) geo.dispose(); });
+    return this.vfx.add(g, life, (it) => { const k = it.t / life; mat.opacity = 0.55 * (1 - k) * (1 - k); m.scale.setScalar(0.85 + 0.25 * k); if (it.t >= life - 0.001) geo.dispose(); }); // se desvanece rápido: no tapa la escena
   }
   hitArc(range, arcDeg, dmg, force, extra) {
     const p = this.p;
@@ -251,112 +276,191 @@ class WeaponSkill extends Skill {
     }
     return n;
   }
+  hitRing(radius, dmg, force, extra) {
+    const p = this.p;
+    let n = 0;
+    for (const t of this.combat.inCircle(p.pos.x, p.pos.z, radius)) { this.hit(t, dmg); const { dx, dz } = this.awayFrom(t, p.pos.x, p.pos.z); this.combat.push(t, dx, dz, force); if (extra) extra(t); n++; }
+    return n;
+  }
   // partículas de energía que salen del arma mientras se mueve
   energy(color, n = 2, spd = 1.4) {
     const tp = this.tipPos();
     for (let i = 0; i < n; i++) this.g.fx.sparkle(tp.x + rnd(-0.1, 0.1), tp.y + rnd(-0.1, 0.1), tp.z + rnd(-0.1, 0.1), color, spd);
   }
+  // remate del combo: destello y onda con los colores del arma
+  finisher(color, color2) {
+    const p = this.p;
+    this.vfx.ring(p.pos.x, p.pos.y + p.H * 0.5, p.pos.z, { r0: 0.4, r1: 3.2, dur: 0.4, color, opacity: 0.75 });
+    this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 0.3, r1: 2.6, dur: 0.5, color: color2, opacity: 0.6 });
+    this.shake(0.22);
+  }
+  dispose() { if (this.W && this.step !== undefined) this.W.endAttack(); super.dispose(); }
 }
 
-// JAGLION — KATANA: guardia, tajo con estela de fuego y rayo, destellos en cada corte
+/* ---------------------------------------------------------------------- */
+/*  JAGLION — KATANA · combo de esgrima: tajo diagonal → revés → estocada  */
+/* ---------------------------------------------------------------------- */
 export class KatanaSkill extends WeaponSkill {
-  begin() { this.aim(this.def.range + 2); this.drawn = this.draw(); this.start(); return true; }
+  begin() { this.aim(this.def.range + 2); this.draw(); this.start(); return true; }
   build() {
-    const d = this.def, pose = this.pose;
-    const prep = d.prep + (this.drawn ? 0.12 : 0); // al desenvainar, un instante más de guardia
-    return [
-      { name: 'guardia', dur: prep, enter: () => { this.p.powerAnim = 1; }, tick: (dt, k) => { pose.spin = -0.6 * k; pose.rx = 0.1 * k; this.setArm(-1.35 * ease(k), -1.0 * ease(k), -0.3 * k); this.energy(0xff8a2a, 1, 0.8); } },
-      { name: 'tajo', dur: d.swing, enter: () => {
-        this.W.swing(d.swing + 0.08);
-        this.sfx('snap');
-        this.crescent(this.p.pos.y + this.p.H * 0.55, { r: d.range, arc: d.arcDeg, color: d.color, tilt: 0.15 });
-        this.crescent(this.p.pos.y + this.p.H * 0.5, { r: d.range * 0.8, arc: d.arcDeg * 0.8, color: 0xff8a2a, tilt: 0.1, width: 0.15 });
-        this.crescent(this.p.pos.y + this.p.H * 0.6, { r: d.range * 0.95, arc: d.arcDeg * 0.6, color: 0x4aa8ff, tilt: 0.2, width: 0.06, life: 0.18 });
-        const n = this.hitArc(d.range, d.arcDeg, d.damage, d.force, (t) => {
-          this.impactAt(t);
-          this.vfx.sparks(t.pos.x, t.pos.y + 0.8, t.pos.z, 0xffb060, 8, 2.6);
-          this.vfx.bolt(this.tipPos(), V(t.pos.x, t.pos.y + 0.8, t.pos.z), { color: 0x6ac8ff, life: 0.12, jag: 0.25, segs: 6 });
-        });
-        if (n) this.shake(0.15);
-      }, tick: (dt, k) => { pose.spin = lerp(-0.6, 1.1, back(k)); pose.rx = 0.18; this.setArm(-1.35, lerp(-1.0, 1.25, back(k)), -0.3); this.energy(k < 0.5 ? 0xff7a1a : 0x6ac8ff, 2, 2); } },
-      { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.spin = lerp(1.1, 0, ease(k)); pose.rx = lerp(0.18, 0, k); this.setArm(lerp(-1.35, 0, ease(k)), lerp(1.25, 0, ease(k)), lerp(-0.3, 0, k)); } },
+    const d = this.def, extra = this.drawn ? 0.1 : 0;
+    const slash = (arc, tilt, mul, vertical = false) => () => {
+      this.W.swing(d.swing + 0.1);
+      this.sfx('snap');
+      const p = this.p;
+      this.crescent(p.pos.y + p.H * 0.55, { r: d.range, arc, color: d.color, tilt, vertical });
+      this.crescent(p.pos.y + p.H * 0.5, { r: d.range * 0.8, arc: arc * 0.8, color: 0xff8a2a, tilt: tilt * 0.8, width: 0.15, vertical });
+      const n = this.hitArc(d.range, arc, d.damage * mul, d.force, (t) => {
+        this.impactAt(t);
+        this.vfx.sparks(t.pos.x, t.pos.y + 0.8, t.pos.z, 0xffb060, 8, 2.6);
+        this.vfx.bolt(this.tipPos(), V(t.pos.x, t.pos.y + 0.8, t.pos.z), { color: 0x6ac8ff, life: 0.12, jag: 0.25, segs: 6 });
+      });
+      if (n) this.shake(0.15);
+    };
+    const fire = () => this.energy(0xff7a1a, 2, 1.8);
+    if (this.step === 1) return [ // revés horizontal: la hoja vuelve de lado a lado
+      this.stage('giro', 0.09 + extra, { x: -1.35, y: 1.1, f: -0.5, w: 0, r: 0.3 }, { spin: 0.6 }),
+      this.stage('reves', d.swing * 0.85, { x: -1.35, y: -1.15, f: -0.3, w: 0.35, r: 0.3 }, { spin: -0.8, easeFn: back, enter: slash(d.arcDeg, 0.05, this.mul), tick: () => this.energy(0x6ac8ff, 2, 2) }),
+      this.recover(d.recover),
+    ];
+    if (this.step === 2) return [ // estocada a fondo: recoge el brazo y se lanza hacia delante
+      this.stage('recoger', 0.14 + extra, { x: -1.0, y: -0.3, f: -1.6, w: 0, r: 0.2 }, { spin: -0.3, rx: -0.1, tick: fire }),
+      this.stage('estocada', 0.16, { x: -1.55, y: 0.05, f: 0, w: 0, r: 0.2 }, { spin: 0.1, rx: 0.25, easeFn: back, tick: (dt, k) => { this.lunge(9 * (1 - k), dt); this.energy(0xffd070, 3, 2.5); }, enter: () => {
+        this.W.swing(0.3);
+        this.sfx('crack');
+        const p = this.p, f = this.fwd;
+        this.crescent(p.pos.y + p.H * 0.55, { r: d.range * 1.3, arc: 30, color: 0xffd070, vertical: true, width: 0.12, life: 0.2 });
+        this.v2.beam(this.center(0.55), V(p.pos.x + f.x * d.range * 1.5, p.pos.y + p.H * 0.55, p.pos.z + f.z * d.range * 1.5), { r: 0.07, color: 0xff9a3a, opacity: 0.85, life: 0.18 });
+        const n = this.hitArc(d.range * 1.4, 40, d.damage * this.mul, d.force * 1.6, (t) => this.impactAt(t, 1.3));
+        this.finisher(0xff7a1a, 0x4aa8ff);
+        if (n) this.shake(0.25);
+      } }),
+      this.recover(d.recover + 0.12),
+    ];
+    return [ // tajo diagonal: de arriba de su lado hacia abajo al lado contrario
+      this.stage('guardia', d.prep + extra, { x: -2.2, y: -0.7, f: -0.6, w: 0.4, r: 1.0 }, { spin: -0.35, rx: 0.05, tick: fire }),
+      this.stage('tajo', d.swing, { x: -0.6, y: 1.2, f: -0.15, w: -0.4, r: 1.0 }, { spin: 0.9, rx: 0.18, easeFn: back, enter: slash(d.arcDeg, 0.55, this.mul), tick: () => this.energy(0xff7a1a, 2, 2) }),
+      this.recover(d.recover),
     ];
   }
 }
-// KAIRO — MARTILLO: alza el martillo sobre la cabeza y lo descarga: onda de impacto verde
+
+/* ---------------------------------------------------------------------- */
+/*  KAIRO — MARTILLO · martillazo → barrido lateral → salto y golpe al suelo */
+/* ---------------------------------------------------------------------- */
 export class HammerSkill extends WeaponSkill {
-  begin() { this.aim(this.def.range + this.def.radius); this.drawn = this.draw(); this.start(); return true; }
+  begin() { this.aim(this.def.range + this.def.radius); this.draw(); this.start(); return true; }
   build() {
-    const d = this.def, pose = this.pose;
-    return [
-      { name: 'alzar', dur: d.prep + (this.drawn ? 0.1 : 0), enter: () => { this.p.powerAnim = 1; this.lock(true); }, tick: (dt, k) => { pose.rx = -0.45 * ease(k); pose.dy = 0.45 * Math.sin(k * Math.PI * 0.5); pose.sy = 1 + 0.06 * k; this.setArm(-2.7 * ease(k), 0.1, -0.4 * k); this.energy(0x5aff8a, 2, 1); } },
-      { name: 'martillazo', dur: d.slam, enter: () => this.W.swing(d.slam + 0.06), tick: (dt, k) => { pose.rx = lerp(-0.45, 0.55, back(k)); pose.dy = lerp(0.45, 0, k); this.setArm(lerp(-2.7, -0.7, back(k)), 0.1, -0.4); }, exit: this.impact },
-      { name: 'recuperacion', dur: d.recover, enter: () => this.lock(false), tick: (dt, k) => { pose.rx = lerp(0.55, 0, ease(k)); pose.sy = lerp(0.92, 1, k); this.setArm(lerp(-0.7, 0, ease(k)), 0.1, lerp(-0.4, 0, k)); } },
+    const d = this.def, extra = this.drawn ? 0.1 : 0;
+    if (this.step === 1) return [ // barrido lateral: el peso del martillo arrastra todo el cuerpo
+      this.stage('cargar', 0.2 + extra, { x: -1.0, y: -1.1, f: -0.5, r: 0.5 }, { spin: -0.7, sy: 0.96, tick: () => this.energy(0x5aff8a, 2, 1) }),
+      this.stage('barrido', 0.22, { x: -1.0, y: 1.2, f: -0.3, r: 0.5 }, { spin: 1.0, easeFn: back, enter: () => {
+        this.W.swing(0.3); this.sfx('boom');
+        const p = this.p;
+        this.crescent(p.pos.y + p.H * 0.45, { r: d.radius, arc: 160, color: 0x5aff8a, width: 0.3 });
+        const n = this.hitArc(d.radius, 160, d.damage * this.mul, d.force * 1.4, (t) => { this.impactAt(t); for (let i = 0; i < 3; i++) this.g.fx.gem(t.pos.x, t.pos.y + 0.6, t.pos.z); });
+        if (n) this.shake(0.22);
+      } }),
+      this.recover(d.recover + 0.05),
+    ];
+    if (this.step === 2) return [ // salto y golpe al suelo (remate)
+      this.stage('salto', 0.28 + extra, { x: -2.8, y: 0.1, f: -0.5, r: 0.2 }, { rx: -0.45, dy: 0.9, sy: 1.06, enter: () => { this.p.powerAnim = 1; this.lock(true); }, tick: () => this.energy(0x5aff8a, 3, 1.2) }),
+      this.stage('caida', 0.16, { x: -0.6, y: 0.1, f: -0.4, r: 0.2 }, { rx: 0.6, dy: 0, sy: 0.9, easeFn: back, exit: () => { this.slam(1.4); this.finisher(0x3aff6a, 0xffc040); } }),
+      this.stage('levantar', d.recover + 0.15, this.guard, { spin: 0, rx: 0, dy: 0, sy: 1, recover: true, enter: () => this.lock(false) }),
+    ];
+    return [ // martillazo por encima de la cabeza
+      this.stage('alzar', d.prep + extra, { x: -2.7, y: 0.1, f: -0.4, r: 0.2 }, { rx: -0.45, dy: 0.3, sy: 1.06, enter: () => { this.p.powerAnim = 1; this.lock(true); }, tick: () => this.energy(0x5aff8a, 2, 1) }),
+      this.stage('martillazo', d.slam, { x: -0.7, y: 0.1, f: -0.4, r: 0.2 }, { rx: 0.55, dy: 0, easeFn: back, enter: () => this.W.swing(d.slam + 0.06), exit: () => this.slam(1) }),
+      this.stage('recuperacion', d.recover, this.guard, { spin: 0, rx: 0, dy: 0, sy: 1, recover: true, enter: () => this.lock(false) }),
     ];
   }
-  impact() {
+  slam(k) {
     const d = this.def, p = this.p, f = this.fwd, x = p.pos.x + f.x * d.range, z = p.pos.z + f.z * d.range, y = p.floorY(x, z, p.pos.y + 0.6);
-    this.shake(0.3); this.sfx('boom');
-    this.vfx.ring(x, y + 0.06, z, { r0: 0.4, r1: d.radius, dur: 0.45, color: 0x5aff8a });
-    this.vfx.ring(x, y + 0.1, z, { r0: 0.2, r1: d.radius * 1.4, dur: 0.6, color: 0xffc040, opacity: 0.5 });
-    this.W.impact(x, y + 0.3, z, 1.4);
+    const R = d.radius * k;
+    this.shake(0.3 * k); this.sfx('boom');
+    this.vfx.ring(x, y + 0.06, z, { r0: 0.4, r1: R, dur: 0.45, color: 0x5aff8a });
+    this.vfx.ring(x, y + 0.1, z, { r0: 0.2, r1: R * 1.4, dur: 0.6, color: 0xffc040, opacity: 0.5 });
+    this.W.impact(x, y + 0.3, z, 1.4 * k);
     this.vfx.dust(x, y + 0.1, z, 10, 2);
     for (let i = 0; i < 14; i++) this.g.fx.gem(x + rnd(-1, 1), y + 0.3, z + rnd(-1, 1));
-    for (let i = 0; i < 5; i++) this.v2.crack(x, z, rnd(1, d.radius), rnd(0, TAU), { life: 0.9, width: 0.12 });
+    for (let i = 0; i < 5; i++) this.v2.crack(x, z, rnd(1, R), rnd(0, TAU), { life: 0.9, width: 0.12 });
     for (let i = 0; i < 5; i++) this.g.fx.rock(x, y + 0.2, z);
-    for (const t of this.combat.inCircle(x, z, d.radius)) {
-      this.hit(t, d.damage);
+    for (const t of this.combat.inCircle(x, z, R)) {
+      this.hit(t, d.damage * this.mul);
       this.impactAt(t, 0.8);
       const { dx, dz } = this.awayFrom(t, x, z);
-      this.combat.push(t, dx || f.x, dz || f.z, d.force);
+      this.combat.push(t, dx || f.x, dz || f.z, d.force * k);
     }
   }
 }
-// HALLEY — LANZA MORADA: estocada con la lanza y lanzamiento de su energía (proyección de cristal violeta)
+
+/* ---------------------------------------------------------------------- */
+/*  HALLEY — LANZA MORADA · estocada con proyección → doble estocada → embestida */
+/* ---------------------------------------------------------------------- */
 export class SpearSkill extends WeaponSkill {
-  begin() { this.target = this.aim(this.def.range, this.def.coneDeg * 2); this.drawn = this.draw(); this.start(); return true; }
+  begin() { this.target = this.aim(this.def.range, this.def.coneDeg * 2); this.draw(); this.start(); return true; }
   build() {
-    const d = this.def, pose = this.pose;
-    return [
-      { name: 'cargar', dur: d.prep + (this.drawn ? 0.1 : 0), enter: () => { this.p.powerAnim = 1; }, tick: (dt, k) => { pose.rx = -0.08 * k; pose.spin = -0.25 * k; this.setArm(-0.6 - 0.5 * k, -0.4 * k, -0.9 * k); const tp = this.tipPos(); this.vfx.orb(tp, { r: 0.05 + 0.12 * k, color: 0xb050ff, life: 0.08 }); this.energy(0xd890ff, 1, 0.8); } },
-      { name: 'estocada', dur: d.thrust, enter: this.thrust, tick: (dt, k) => { pose.rx = 0.12 * (1 - k); pose.spin = lerp(-0.25, 0.15, back(k)); this.setArm(-1.55, lerp(-0.4, 0.1, k), lerp(-0.9, 0, back(k))); const v = 7 * (1 - k); this.p.vx += this.fwd.x * v * dt * 8; this.p.vz += this.fwd.z * v * dt * 8; } },
-      { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.rx = 0; pose.spin = lerp(0.15, 0, k); this.setArm(lerp(-1.55, 0, ease(k)), 0, 0); } },
+    const d = this.def, extra = this.drawn ? 0.1 : 0;
+    const back1 = { x: -0.7, y: -0.3, f: -1.5, r: 0.3 }, out1 = { x: -1.55, y: 0.05, f: 0, r: 0.3 };
+    const charge = (dt, k) => { const tp = this.tipPos(); this.vfx.orb(tp, { r: 0.04 + 0.08 * k, color: 0xb050ff, life: 0.08 }); this.energy(0xd890ff, 1, 0.8); };
+    if (this.step === 1) return [ // doble estocada rápida
+      this.stage('recoger', 0.1 + extra, back1, { spin: -0.2, tick: charge }),
+      this.stage('estocada1', 0.1, out1, { spin: 0.1, rx: 0.12, easeFn: back, enter: () => this.poke(0.8), tick: (dt, k) => this.lunge(5 * (1 - k), dt) }),
+      this.stage('recoger2', 0.08, back1, { spin: -0.1 }),
+      this.stage('estocada2', 0.1, out1, { spin: 0.15, rx: 0.12, easeFn: back, enter: () => this.poke(0.8), tick: (dt, k) => this.lunge(5 * (1 - k), dt) }),
+      this.recover(d.recover),
+    ];
+    if (this.step === 2) return [ // embestida: corre con la lanza por delante y atraviesa a todos en su camino
+      this.stage('apuntar', 0.16 + extra, { x: -1.1, y: -0.2, f: -0.9, r: 0.3 }, { rx: -0.1, spin: -0.2, tick: charge }),
+      this.stage('embestida', 0.3, out1, { rx: 0.3, easeFn: (k) => k, enter: () => { this.W.swing(0.38); this.sfx('crack'); this.hitSet = new Set(); }, tick: (dt, k) => {
+        this.lunge(16 * (1 - k * 0.5), dt);
+        const p = this.p, f = this.fwd;
+        for (const t of this.combat.inCircle(p.pos.x + f.x * 1.2, p.pos.z + f.z * 1.2, 1.3)) { if (this.hitSet.has(t)) continue; this.hitSet.add(t); this.hit(t, d.damage * this.mul); this.combat.push(t, f.x, f.z, d.force * 1.5); this.impactAt(t, 1.2); }
+        this.energy(0xd890ff, 3, 2.4);
+        if (Math.random() < 0.6) this.g.fx.gem(p.pos.x, p.pos.y + p.H * 0.5, p.pos.z);
+      }, exit: () => { this.finisher(0xb050ff, 0xe8c0ff); this.projectile(1.3); } }),
+      this.recover(d.recover + 0.1),
+    ];
+    return [ // estocada y proyección de cristal violeta
+      this.stage('cargar', d.prep + extra, back1, { rx: -0.08, spin: -0.25, enter: () => { this.p.powerAnim = 1; }, tick: charge }),
+      this.stage('estocada', d.thrust, out1, { rx: 0.12, spin: 0.15, easeFn: back, enter: () => { this.poke(1); this.projectile(1); }, tick: (dt, k) => this.lunge(7 * (1 - k), dt) }),
+      this.recover(d.recover),
     ];
   }
-  thrust() {
+  poke(k) {
     const d = this.def, p = this.p, f = this.fwd;
-    this.W.swing(d.thrust + 0.1);
-    this.sfx('crack');
-    // golpe cercano de la estocada
-    for (const t of this.combat.inCone(p.pos.x, p.pos.z, p.facing, 25 * DEG, d.reach)) { this.hit(t, d.damage); this.impactAt(t); this.combat.push(t, f.x, f.z, d.force); }
-    // proyección de la punta: un rayo de cristal violeta que atraviesa
+    this.W.swing(0.18); this.sfx('crack');
+    for (const t of this.combat.inCone(p.pos.x, p.pos.z, p.facing, 25 * DEG, d.reach)) { this.hit(t, d.damage * this.mul * k); this.impactAt(t); this.combat.push(t, f.x, f.z, d.force); }
+    this.vfx.orb(this.tipPos().clone(), { r: 0.14, color: 0xd890ff, opacity: 0.8, life: 0.12, grow: 1.2 });
+  }
+  // proyección de la punta: un rayo de cristal violeta que atraviesa
+  projectile(k) {
+    const d = this.def, p = this.p, f = this.fwd;
     const m = this.tipPos().clone();
     const t = this.target && !this.target.dead ? this.target : this.combat.aimTarget(p.pos.x, p.pos.z, p.facing, d.coneDeg * DEG, d.range);
     const to = t ? V(t.pos.x, t.pos.y + (t.heavy ? t.S.height * 0.5 : 0.6), t.pos.z) : V(m.x + f.x * d.range, m.y, m.z + f.z * d.range);
     const dir = to.clone().sub(m).normalize();
     const g = new THREE.Group();
-    const tipMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xd0a0ff).multiplyScalar(2.6), toneMapped: false });
-    const core = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.55, 4), tipMat);
+    const core = new THREE.Mesh(new THREE.ConeGeometry(0.11 * k, 0.55 * k, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xd0a0ff).multiplyScalar(2.6), toneMapped: false }));
     core.rotation.x = Math.PI / 2;
-    const halo = new THREE.Mesh(new THREE.ConeGeometry(0.2, 0.8, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x9a30ff).multiplyScalar(1.6), transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    const halo = new THREE.Mesh(new THREE.ConeGeometry(0.2 * k, 0.8 * k, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(0x9a30ff).multiplyScalar(1.6), transparent: true, opacity: 0.45, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
     halo.rotation.x = Math.PI / 2;
     g.add(core, halo);
     g.traverse((o) => { o.userData.own = true; });
     g.position.copy(m);
     g.lookAt(to);
-    this.vfx.orb(m, { r: 0.16, color: 0xd890ff, opacity: 0.8, life: 0.12, grow: 1.2 });
-    const combat = this.combat, vfx = this.vfx, fx = this.g.fx, W = this.W, life = d.range / d.speed, hits = new Set();
+    const combat = this.combat, vfx = this.vfx, fx = this.g.fx, W = this.W, life = d.range / d.speed, hits = new Set(), mul = this.mul;
     let left = d.pierce;
     vfx.add(g, life, (it, dt) => {
       g.position.addScaledVector(dir, d.speed * dt);
       g.rotateZ(dt * 14);
-      vfx.orb(g.position.clone(), { r: 0.16, color: 0xb050ff, life: 0.22 });
+      vfx.orb(g.position.clone(), { r: 0.16 * k, color: 0xb050ff, life: 0.22 });
       if (Math.random() < 0.8) fx.sparkle(g.position.x, g.position.y, g.position.z, Math.random() < 0.5 ? 0xd890ff : 0x8a2aff, 1.2);
       if (left <= 0) { it.t = life; return; }
-      for (const tt of combat.inCircle(g.position.x, g.position.z, 0.6)) {
+      for (const tt of combat.inCircle(g.position.x, g.position.z, 0.6 * k)) {
         if (hits.has(tt) || Math.abs(g.position.y - tt.pos.y - (tt.heavy ? tt.S.height * 0.5 : 0.6)) > (tt.heavy ? tt.S.height : 1.6)) continue;
         hits.add(tt); left--;
-        combat.damage(tt, d.damage);
+        combat.damage(tt, d.damage * mul);
         combat.push(tt, dir.x, dir.z, d.force);
         W.impact(g.position.x, g.position.y, g.position.z, 1);
         for (let i = 0; i < 6; i++) fx.gem(g.position.x, g.position.y, g.position.z);
@@ -365,21 +469,29 @@ export class SpearSkill extends WeaponSkill {
     this.v2.beam(m, m.clone().addScaledVector(dir, 2.2), { r: 0.06, color: 0xd890ff, opacity: 0.8, life: 0.16 });
   }
 }
-// NILO — BUMERÁN: lanza su bumerán real; deja estela de agua al ir y al volver a la mano
+
+/* ---------------------------------------------------------------------- */
+/*  NILO — BUMERÁN · lanzamiento a la derecha → a la izquierda → lanzamiento potente */
+/* ---------------------------------------------------------------------- */
 export class BoomerangSkill extends WeaponSkill {
-  begin() { this.aim(this.def.dist); this.drawn = this.draw(); this.start(); return true; }
+  begin() { this.aim(this.def.dist); this.draw(); this.start(); return true; }
   build() {
-    const d = this.def, pose = this.pose;
+    const d = this.def, extra = this.drawn ? 0.12 : 0;
+    this.curve = this.step === 1 ? -1 : 1;
+    this.power = this.step === 2 ? 1.4 : 1;
+    const wind = this.step === 1 ? { x: -1.9, y: 0.8, f: -0.7, r: -0.5 } : { x: -2.3, y: -0.6, f: -0.6, r: 0.4 };
+    const rel = this.step === 1 ? { x: -1.1, y: -0.6, f: -0.1, r: -0.5 } : { x: -1.1, y: 0.5, f: -0.1, r: 0.4 };
     return [
-      { name: 'lanzar', dur: d.prep + (this.drawn ? 0.12 : 0), enter: () => { this.p.powerAnim = 1; }, tick: (dt, k) => { pose.spin = -0.5 * k; this.setArm(-2.3 * ease(k), -0.5 * k, -0.6 * k); this.energy(0x3ad8ff, 1, 0.8); } },
-      { name: 'vuelo', dur: d.flightT, enter: this.enterFly, tick: this.tickFly, exit: () => this.catch() },
-      { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.spin = 0; this.setArm(lerp(-1.1, 0, k), 0, 0); } },
+      this.stage('apuntar', d.prep + extra + (this.step === 2 ? 0.12 : 0), wind, { spin: this.step === 1 ? 0.5 : -0.5, enter: () => { this.p.powerAnim = 1; }, tick: () => this.energy(0x3ad8ff, this.step === 2 ? 3 : 1, 0.9) }),
+      this.stage('lanzar', 0.1, rel, { spin: 0, easeFn: back, enter: this.enterFly }),
+      this.stage('vuelo', d.flightT * (this.step === 2 ? 1.25 : 1), this.guard, { tick: this.tickFly, exit: this.catch }),
+      this.recover(d.recover),
     ];
   }
   enterFly() {
     const W = this.W, pr = W.projectile(0);
-    let g;
-    if (pr) { g = pr.group; this.spinBone = pr.spin; } else { g = new THREE.Group(); }
+    const g = pr ? pr.group : new THREE.Group();
+    if (this.power > 1) g.scale.multiplyScalar(1.25);
     this.mesh = { obj: g, it: this.vfx.add(g, 0), kill: () => this.vfx.kill(this.mesh.it) };
     this.track(this.mesh);
     W.setHome(0, false); // el de la mano desaparece mientras vuela
@@ -389,31 +501,30 @@ export class BoomerangSkill extends WeaponSkill {
     this.dir = this.fwd;
     this.hitOut = new Set(); this.hitBack = new Set();
     this.sfx('flap');
-    this.g.vfx.orb(this.tipPos(), { r: 0.3, color: 0x3ad8ff, life: 0.15, grow: 1.5 });
+    this.g.vfx.orb(this.tipPos(), { r: 0.2, color: 0x3ad8ff, life: 0.15, grow: 1.5 });
   }
   tickFly(dt, k) {
-    const d = this.def, p = this.p, u = k;
-    this.setArm(lerp(-1.1, -0.6, k), 0.3, 0);
+    const d = this.def, p = this.p, u = k, pw = this.power;
     // trayectoria en lazo: sale hacia delante abriéndose a un lado y vuelve a la mano del héroe
-    const fwdD = d.dist * Math.sin(u * Math.PI), side = d.width * Math.sin(u * TAU) * 0.5;
+    const fwdD = d.dist * pw * Math.sin(u * Math.PI), side = this.curve * d.width * pw * Math.sin(u * TAU) * 0.5;
     const sx = -this.dir.z, sz = this.dir.x;
     const home = V(p.pos.x, p.pos.y + p.H * 0.6, p.pos.z), start = V(this.o.x, this.o.y + p.H * 0.6, this.o.z);
     const base = start.clone().lerp(home, u);
     const pos = V(base.x + this.dir.x * fwdD + sx * side, base.y + Math.sin(u * Math.PI) * 0.6, base.z + this.dir.z * fwdD + sz * side);
     const g = this.mesh.obj;
     g.position.copy(pos);
-    g.rotation.set(-Math.PI / 2 + 0.25, 0, g.rotation.z + dt * 26); // gira plano, como un bumerán de verdad
-    // estela: dos puntos opuestos del bumerán
-    const r = 0.36;
+    g.rotation.set(-Math.PI / 2 + 0.25, 0, g.rotation.z + dt * 26 * this.curve); // gira plano, como un bumerán de verdad
+    const r = 0.36 * pw;
     this.trail.push(V(pos.x + Math.cos(g.rotation.z) * r, pos.y, pos.z - Math.sin(g.rotation.z) * r), V(pos.x - Math.cos(g.rotation.z) * r, pos.y, pos.z + Math.sin(g.rotation.z) * r));
     this.trail.update(dt, true);
-    if (Math.random() < 0.6) this.g.fx.spray(pos.x, pos.y, pos.z, 0, 0.5, 0, 0.8); // gotas de agua
+    if (Math.random() < 0.6) this.g.fx.spray(pos.x, pos.y, pos.z, 0, 0.5, 0, 0.8);
     if (Math.random() < 0.5) this.g.fx.sparkle(pos.x, pos.y, pos.z, u < 0.5 ? 0x3ad8ff : 0x9af0ff, 1);
+    if (pw > 1 && !this.burst && u > 0.5) { this.burst = true; this.vfx.splash(pos.x, pos.y, pos.z, 18, 1.2); this.vfx.ring(pos.x, pos.y, pos.z, { r0: 0.3, r1: 3, dur: 0.4, color: 0x3ad8ff }); for (const t of this.combat.inCircle(pos.x, pos.z, 3)) { this.hit(t, d.damage * 0.6); this.impactAt(t); } }
     const set = u < 0.5 ? this.hitOut : this.hitBack;
-    for (const t of this.combat.inCircle(pos.x, pos.z, d.hitRadius)) {
+    for (const t of this.combat.inCircle(pos.x, pos.z, d.hitRadius * pw)) {
       if (set.has(t)) continue;
       set.add(t);
-      this.hit(t, d.damage);
+      this.hit(t, d.damage * this.mul);
       this.combat.push(t, this.dir.x * (u < 0.5 ? 1 : -1), this.dir.z * (u < 0.5 ? 1 : -1), d.force);
       this.vfx.splash(t.pos.x, t.pos.y + 0.7, t.pos.z, 8, 0.8);
       this.impactAt(t);
@@ -425,21 +536,46 @@ export class BoomerangSkill extends WeaponSkill {
     this.W.setHome(0, true); // vuelve a su mano
     this.sfx('stick');
     this.vfx.splash(this.p.pos.x, this.p.pos.y + this.p.H * 0.6, this.p.pos.z, 6, 0.5);
+    if (this.power > 1) this.finisher(0x3ad8ff, 0xff3a2a);
   }
   dispose() { if (this.W) this.W.setHome(0, true); super.dispose(); }
 }
-// KYRA — HACHA DE CRISTAL: hachazo vertical con estela azul-violeta e impacto de hielo
+
+/* ---------------------------------------------------------------------- */
+/*  KYRA — HACHA DE CRISTAL · hachazo → barrido horizontal → torbellino de hielo */
+/* ---------------------------------------------------------------------- */
 export class AxeSkill extends WeaponSkill {
-  begin() { this.aim(this.def.range + 2); this.drawn = this.draw(); this.start(); return true; }
+  begin() { this.aim(this.def.range + 2); this.draw(); this.start(); return true; }
   build() {
-    const d = this.def, pose = this.pose;
-    return [
-      { name: 'alzar', dur: d.prep + (this.drawn ? 0.1 : 0), enter: () => { this.p.powerAnim = 1; }, tick: (dt, k) => { pose.rx = -0.5 * ease(k); pose.sy = 1 + 0.05 * k; this.setArm(-2.6 * ease(k), -0.2 * k, -0.5 * k); this.energy(0x9ae0ff, 2, 0.8); } },
-      { name: 'hachazo', dur: d.chop, enter: () => { this.sfx('crack'); this.W.swing(d.chop + 0.08); }, tick: (dt, k) => { pose.rx = lerp(-0.5, 0.55, back(k)); this.setArm(lerp(-2.6, -0.6, back(k)), lerp(-0.2, 0.3, k), -0.5); }, exit: this.impact },
-      { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.rx = lerp(0.55, 0, ease(k)); pose.sy = 1; this.setArm(lerp(-0.6, 0, ease(k)), lerp(0.3, 0, k), lerp(-0.5, 0, k)); } },
+    const d = this.def, extra = this.drawn ? 0.1 : 0;
+    const frost = () => this.energy(0x9ae0ff, 2, 0.9);
+    if (this.step === 1) return [ // barrido horizontal
+      this.stage('cargar', 0.14 + extra, { x: -1.2, y: -1.0, f: -0.4, r: 0.5 }, { spin: -0.6, tick: frost }),
+      this.stage('barrido', d.chop + 0.04, { x: -1.2, y: 1.2, f: -0.3, r: 0.5 }, { spin: 0.9, easeFn: back, enter: () => {
+        this.W.swing(0.26); this.sfx('crack');
+        const p = this.p;
+        this.crescent(p.pos.y + p.H * 0.5, { r: d.range, arc: 140, color: 0x9ae8ff });
+        this.crescent(p.pos.y + p.H * 0.55, { r: d.range * 0.85, arc: 120, color: 0xc06aff, width: 0.12, life: 0.2 });
+        this.hitArc(d.range, 140, d.damage * this.mul, d.force, (t) => { this.combat.slow(t, d.slowF, d.slowT); this.vfx.ice(t.pos.x, t.pos.y + 0.6, t.pos.z, 3); this.impactAt(t); });
+      } }),
+      this.recover(d.recover),
+    ];
+    if (this.step === 2) return [ // torbellino: gira sobre sí misma con el hacha extendida
+      this.stage('cargar', 0.14 + extra, { x: -1.4, y: -0.6, f: -0.2, r: 0.5 }, { spin: -0.4, sy: 0.95, tick: frost }),
+      this.stage('torbellino', 0.45, { x: -1.4, y: 0.6, f: -0.2, r: 0.5 }, { spin: TAU, easeFn: (k) => k, enter: () => { this.W.swing(0.5); this.sfx('wind'); this.hitSet = new Set(); }, tick: (dt, k) => {
+        const p = this.p;
+        if (Math.random() < 0.7) this.vfx.ice(p.pos.x + rnd(-1.5, 1.5), p.pos.y + 0.4, p.pos.z + rnd(-1.5, 1.5), 1);
+        for (const t of this.combat.inCircle(p.pos.x, p.pos.z, d.range)) { if (this.hitSet.has(t)) continue; this.hitSet.add(t); this.hit(t, d.damage * this.mul); this.combat.slow(t, d.slowF, d.slowT * 1.5); this.impactAt(t); const { dx, dz } = this.awayFrom(t, p.pos.x, p.pos.z); this.combat.push(t, dx, dz, d.force); }
+      }, exit: () => { const p = this.p; this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 0.3, r1: d.range * 1.5, dur: 0.5, color: 0xbff0ff }); this.vfx.ice(p.pos.x, p.pos.y + 0.3, p.pos.z, 10); this.finisher(0x6ab0ff, 0xc06aff); } }),
+      this.recover(d.recover + 0.1),
+    ];
+    return [ // hachazo vertical
+      this.stage('alzar', d.prep + extra, { x: -2.6, y: -0.2, f: -0.5, r: 1.4 }, { rx: -0.5, sy: 1.05, enter: () => { this.p.powerAnim = 1; }, tick: frost }),
+      this.stage('hachazo', d.chop, { x: -0.6, y: 0.3, f: -0.5, r: 1.4 }, { rx: 0.55, easeFn: back, enter: () => { this.sfx('crack'); this.W.swing(d.chop + 0.08); }, exit: this.chop }),
+      this.recover(d.recover),
     ];
   }
-  impact() {
+  chop() {
     const d = this.def, p = this.p, f = this.fwd, x = p.pos.x + f.x * d.range * 0.6, z = p.pos.z + f.z * d.range * 0.6;
     this.shake(0.18);
     this.crescent(p.pos.y + p.H * 0.5, { r: d.range, arc: d.arcDeg, color: 0x9ae8ff, vertical: true, life: 0.22 });
@@ -447,34 +583,53 @@ export class AxeSkill extends WeaponSkill {
     this.vfx.ice(x, p.pos.y + 0.3, z, 6);
     this.vfx.ring(x, null, z, { r0: 0.3, r1: 2.2, dur: 0.4, color: 0xbff0ff });
     this.W.impact(x, p.pos.y + 0.4, z, 1.1);
-    this.hitArc(d.range, d.arcDeg, d.damage, d.force, (t) => { this.combat.slow(t, d.slowF, d.slowT); this.vfx.ice(t.pos.x, t.pos.y + 0.6, t.pos.z, 3); this.impactAt(t); });
+    this.hitArc(d.range, d.arcDeg, d.damage * this.mul, d.force, (t) => { this.combat.slow(t, d.slowF, d.slowT); this.vfx.ice(t.pos.x, t.pos.y + 0.6, t.pos.z, 3); this.impactAt(t); });
   }
 }
-// LIRA — GUADAÑA DE RAYO: barrido amplio con estela curva y una onda de rayo en forma de media luna
+
+/* ---------------------------------------------------------------------- */
+/*  LIRA — GUADAÑA DE RAYO · barrido con onda → revés amplio → siega en giro */
+/* ---------------------------------------------------------------------- */
 export class ScytheSkill extends WeaponSkill {
-  begin() { this.aim(this.def.range, 40); this.drawn = this.draw(); this.start(); return true; }
+  begin() { this.aim(this.def.range, 40); this.draw(); this.start(); return true; }
   build() {
-    const d = this.def, pose = this.pose;
-    return [
-      { name: 'cargar', dur: d.prep + (this.drawn ? 0.1 : 0), enter: () => { this.p.powerAnim = 1; this.sfx('zap'); }, tick: (dt, k) => { pose.spin = -0.8 * ease(k); this.setArm(-1.2 * ease(k), -1.2 * ease(k), -0.2 * k); this.energy(0x8ad8ff, 2, 1); } },
-      { name: 'barrido', dur: d.swing, enter: this.slash, tick: (dt, k) => { pose.spin = lerp(-0.8, 1.4, back(k)); pose.rx = 0.15; this.setArm(-1.2, lerp(-1.2, 1.4, back(k)), -0.2); this.energy(0xbfeeff, 3, 2.2); } },
-      { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.spin = lerp(1.4, 0, ease(k)); pose.rx = lerp(0.15, 0, k); this.setArm(lerp(-1.2, 0, ease(k)), lerp(1.4, 0, ease(k)), 0); } },
+    const d = this.def, extra = this.drawn ? 0.1 : 0;
+    const spark = () => this.energy(0x8ad8ff, 2, 1);
+    if (this.step === 1) return [ // revés amplio
+      this.stage('girar', 0.12 + extra, { x: -1.2, y: 1.3, f: -0.3, r: 0.4 }, { spin: 1.0, tick: spark }),
+      this.stage('reves', d.swing, { x: -1.2, y: -1.3, f: -0.2, r: 0.4 }, { spin: -1.0, easeFn: back, enter: () => this.reap(200, false), tick: () => this.energy(0xbfeeff, 3, 2.2) }),
+      this.recover(d.recover),
+    ];
+    if (this.step === 2) return [ // siega en giro: una vuelta completa con anillo de rayos
+      this.stage('cargar', 0.14 + extra, { x: -1.3, y: -1.0, f: -0.2, r: 0.4 }, { spin: -0.5, sy: 0.95, tick: spark }),
+      this.stage('siega', 0.42, { x: -1.3, y: 0.9, f: -0.2, r: 0.4 }, { spin: TAU, easeFn: (k) => k, enter: () => { this.W.swing(0.5); this.sfx('zap'); this.hitSet = new Set(); }, tick: (dt, k) => {
+        const p = this.p;
+        for (const t of this.combat.inCircle(p.pos.x, p.pos.z, d.reach * 1.15)) { if (this.hitSet.has(t)) continue; this.hitSet.add(t); this.hit(t, d.damage * this.mul); this.impactAt(t); this.vfx.bolt(this.tipPos(), V(t.pos.x, t.pos.y + 0.8, t.pos.z), { color: 0x8ad8ff, life: 0.14, jag: 0.3, segs: 7 }); }
+        if (Math.random() < 0.5) { const a = rnd(0, TAU); this.vfx.bolt(V(p.pos.x, p.pos.y + p.H * 0.5, p.pos.z), V(p.pos.x + Math.cos(a) * d.reach, p.pos.y + 0.2, p.pos.z + Math.sin(a) * d.reach), { color: 0x9adcff, life: 0.08, jag: 0.3, segs: 6 }); }
+      }, exit: () => { const p = this.p; this.vfx.ring(p.pos.x, p.pos.y + 0.3, p.pos.z, { r0: 0.5, r1: d.reach * 1.6, dur: 0.45, color: 0x3a9aff }); this.finisher(0x3a9aff, 0xbfeeff); } }),
+      this.recover(d.recover + 0.1),
+    ];
+    return [ // barrido amplio con onda de rayo
+      this.stage('cargar', d.prep + extra, { x: -1.2, y: -1.2, f: -0.2, r: 0.4 }, { spin: -0.8, enter: () => { this.p.powerAnim = 1; this.sfx('zap'); }, tick: spark }),
+      this.stage('barrido', d.swing, { x: -1.2, y: 1.4, f: -0.2, r: 0.4 }, { spin: 1.4, rx: 0.15, easeFn: back, enter: () => this.reap(d.arcDeg, true), tick: () => this.energy(0xbfeeff, 3, 2.2) }),
+      this.recover(d.recover),
     ];
   }
-  slash() {
+  reap(arc, wave) {
     const d = this.def, p = this.p, f = this.fwd;
     this.W.swing(d.swing + 0.12);
     this.sfx('snap');
-    this.crescent(p.pos.y + p.H * 0.5, { r: d.reach, arc: d.arcDeg, color: 0x3a9aff, tilt: 0.1 });
-    this.crescent(p.pos.y + p.H * 0.55, { r: d.reach * 0.9, arc: d.arcDeg * 0.9, color: 0xbfeeff, tilt: 0.15, width: 0.1, life: 0.2 });
-    const n = this.hitArc(d.reach, d.arcDeg, d.damage, d.force, (t) => { this.impactAt(t); this.vfx.bolt(this.tipPos(), V(t.pos.x, t.pos.y + 0.8, t.pos.z), { color: 0x8ad8ff, life: 0.14, jag: 0.3, segs: 7 }); });
+    this.crescent(p.pos.y + p.H * 0.5, { r: d.reach, arc, color: 0x3a9aff, tilt: 0.1 });
+    this.crescent(p.pos.y + p.H * 0.55, { r: d.reach * 0.9, arc: arc * 0.9, color: 0xbfeeff, tilt: 0.15, width: 0.1, life: 0.2 });
+    const n = this.hitArc(d.reach, arc, d.damage * this.mul, d.force, (t) => { this.impactAt(t); this.vfx.bolt(this.tipPos(), V(t.pos.x, t.pos.y + 0.8, t.pos.z), { color: 0x8ad8ff, life: 0.14, jag: 0.3, segs: 7 }); });
     if (n) this.shake(0.14);
+    if (!wave) return;
     // onda de rayo: media luna que vuela hacia delante y atraviesa
     const geo = new THREE.RingGeometry(1.1, 1.6, 32, 1, -0.9, 1.8);
     const mat = new THREE.MeshBasicMaterial({ color: new THREE.Color(0x5ab0ff).multiplyScalar(2.2), transparent: true, opacity: 0.85, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
-    const wave = new THREE.Mesh(geo, mat);
-    wave.rotation.x = -Math.PI / 2; wave.rotation.z = Math.PI / 2;
-    const g = new THREE.Group(); g.add(wave); g.userData.own = true; wave.userData.own = true;
+    const waveM = new THREE.Mesh(geo, mat);
+    waveM.rotation.x = -Math.PI / 2; waveM.rotation.z = Math.PI / 2;
+    const g = new THREE.Group(); g.add(waveM); g.userData.own = true; waveM.userData.own = true;
     g.position.set(p.pos.x + f.x * 0.6, p.pos.y + p.H * 0.45, p.pos.z + f.z * 0.6);
     g.rotation.y = p.facing - Math.PI / 2;
     const combat = this.combat, vfx = this.vfx, W = this.W, life = d.range / d.speed, hits = new Set();
@@ -493,20 +648,25 @@ export class ScytheSkill extends WeaponSkill {
     });
   }
 }
-// ÁMBAR — DOS DISCOS: lanza uno de sus discos (rebota entre enemigos) y vuelve a su mano
+
+/* ---------------------------------------------------------------------- */
+/*  ÁMBAR — DOS DISCOS · disco derecho → disco izquierdo → los dos a la vez */
+/* ---------------------------------------------------------------------- */
 export class DiscSkill extends WeaponSkill {
-  begin() { this.aim(this.def.range, 35); this.drawn = this.draw(); this.which = (this.g.weapons.discTurn = ((this.g.weapons.discTurn || 0) + 1) % 2); this.start(); return true; }
+  begin() { this.aim(this.def.range, 35); this.draw(); this.start(); return true; }
   build() {
-    const d = this.def, pose = this.pose;
+    const d = this.def, extra = this.drawn ? 0.12 : 0, W = this.W;
+    const n = W ? W.partCount : 1;
+    this.which = this.step === 2 ? [0, 1].slice(0, n) : [Math.min(this.step, n - 1)];
+    this.armPart = this.which.length > 1 ? -1 : this.which[0];
     return [
-      { name: 'lanzar', dur: d.prep + (this.drawn ? 0.12 : 0), enter: () => { this.p.powerAnim = 1; }, tick: (dt, k) => { pose.spin = -0.7 * k; this.setArm(-0.8 * ease(k), -0.45 * k, -0.3 * k); this.energy(0xff4a2a, 2, 1); } },
-      { name: 'disco', dur: 0.12, enter: this.throwDisc, tick: (dt, k) => { pose.spin = lerp(-0.7, 0.4, k); this.setArm(-0.8, lerp(-0.45, 0.4, k), -0.3); } },
-      { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.spin = lerp(0.4, 0, k); this.setArm(lerp(-0.8, 0, ease(k)), lerp(0.4, 0, ease(k)), 0); } },
+      this.stage('apuntar', d.prep + extra + (this.step === 2 ? 0.1 : 0), { x: -0.8, y: -0.45, f: -0.3 }, { spin: this.step === 1 ? 0.5 : -0.5, enter: () => { this.p.powerAnim = 1; }, tick: () => this.energy(0xff4a2a, 2, 1) }),
+      this.stage('lanzar', 0.12, { x: -0.8, y: 0.4, f: -0.3 }, { spin: this.step === 1 ? -0.3 : 0.4, easeFn: back, enter: () => { this.which.forEach((i, k) => this.throwDisc(i, k)); if (this.step === 2) this.finisher(0xff3a1a, 0xffc020); } }),
+      this.recover(d.recover),
     ];
   }
-  throwDisc() {
+  throwDisc(idx, order) {
     const d = this.def, p = this.p, f = this.fwd, W = this.W;
-    const idx = Math.min(this.which, Math.max(0, W.partCount - 1));
     const pr = W.projectile(idx);
     const g = pr ? pr.group : new THREE.Group();
     const spin = pr && pr.spin;
@@ -516,14 +676,16 @@ export class DiscSkill extends WeaponSkill {
     W.swing(0.25);
     this.sfx('wind');
     const trail = new Trail(this.g.scene, 0xff3a1a, 0xffc020, 20);
-    const combat = this.combat, vfx = this.vfx, sfx = (n) => this.sfx(n), fx = this.g.fx;
+    const combat = this.combat, vfx = this.vfx, sfx = (n) => this.sfx(n), fx = this.g.fx, dmg = d.damage * this.mul;
     const hit = new Set();
-    let target = combat.aimTarget(p.pos.x, p.pos.z, p.facing, 35 * DEG, d.range), bounces = d.bounces, dir = V(f.x, 0, f.z), travelled = 0, back = false;
+    // con los dos discos, cada uno busca un enemigo distinto
+    const cands = combat.targets().filter((t) => !t.dead && Math.hypot(t.pos.x - p.pos.x, t.pos.z - p.pos.z) < d.range).sort((a, b) => Math.hypot(a.pos.x - p.pos.x, a.pos.z - p.pos.z) - Math.hypot(b.pos.x - p.pos.x, b.pos.z - p.pos.z));
+    let target = order > 0 && cands[order] ? cands[order] : combat.aimTarget(p.pos.x, p.pos.z, p.facing, 35 * DEG, d.range);
+    let bounces = d.bounces, travelled = 0, back = false;
+    const dir = V(f.x - (order ? f.z * 0.3 : 0), 0, f.z + (order ? f.x * 0.3 : 0)).normalize();
     const it0 = vfx.add(g, 5, (it, dt) => {
       if (spin) spin.rotation.z += dt * 30;
       g.rotation.set(-Math.PI / 2 + 0.3, 0, 0);
-      g.rotation.y = 0;
-      // estela: borde del disco
       const r = 0.2, a = it.t * 30;
       trail.push(V(g.position.x + Math.cos(a) * r, g.position.y, g.position.z + Math.sin(a) * r), V(g.position.x - Math.cos(a) * r, g.position.y, g.position.z - Math.sin(a) * r));
       trail.update(dt, true);
@@ -541,7 +703,7 @@ export class DiscSkill extends WeaponSkill {
         dir.subVectors(to, g.position);
         const l = dir.length();
         if (l < 0.6) { // impacto y rebote al siguiente
-          combat.damage(target, d.damage);
+          combat.damage(target, dmg);
           hit.add(target);
           vfx.ring(target.pos.x, to.y, target.pos.z, { r0: 0.2, r1: 1.4, dur: 0.3, color: 0xff3a1a });
           W.impact(to.x, to.y, to.z, 1);
@@ -561,11 +723,9 @@ export class DiscSkill extends WeaponSkill {
       if (!target && travelled > d.range) back = true;
     });
     // al terminar su vuelo, el disco reaparece en la mano
-    const done = () => { trail.dispose(); W.setHome(idx, true); };
-    const orig = it0.onUpdate;
     let finished = false;
-    it0.onUpdate = (it, dt) => { orig(it, dt); if (!finished && it.t >= 4.99) { finished = true; done(); } };
-    this.g.weapons.pendingDisc = () => { if (!finished) { finished = true; vfx.kill(it0); done(); } };
+    const orig = it0.onUpdate;
+    it0.onUpdate = (it, dt) => { orig(it, dt); if (!finished && it.t >= 4.99) { finished = true; trail.dispose(); W.setHome(idx, true); } };
   }
 }
 

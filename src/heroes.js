@@ -4,6 +4,7 @@ import { loadGLB, normalizeModel, prepareMeshes, measure } from './glb.js';
 import { HERO_SCALE, modelUrl } from './scale.js';
 import { makeCanvas, texFromCanvas, makeRng, clamp, lerp, damp, TAU } from './utils.js';
 import STRIP from './weapons/strip.json';
+import { augmentSkeleton, poseAnatomy } from './anatomy.js';
 
 /* Quita de la malla de los GLB las armas que venían incrustadas (katana, hacha, lanza a la espalda,
    bumerán): cada héroe solo debe llevar el arma nueva de src/weapons, y únicamente cuando la saca.
@@ -1396,6 +1397,8 @@ class GLBHero {
     this.body.add(holder);
     this.root.add(this.body);
     this.strippedTris = stripBuiltInWeapon(def.id, model); // sin armas predeterminadas
+    this.anatomy = augmentSkeleton(model); // carpo, metacarpo, falanges, tarso y metatarso (src/anatomy.js)
+    this.handPose = { gripL: 0, gripR: 0, wristL: 0, wristR: 0 }; // lo fija el sistema de armas
     prepareMeshes(model).forEach((m) => { m.envMapIntensity = 1.1; });
     this.dims = { height: targetH, naturalH, scale: targetH / naturalH, source: 'glb' };
     this.height = targetH;
@@ -1425,6 +1428,7 @@ class GLBHero {
     this.bones = {};
     model.traverse((o) => { if (o.isBone) { this.bones[o.name] = o; o.userData.q0 = o.quaternion.clone(); o.userData.s0 = o.scale.clone(); } });
     this.boneFx = null; // (bones, dt, t, fx) => void · lo fija una habilidad y lo quita al terminar
+    this.armFx = null;  // capa del arma (guardia, golpes, combos): se aplica después de boneFx
     this._touched = new Set();
     const qa = new THREE.Quaternion(), qp = new THREE.Quaternion(), qb = new THREE.Quaternion(), ax = new THREE.Vector3();
     // Herramientas para las habilidades: giran o estiran un hueso en el espacio del personaje
@@ -1479,6 +1483,8 @@ class GLBHero {
       this.mixer.update(dt);
     }
     if (this.boneFx) { this.root.updateMatrixWorld(true); this.boneFx(this.bones, dt, this.t, this.boneTools); }
+    if (this.armFx) { this.root.updateMatrixWorld(true); this.armFx(this.bones, dt, this.t, this.boneTools); }
+    if (this.anatomy) poseAnatomy(this.anatomy, { ...this.handPose, walk: this.phase, speed: run, grounded: !air && !swim });
     // movimiento procedural adicional (inclinación y rebote) que se suma a las animaciones del GLB
     const b = this.body;
     const bob = this.mixer ? 0 : Math.abs(Math.sin(this.phase)) * 0.07 * Math.min(run, 1.3);
