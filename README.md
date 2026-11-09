@@ -29,15 +29,28 @@ Lira (Lince · Tierra), Kairo (Komodo · Fuego), Jago (Jaglión · Roca), Halley
 |---|---|---|---|---|---|
 | Jago (Jaglión, líder) | 🪨 Embestida Pétrea | 🖤 Obsidiana | 🥌 Transformación en Roca | 🗡️ Katana | 🪢 Cola Elástica |
 | Kairo (Komodo) | 🔥 Propulsión de Fuego | 🌑 Lava Negra | 🌋 Géiser | 🔨 Martillo | 👅 Lengua Camaleónica |
-| Halley (Fénec) | ⏳ Remolino de Arena | 🌪️ Haboob | 🪞 Espejismos | 🔫 Rifle | 👂 Vuelo de Orejas |
+| Halley (Fénec) | ⏳ Remolino de Arena | 🌪️ Haboob | 🪞 Espejismos | 🔱 Lanza morada | 👂 Vuelo de Orejas |
 | Nilo (Nutria) | 💦 Botas Propulsoras | 🌊 Tsunami | 🌀 Maelstrom | 🪃 Bumerán | 💧 Blink Acuático |
 | Kyra (Zorra Ártica, 6) | ❄️ Deslizamiento sobre Hielo | ☸️ Rueda de las Estaciones · 🌷 Primavera | 🌞 Solsticio | 🪓 Hacha | 🌌 Aurora Polar |
-| Lira (Lince, 6) | 🌱 Raíces Impulsoras (quieta: Pilar de Tierra) | 🔴 Luna de Sangre | 🌘 Umbra · 🌑 Penumbra | 🏹 Ballesta | 👁️ Visión Especial |
-| Ámbar (Águila) | 🚀 Carrera Supersónica | ⚡ Picado del Trueno | 🌪️ Tornados Envolventes | 🥏 Disco Futurista | 🦅 Garras de Viento |
+| Lira (Lince, 6) | 🌱 Raíces Impulsoras (quieta: Pilar de Tierra) | 🔴 Luna de Sangre | 🌘 Umbra · 🌑 Penumbra | ⚡ Guadaña | 👁️ Visión Especial |
+| Ámbar (Águila) | 🚀 Carrera Supersónica | ⚡ Picado del Trueno | 🌪️ Tornados Envolventes | 🥏 Dos Discos | 🦅 Garras de Viento |
 
 Ámbar vuela con **doble salto** en el aire (Vuelo Libre, con vista aérea).
 
 Números en `src/skills/config.js`, lógica en `src/skills/hero.js`, `src/skills/powers.js` y `src/skills/powers2.js`, efectos en `src/skills/vfx.js` y `src/skills/vfx2.js`. Los poderes especiales tienen sonidos sintetizados propios (`Audio3D.sfx`); el resto del juego sigue solo con la melodía.
+
+## Armas 3D
+Cada héroe lleva **solo su arma**, modelada en 3D a partir de las imágenes de referencia (`src/weapons/models.js`):
+Jaglion · Katana · Kyra · Hacha de cristal · Kairo · Martillo de esmeralda · Ámbar · Dos discos · Lira · Guadaña de rayo · Nilo · Bumerán · Halley · Lanza morada.
+- **Empieza guardada.** El botón **4 · ARMA** la saca (se materializa en la mano con un destello) y ataca; si ya está fuera, ataca.
+- **Guardarla:** tecla **G** o mantener pulsado el botón ARMA (también se guarda sola tras 20 s sin usarla, y se oculta al nadar). Al cambiar de héroe, la del anterior desaparece.
+- Va unida al **hueso de la mano** del esqueleto del héroe (sigue sus animaciones); en los ataques el brazo se mueve por huesos. Cada arma tiene su propio esqueleto (huesos `w_*`) y los discos y el bumerán giran por su hueso.
+- **Neón permanente:** materiales emisivos que laten, halos (resplandor también sin bloom), chispas, relámpagos y una luz propia.
+- **Al atacar:** estela luminosa con los colores del arma, partículas de energía y destello en cada impacto. El bumerán y el disco que se lanzan son el arma de verdad (desaparece de la mano mientras vuela y vuelve).
+- **Con otras habilidades** (con el arma fuera): ráfaga de energía propia de cada arma (fuego y rayo, hielo, esmeraldas, aros de fuego, rayos, agua, cristales violetas).
+- Las armas que venían incrustadas en los modelos GLB (katana, hacha, lanza a la espalda y bumerán) se quitan de la malla al cargar (`src/weapons/strip.json`).
+
+Lógica en `src/weapons/system.js`; ataques en `src/skills/powers2.js`; números en `src/skills/config.js`.
 
 ## Vida, escudo y mochila
 - **Vida del héroe** (100): barra permanente bajo el nombre (verde > 60 %, amarilla 30–60 %, roja < 30 %). Se pierde con los golpes del jefe y sus esbirros y con los peligros del escenario (escombros de las réplicas, objetos que vuelan, rocas volcánicas, fuego, lava). A 0: derrota. Se guarda por héroe; si cae, vuelve con la vida completa.

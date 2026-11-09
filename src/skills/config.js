@@ -69,8 +69,8 @@ export const HERO_SKILLS = {
       speed: 7, climb: 5.5, sink: 1.1, ceil: 7.5, // velocidad, subida (mantén SALTAR), descenso suave y altura máxima
       flap: 26,                     // velocidad del aleteo de las orejas
     },
-    // ARMA — RIFLE: disparo de arena compactada de largo alcance
-    rifle: { id: 'rifle', name: 'Rifle', icon: '🔫', cd: 1.1, prep: 0.2, recover: 0.25, range: 22, coneDeg: 14, damage: 7, force: 3 },
+    // ARMA — LANZA MORADA: estocada (golpe cercano) y proyección de cristal violeta que atraviesa
+    spear: { id: 'spear', name: 'Lanza morada', icon: '🔱', cd: 1.2, prep: 0.2, thrust: 0.16, recover: 0.25, reach: 2.4, range: 20, speed: 34, pierce: 2, coneDeg: 14, damage: 7, force: 4 },
   },
 
   // ZORRA ÁRTICA — COLAS DE LAS CUATRO ESTACIONES (una por uso, en orden) + RUEDA DE LAS ESTACIONES (especial)
@@ -133,8 +133,8 @@ export const HERO_SKILLS = {
     },
     // ESCUDO — TORNADOS ENVOLVENTES: varios tornados giran a su alrededor; la protegen y apartan a los enemigos
     tornado: { id: 'tornado', name: 'Tornados Envolventes', icon: '🌪️', cd: 15, prep: 0.4, exec: 5, recover: 0.4, count: 4, orbit: 2.6, radius: 4.2, push: 9, damage: 1.5 },
-    // ARMA — DISCO FUTURISTA: sale disparado y rebota entre enemigos
-    disc: { id: 'disc', name: 'Disco Futurista', icon: '🥏', cd: 1.6, prep: 0.15, recover: 0.2, range: 16, speed: 30, bounces: 2, bounceRange: 8, damage: 6 },
+    // ARMA — DOS DISCOS: lanza uno de sus dos discos de fuego; rebota entre enemigos y vuelve a su mano
+    disc: { id: 'disc', name: 'Dos Discos', icon: '🥏', cd: 1.6, prep: 0.15, recover: 0.2, range: 16, speed: 30, bounces: 2, bounceRange: 8, damage: 6 },
     // GARRAS DE VIENTO: zarpazo que lanza tres cortes de aire con forma de garra
     claws: { id: 'claws', name: 'Garras de Viento', icon: '🦅', cd: 6, prep: 0.3, recover: 0.35, cuts: 3, speed: 20, range: 10, spreadDeg: 16, width: 1.3, damage: 4, force: 6 },
   },
@@ -221,8 +221,8 @@ export const HERO_SKILLS = {
       prep: 1.8, exec: 1.4, recover: 0.7,
       radius: 13, damage: 22, force: 18, bolts: 6, boltDamage: 4, markT: 5,
     },
-    // ARMA — BALLESTA: virote de energía verde que atraviesa a los enemigos en línea
-    crossbow: { id: 'crossbow', name: 'Ballesta', icon: '🏹', cd: 1.2, prep: 0.25, recover: 0.2, range: 24, speed: 42, damage: 8, pierce: 2 },
+    // ARMA — GUADAÑA DE RAYO: barrido amplio y onda de rayo en media luna que atraviesa
+    scythe: { id: 'scythe', name: 'Guadaña', icon: '⚡', cd: 1.4, prep: 0.22, swing: 0.24, recover: 0.25, reach: 3.4, arcDeg: 170, range: 16, speed: 26, damage: 8, waveDamage: 5, force: 5 },
     // VISIÓN ESPECIAL: ve enemigos, trampas, personas ocultas y puntos débiles a través de las paredes
     vision: { id: 'vision', name: 'Visión Especial', icon: '👁️', cd: 16, prep: 0.5, exec: 9, recover: 0.3, range: 130, weakMul: 1.5 },
   },
@@ -233,10 +233,10 @@ export const HERO_SKILLS = {
 export const HERO_BUTTONS = {
   jago: [['obsidian', 'poder'], ['rock', 'escudo'], ['katana', 'arma'], ['skill', 'especial']],
   kairo: [['lava', 'poder'], ['geyser', 'escudo'], ['hammer', 'arma'], ['skill', 'especial']],
-  halley: [['skill', 'poder'], ['mirage', 'escudo'], ['rifle', 'arma'], ['ears', 'especial']],
+  halley: [['skill', 'poder'], ['mirage', 'escudo'], ['spear', 'arma'], ['ears', 'especial']],
   nilo: [['tsunami', 'poder'], ['maelstrom', 'escudo'], ['boomerang', 'arma'], ['skill', 'especial']],
   kyra: [['special', 'poder'], ['solstice', 'escudo'], ['skill', 'poder'], ['axe', 'arma'], ['aurora', 'especial']],
-  lira: [['blood', 'poder'], ['umbra', 'escudo'], ['penumbra', 'escudo'], ['crossbow', 'arma'], ['vision', 'especial']],
+  lira: [['blood', 'poder'], ['umbra', 'escudo'], ['penumbra', 'escudo'], ['scythe', 'arma'], ['vision', 'especial']],
   ambar: [['skill', 'poder'], ['tornado', 'escudo'], ['disc', 'arma'], ['claws', 'especial']],
 };
 export const ROLE_LABEL = { velocidad: 'VEL', poder: 'PODER', escudo: 'ESCUDO', arma: 'ARMA', especial: 'ESPECIAL' };

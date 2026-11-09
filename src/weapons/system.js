@@ -1,0 +1,322 @@
+import * as THREE from 'three';
+import { WEAPONS } from './models.js';
+import { ui } from '../ui.js';
+
+/* ======================================================================
+   SISTEMA DE ARMAS
+   · Cada héroe tiene SOLO su arma (models.js → WEAPONS). Empieza guardada.
+   · Botón ARMA: si está guardada aparece (se materializa en la mano) y ataca;
+     si ya está fuera, ataca. Mantener pulsado el botón ARMA o la tecla G la
+     guarda (desaparece). También se guarda sola tras un rato sin usarla.
+   · El arma cuelga de un soporte unido al HUESO de la mano del esqueleto del
+     héroe: sigue todas sus animaciones.
+   · Neón permanente (pulso, resplandor, chispas, luz), estelas al atacar,
+     destellos al impactar y ráfagas al usar las demás habilidades.
+   ====================================================================== */
+
+const _a = new THREE.Vector3(), _b = new THREE.Vector3(), _c = new THREE.Vector3();
+const _q = new THREE.Quaternion(), _q2 = new THREE.Quaternion(), _m = new THREE.Matrix4(), _s = new THREE.Vector3();
+const AUTO_HOLSTER = 20; // s sin usar el arma → se guarda sola
+
+const easeBack = (k) => { const c = 1.9; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); };
+
+/* Estela luminosa: cinta entre la base y la punta del arma en los últimos fotogramas */
+export class Trail {
+  constructor(scene, color, color2, n = 22) {
+    this.n = n; this.pts = []; this.k = 0; this.scene = scene;
+    this.c1 = new THREE.Color(color); this.c2 = new THREE.Color(color2 ?? color);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
+    const idx = [];
+    for (let i = 0; i < n - 1; i++) { const a = i * 2, b = a + 1, c = a + 2, d = a + 3; idx.push(a, b, c, b, d, c); }
+    geo.setIndex(idx);
+    this.mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false }));
+    this.mesh.frustumCulled = false;
+    this.mesh.visible = false;
+    this.mesh.userData.own = true;
+    scene.add(this.mesh);
+  }
+  push(a, b) {
+    this.pts.unshift([a.clone(), b.clone()]);
+    if (this.pts.length > this.n) this.pts.length = this.n;
+  }
+  update(dt, active) {
+    this.k = active ? 1 : Math.max(0, this.k - dt * 5);
+    if (!active && this.pts.length) this.pts.pop();
+    const on = this.k > 0.01 && this.pts.length > 1;
+    this.mesh.visible = on;
+    if (!on) return;
+    const P = this.mesh.geometry.attributes.position, Cc = this.mesh.geometry.attributes.color;
+    const L = this.pts.length;
+    for (let i = 0; i < this.n; i++) {
+      const p = this.pts[Math.min(i, L - 1)];
+      const f = i < L ? Math.pow(1 - i / (L - 1 || 1), 1.4) * this.k : 0;
+      P.setXYZ(i * 2, p[0].x, p[0].y, p[0].z);
+      P.setXYZ(i * 2 + 1, p[1].x, p[1].y, p[1].z);
+      // la base (cerca de la mano) apenas brilla; la punta, a tope
+      _c.copy(this.c2).lerp(this.c1, i / this.n).multiplyScalar(f * 0.25);
+      Cc.setXYZ(i * 2, _c.r, _c.g, _c.b);
+      _c.copy(this.c1).lerp(this.c2, 0.15).multiplyScalar(f * 2.2);
+      Cc.setXYZ(i * 2 + 1, _c.r, _c.g, _c.b);
+    }
+    P.needsUpdate = true; Cc.needsUpdate = true;
+  }
+  dispose() { this.scene.remove(this.mesh); this.mesh.geometry.dispose(); this.mesh.material.dispose(); }
+}
+
+export class WeaponSystem {
+  constructor(game) {
+    this.g = game;
+    this.inst = new Map();     // modelo del héroe → arma montada
+    this.cur = null;           // arma del héroe activo
+    this.model = null;
+    this.out = false;          // ¿el jugador la ha sacado?
+    this.idleT = 0;
+    this.t = 0;
+    this.boost = 0;            // destello (ataques y habilidades)
+    this.swingT = 0;
+    this.light = new THREE.PointLight(0xffffff, 0, 4.5, 1.8);
+    this.sparkT = 0;
+  }
+
+  /* ---------------- montaje en el esqueleto ---------------- */
+  handBones(model, side) {
+    const B = model.bones;
+    if (B && B[`hand_${side}`]) return { hand: B[`hand_${side}`], end: B[`hand_end_${side}`] || null, upper: B[`upper_arm_${side}`] || null, fore: B[`forearm_${side}`] || null };
+    const r = model.rig;
+    if (r && r.wr) return { hand: r.wr[side === 'R' ? 0 : 1] || r.wr[0], end: null, upper: null, fore: null };
+    return null;
+  }
+  // Pone el modelo en el primer fotograma de su animación de reposo (para calcular el agarre)
+  refPose(model) {
+    if (!model.mixer || !model.clips || !model.clips.idle) return () => {};
+    model.mixer.stopAllAction();
+    const a = model.mixer.clipAction(model.clips.idle);
+    a.reset(); a.setEffectiveWeight(1); a.play();
+    model.mixer.update(0);
+    return () => { a.stop(); model.action = null; model.actionName = ''; };
+  }
+  attach(model, heroId) {
+    const W = WEAPONS[heroId];
+    if (!W) return null;
+    const frame = model.body || model.root;
+    const restore = this.refPose(model);
+    const savedRot = model.root.rotation.clone(), savedScale = model.root.scale.clone(), savedLean = frame.rotation.clone();
+    model.root.rotation.set(0, 0, 0); model.root.scale.set(1, 1, 1);
+    if (frame !== model.root) frame.rotation.x = 0;
+    model.root.updateMatrixWorld(true);
+    const sides = W.dual ? ['R', 'L'] : [W.hand];
+    const parts = [];
+    for (const side of sides) {
+      const hb = this.handBones(model, side);
+      if (!hb) continue;
+      const w = W.build();
+      // punto de agarre: el centro del puño (entre la mano y la punta de la mano)
+      hb.hand.getWorldPosition(_a);
+      if (hb.end) { hb.end.getWorldPosition(_b); _a.lerp(_b, 0.55); }
+      frame.worldToLocal(_c.copy(_a));
+      const sx = Math.sign(_c.x) || (side === 'R' ? -1 : 1); // lado real de esa mano (+x = izquierda del personaje)
+      if (W.dual) { _c.x += sx * 0.13; _c.y += 0.02; _c.z += 0.05; } // los discos flotan junto a la mano, por fuera
+      frame.localToWorld(_a.copy(_c));
+      // orientación deseada en el espacio del personaje → espacio del hueso
+      const dir = new THREE.Vector3(...W.dir).normalize();
+      const fc = new THREE.Vector3(...W.face);
+      if (W.dual || fc.x !== 0) fc.x *= -sx * (W.dual ? -1 : 1); // la cara mira hacia fuera de ese lado
+      fc.addScaledVector(dir, -fc.dot(dir)).normalize();
+      const xx = new THREE.Vector3().crossVectors(dir, fc).normalize();
+      _m.makeBasis(xx, dir, fc);
+      const qLocal = new THREE.Quaternion().setFromRotationMatrix(_m);
+      frame.getWorldQuaternion(_q);
+      _q.multiply(qLocal);                       // orientación en el mundo
+      hb.hand.getWorldQuaternion(_q2);
+      const holder = new THREE.Group();
+      holder.name = `soporte_${W.id}_${side}`;
+      holder.quaternion.copy(_q2.invert().multiply(_q));
+      holder.position.copy(hb.hand.worldToLocal(_a.clone()));
+      hb.hand.getWorldScale(_s);
+      holder.scale.setScalar(1 / (_s.x || 1));
+      holder.add(w.group);
+      holder.visible = false;
+      hb.hand.add(holder);
+      parts.push({ w, holder, side: sx, bones: hb, scale: w.group.scale.x, home: true });
+    }
+    model.root.rotation.copy(savedRot); model.root.scale.copy(savedScale); frame.rotation.copy(savedLean);
+    restore();
+    model.root.updateMatrixWorld(true);
+    const inst = { heroId, model, W, parts, k: 0, trails: parts.map((p) => new Trail(this.g.scene, p.w.trail.color, p.w.trail.color2)) };
+    this.inst.set(model, inst);
+    return inst;
+  }
+  get(model, heroId) { return this.inst.get(model) || this.attach(model, heroId); }
+
+  /* ---------------- estado ---------------- */
+  get isOut() { return this.out; }
+  get def() { const h = this.g.hero; return h ? WEAPONS[h.id] : null; }
+  // Saca el arma (si no lo estaba). Devuelve true si acaba de aparecer.
+  equip() {
+    const p = this.g.player, hero = this.g.hero;
+    if (!p || !p.model || !hero) return false;
+    this.idleT = 0;
+    if (this.out && this.cur) return false;
+    this.cur = this.get(p.model, hero.id);
+    if (!this.cur) return false;
+    this.out = true;
+    this.cur.k = Math.min(this.cur.k, 0.02);
+    for (const pt of this.cur.parts) { pt.holder.visible = true; pt.home = true; }
+    this.boost = 1.4;
+    this.flashAll(1.2);
+    ui.setWeaponOut(true);
+    return true;
+  }
+  holster(instant = false) {
+    if (!this.out && !instant) return false;
+    this.out = false;
+    if (this.cur) {
+      if (instant) { this.cur.k = 0; for (const pt of this.cur.parts) pt.holder.visible = false; }
+      else this.flashAll(0.6);
+    }
+    ui.setWeaponOut(false);
+    return true;
+  }
+  toggle() { return this.out ? (this.holster(), false) : this.equip(); }
+  reset() {
+    for (const inst of this.inst.values()) { inst.k = 0; for (const pt of inst.parts) { pt.holder.visible = false; pt.home = true; } for (const tr of inst.trails) { tr.pts.length = 0; tr.update(0, false); } }
+    this.out = false; this.cur = null; this.boost = 0; this.swingT = 0; this.idleT = 0;
+    if (this.light.parent) this.light.parent.remove(this.light);
+    ui.setWeaponOut(false);
+  }
+
+  /* ---------------- ganchos para las habilidades ---------------- */
+  // ataque en curso: estela durante `dur` segundos y brillo intenso
+  swing(dur = 0.3) { if (!this.out) return; this.swingT = Math.max(this.swingT, dur); this.boost = Math.max(this.boost, 1); this.idleT = 0; }
+  // al usar cualquier otra habilidad con el arma fuera: ráfaga de energía del arma
+  skillBurst() {
+    if (!this.out || !this.cur) return;
+    this.idleT = 0;
+    this.boost = Math.max(this.boost, 1.3);
+    const vfx = this.g.vfx, col = this.cur.W.color;
+    for (const pt of this.cur.parts) {
+      if (!pt.home) continue;
+      const c = this.partCenter(pt, _a);
+      vfx.ring(c.x, c.y, c.z, { r0: 0.15, r1: 1.4, dur: 0.35, color: col, opacity: 0.7 });
+      vfx.orb(c.clone(), { r: 0.14, color: col, opacity: 0.75, life: 0.22, grow: 1.5 });
+      for (let i = 0; i < 10; i++) this.g.fx.sparkle(c.x, c.y, c.z, i % 2 ? col : this.cur.W.color2, 2.6);
+      // efecto propio de cada arma
+      const fx = this.g.fx, tip = pt.w.trail.tip.getWorldPosition(_b);
+      switch (this.cur.W.id) {
+        case 'katana': for (let i = 0; i < 6; i++) { fx.flame(tip.x, tip.y, tip.z, 0.6, 0.15); fx.ember(c.x, c.y, c.z, 1); } vfx.bolt(c.clone(), tip.clone().add(new THREE.Vector3(0, 0.6, 0)), { color: 0x6ac8ff, life: 0.15, jag: 0.2, segs: 6 }); break;
+        case 'axe': for (let i = 0; i < 6; i++) fx.iceShard(tip.x, tip.y, tip.z, 0.8); break;
+        case 'hammer': for (let i = 0; i < 8; i++) fx.gem(tip.x, tip.y, tip.z); vfx.ring(this.g.player.pos.x, null, this.g.player.pos.z, { r0: 0.3, r1: 2.4, dur: 0.4, color: 0x5aff8a, opacity: 0.6 }); break;
+        case 'disc': vfx.ring(c.x, c.y, c.z, { r0: 0.3, r1: 0.9, dur: 0.3, color: 0xffc020, opacity: 0.8 }); break;
+        case 'scythe': vfx.bolt(tip.clone(), tip.clone().add(new THREE.Vector3(0, 1.2, 0)), { color: 0x8ad8ff, life: 0.16, jag: 0.25, segs: 7 }); vfx.bolt(c.clone(), tip.clone(), { color: 0xbfeeff, life: 0.12, jag: 0.15, segs: 5 }); break;
+        case 'boomerang': fx.splash(c.x, c.y, c.z, 8, 0.5); break;
+        case 'spear': for (let i = 0; i < 6; i++) fx.gem(tip.x, tip.y, tip.z); vfx.orb(tip.clone(), { r: 0.3, color: 0xd890ff, life: 0.25, grow: 2 }); break;
+      }
+    }
+  }
+  // destello en el punto de impacto (con los colores del arma)
+  impact(x, y, z, k = 1) {
+    const W = this.def;
+    if (!W) return;
+    const vfx = this.g.vfx;
+    vfx.orb(new THREE.Vector3(x, y, z), { r: 0.2 * k, color: W.color, opacity: 0.8, life: 0.16, grow: 1.6 });
+    vfx.orb(new THREE.Vector3(x, y, z), { r: 0.16 * k, color: 0xffffff, life: 0.12, grow: 1.5 });
+    vfx.ring(x, y, z, { r0: 0.1, r1: 1.3 * k, dur: 0.28, color: W.color2, opacity: 0.8 });
+    for (let i = 0; i < 10 * k; i++) this.g.fx.sparkle(x, y, z, i % 3 ? W.color : W.color2, 3.2);
+    this.boost = Math.max(this.boost, 1.1);
+  }
+  // centro (mundo) de una parte del arma
+  partCenter(pt, out = new THREE.Vector3()) {
+    const tr = pt.w.trail;
+    tr.base.getWorldPosition(out); tr.tip.getWorldPosition(_b);
+    return out.lerp(_b, 0.5);
+  }
+  partTip(i = 0, out = new THREE.Vector3()) {
+    const pt = this.cur && this.cur.parts[i];
+    if (!pt) return null;
+    return pt.w.trail.tip.getWorldPosition(out);
+  }
+  // armas arrojadizas: la de la mano desaparece mientras vuela la copia
+  setHome(i, on) { const pt = this.cur && this.cur.parts[i]; if (pt) { pt.home = on; if (on) this.flashPart(pt, 0.8); } }
+  // copia del arma para lanzarla (comparte geometrías y materiales)
+  projectile(i = 0) {
+    const pt = this.cur && this.cur.parts[i];
+    if (!pt) return null;
+    const g = pt.w.group.clone(true);
+    g.traverse((o) => { o.userData.own = false; }); // materiales compartidos con el arma de la mano: no se liberan al desaparecer
+    g.scale.setScalar(pt.scale);
+    return { group: g, color: pt.w.trail.color, color2: pt.w.trail.color2, spin: g.getObjectByName('w_spin') };
+  }
+  get partCount() { return this.cur ? this.cur.parts.length : 0; }
+  // hueso del brazo que empuña (para animar el golpe)
+  armBones(i = 0) { const pt = this.cur && this.cur.parts[i]; return pt ? pt.bones : null; }
+  // destello de aparición / desaparición
+  flashPart(pt, k) {
+    const c = this.partCenter(pt, _a), W = this.cur.W;
+    this.g.vfx.orb(c.clone(), { r: 0.12 * k, color: W.color, opacity: 0.7, life: 0.2, grow: 1.6 });
+    this.g.vfx.ring(c.x, c.y, c.z, { r0: 0.05, r1: 0.9 * k, dur: 0.3, color: W.color2, opacity: 0.8 });
+    // espiral de partículas a lo largo del arma
+    pt.w.trail.base.getWorldPosition(_b); pt.w.trail.tip.getWorldPosition(_c);
+    for (let i = 0; i < 16; i++) { _a.copy(_b).lerp(_c, i / 15); this.g.fx.sparkle(_a.x, _a.y, _a.z, i % 2 ? W.color : W.color2, 1.6); }
+  }
+  flashAll(k) { if (this.cur) { this.g.scene.updateMatrixWorld(); for (const pt of this.cur.parts) this.flashPart(pt, k); } }
+
+  /* ---------------- fotograma ---------------- */
+  update(dt) {
+    this.t += dt;
+    const p = this.g.player;
+    const model = p && p.model;
+    // cambio de héroe: el arma del anterior desaparece al instante
+    if (model !== this.model) {
+      if (this.model) { const old = this.inst.get(this.model); if (old) { old.k = 0; for (const pt of old.parts) pt.holder.visible = false; } }
+      this.model = model;
+      if (this.out) { this.out = false; ui.setWeaponOut(false); }
+      this.cur = null;
+    }
+    const inst = this.cur;
+    if (!inst) { this.light.intensity = 0; return; }
+    if (this.out) { this.idleT += dt; if (this.idleT > AUTO_HOLSTER && this.swingT <= 0) this.holster(); }
+    // aparecer (rebote) / desaparecer (encoger)
+    const target = this.out ? 1 : 0;
+    inst.k = target > inst.k ? Math.min(1, inst.k + dt * 3.2) : Math.max(0, inst.k - dt * 4.5);
+    const swim = !!p.swimming;
+    const show = inst.k > 0.001 && !swim;
+    const sk = target ? easeBack(inst.k) : inst.k * inst.k;
+    this.swingT = Math.max(0, this.swingT - dt);
+    this.boost = Math.max(0, this.boost - dt * 1.6);
+    const pulse = 1 + 0.16 * Math.sin(this.t * 3.1) + 0.06 * Math.sin(this.t * 11.7) + this.boost * 0.9;
+    let n = 0;
+    for (let i = 0; i < inst.parts.length; i++) {
+      const pt = inst.parts[i], w = pt.w;
+      pt.holder.visible = show && pt.home;
+      w.group.scale.setScalar(pt.scale * Math.max(0.001, sk));
+      if (!pt.holder.visible) { inst.trails[i].update(dt, false); continue; }
+      n++;
+      for (const m of w.neon) { const d = m.userData.neon; m.color.copy(d.color).multiplyScalar(d.base * pulse); }
+      for (const m of w.neonStd) m.emissiveIntensity = m.userData.neonStd.base * pulse;
+      for (const s of w.glows) { const d = s.userData.glow; s.scale.setScalar(d.size * (0.9 + 0.12 * Math.sin(this.t * 4 + d.size * 10) + this.boost * 0.7)); s.material.opacity = Math.min(1, d.opacity * (0.85 + this.boost * 0.5)); }
+      for (const a of w.arcs) a.update(dt, Math.min(1, this.boost));
+      for (const sp of w.spin) sp.bone.rotation.z += dt * sp.speed * (1 + this.boost * 3);
+      // estela durante los ataques
+      if (this.swingT > 0) { w.trail.base.getWorldPosition(_a); w.trail.tip.getWorldPosition(_b); inst.trails[i].push(_a, _b); }
+      inst.trails[i].update(dt, this.swingT > 0);
+      // chispas de energía que se desprenden del arma
+      this.sparkT -= dt;
+      if (this.sparkT <= 0 && w.glows.length) {
+        this.sparkT = 0.09 - Math.min(0.06, this.boost * 0.05);
+        const gl = w.glows[Math.floor(Math.random() * w.glows.length)];
+        gl.getWorldPosition(_a);
+        this.g.fx.sparkle(_a.x + (Math.random() - 0.5) * 0.1, _a.y + (Math.random() - 0.5) * 0.1, _a.z + (Math.random() - 0.5) * 0.1, Math.random() < 0.6 ? inst.W.color : inst.W.color2, 0.45 + this.boost);
+      }
+    }
+    // luz del arma (ilumina al héroe y al entorno cercano)
+    if (n) {
+      if (!this.light.parent) this.g.scene.add(this.light);
+      this.partCenter(inst.parts[0], _a);
+      this.light.position.copy(_a);
+      this.light.color.setHex(inst.W.color);
+      this.light.intensity = (0.9 * pulse + this.boost * 3) * sk;
+    } else this.light.intensity = 0;
+  }
+}

@@ -352,6 +352,9 @@ html.touch .how-grid, html.touch .controls-hint, html.touch .click-hint, html.to
 .sk-sep { width: 2px; align-self: stretch; margin: 4px 3px; background: rgba(255,255,255,.35); border-radius: 2px; }
 .skill .cdt { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 800 15px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 1px 3px #000, 0 0 6px #000; pointer-events: none; }
 .skill.cooling .ic { filter: grayscale(.7) brightness(.7); }
+.skill.armed { border-color: #c8a0ff; box-shadow: 0 0 10px #b070ff, 0 0 22px rgba(160,90,255,.7), inset 0 0 12px rgba(190,130,255,.55); animation: armedPulse 1.4s ease-in-out infinite; }
+.skill.armed::after { content: "⚔"; position: absolute; top: 1px; right: 3px; font-size: 12px; text-shadow: 0 0 6px #d0a0ff; }
+@keyframes armedPulse { 50% { box-shadow: 0 0 16px #c890ff, 0 0 30px rgba(170,100,255,.9), inset 0 0 16px rgba(200,150,255,.7); } }
 .skill.live { border-color: #ffe27a; box-shadow: 0 0 18px #ffd24a; animation: sk-live 0.8s ease-in-out infinite alternate; }
 @keyframes sk-live { from { transform: translateY(-2px) scale(1); } to { transform: translateY(-4px) scale(1.07); } }
 .skill.ready-flash { animation: sk-ready 0.55s ease-out; }

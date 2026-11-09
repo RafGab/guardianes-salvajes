@@ -569,6 +569,7 @@ function bindUi() {
   input.on('mute', toggleSound);
   input.on('power', () => mode === 'playing' && game.state === 'playing' && game.useAbility());
   input.on('ability', (i) => mode === 'playing' && game.state === 'playing' && game.triggerAbility(i)); // cada poder, su tecla
+  input.on('weapon', () => mode === 'playing' && game.state === 'playing' && game.toggleWeapon()); // G: sacar / guardar el arma
   input.on('abilityNext', () => mode === 'playing' && game.cycleAbility(1));
   input.on('teamPrev', () => mode === 'playing' && game.cycleTeam(-1));
   input.on('teamNext', () => mode === 'playing' && game.cycleTeam(1));

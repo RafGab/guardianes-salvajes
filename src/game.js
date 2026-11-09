@@ -20,6 +20,7 @@ import { Team } from './team.js';
 import { TEAM, HERO_SKILLS, HEALTH, HEAL_ITEMS, MINIONS, DESTRUCTIBLE } from './skills/config.js';
 import { Bag, healAmount } from './health.js';
 import { Pickups } from './pickups.js';
+import { WeaponSystem } from './weapons/system.js';
 const HERO_SKILLS_CD = (id) => (HERO_SKILLS[id] && HERO_SKILLS[id].flight ? HERO_SKILLS[id].flight.cd : 4);
 import { IS_TOUCH } from './platform.js';
 const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
@@ -95,6 +96,7 @@ export class Game {
     this.vfx2 = new Vfx2(this); // cielo, aurora, lava, olas... de los poderes especiales
     this.combat = new Combat(this);
     this.skills = new HeroSkills(this);
+    this.weapons = new WeaponSystem(this); // arma 3D de cada héroe (botón ARMA), unida al hueso de su mano
     this.team = new Team();          // equipo del combate de jefe (vida por héroe, cambio en combate)
     this.bag = new Bag();            // mochila de recuperación (bebidas y botiquines)
     this.pickups = new Pickups(this); // bebidas y botiquines repartidos por el mapa
@@ -249,7 +251,7 @@ export class Game {
     }
     this.abIndex = 0;
     this.toolCd = {};
-    ui.setAbilities(this.abilities, this.abIndex, (i) => this.triggerAbility(i));
+    ui.setAbilities(this.abilities, this.abIndex, (i) => this.triggerAbility(i), () => this.holsterWeapon());
   }
   selectAbility(i) {
     if (i < 0 || i >= this.abilities.length) return;
@@ -308,6 +310,21 @@ export class Game {
       return true;
     }
     return false;
+  }
+  // Tecla G o mantener pulsado el botón ARMA: sacar / guardar el arma del héroe
+  toggleWeapon() {
+    if (this.state !== 'playing') return false;
+    const out = this.weapons.toggle();
+    const W = this.weapons.def;
+    if (W) ui.banner('find', '⚔️', out ? `${W.name}: ¡lista!` : `${W.name} guardada`);
+    return out;
+  }
+  holsterWeapon() {
+    if (this.state !== 'playing' || !this.weapons.isOut) return false;
+    this.weapons.holster();
+    const W = this.weapons.def;
+    if (W) ui.banner('find', '⚔️', `${W.name} guardada`);
+    return true;
   }
   // Golpe de contacto del héroe contra el jefe cuando su poder no se puede usar (mismo tiempo de recarga).
   bossStrike() {
@@ -1147,6 +1164,7 @@ export class Game {
 
     if (this.state === 'playing') this.skills.update(dtg); // habilidades del héroe (mueven al héroe antes de su actualización)
     player.update(dtg, move, chase.yaw);
+    this.weapons.update(dtg); // después de animar al héroe: el arma sigue al hueso de la mano
     this.handlePlayerEvents();
     player.events.length = 0;
     if (this.hazards && (this.state === 'playing' || this.state === 'ending')) this.hazards.update(dtg, this.t);

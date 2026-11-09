@@ -840,6 +840,7 @@ export class HeroSkills {
     Object.assign(p.pose, NEUTRAL);
     p.fly = null; p.moveMul = 1; p.speedBuff = 1;
     if (p.model) p.model.boneFx = null;
+    if (this.g.weapons) this.g.weapons.reset(); // el héroe empieza siempre con el arma guardada
   }
 
   // ¿Este poder está activo y admite una segunda pulsación? (saltar a un espejismo, aterrizar, salir de la roca)
@@ -863,6 +864,9 @@ export class HeroSkills {
     sk.key = key;
     if (!sk.begin()) { sk.dispose(); return false; }
     if (Cls.background) this.bg.push(sk); else this.cur = sk;
+    // con el arma fuera, las demás habilidades también hacen estallar su energía
+    const role = (HERO_BUTTONS[hero] || []).find(([k]) => k === key);
+    if (g.weapons && !(role && role[1] === 'arma')) g.weapons.skillBurst();
     return { cdFactor: sk.cdFactor };
   }
 

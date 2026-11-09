@@ -586,7 +586,7 @@ export const ui = {
       if (tp) tp.textContent = ability.icon;
     }
   },
-  setAbilities(list, index, onPick) {
+  setAbilities(list, index, onPick, onHold) {
     const bar = $('skillbar');
     bar.innerHTML = '';
     this._abKey = null;
@@ -599,9 +599,25 @@ export const ui = {
       b.innerHTML = `<span class="sk">${i < 9 ? i + 1 : i === 9 ? 0 : ''}</span><span class="ic">${a.icon}</span>${role}<i class="cdo"></i><b class="cdt"></b>`;
       b.title = `${i < 9 ? i + 1 : i === 9 ? 0 : ''} · ${a.name}${a.role ? ' (' + a.role + ')' : a.tool ? ' (herramienta)' : ''}`;
       b.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); onPick(i); });
+      if (a.role === 'arma') {
+        // botón ARMA: pulsar = sacarla y atacar · mantener pulsado = guardarla
+        b.dataset.role = 'arma';
+        b.title += ' · mantener pulsado (o G): guardar el arma';
+        let holdT = null;
+        const cancel = () => { clearTimeout(holdT); holdT = null; };
+        b.addEventListener('pointerdown', () => { cancel(); holdT = setTimeout(() => { holdT = null; if (onHold) onHold(i); }, 550); });
+        for (const ev of ['pointerup', 'pointerleave', 'pointercancel']) b.addEventListener(ev, cancel);
+        b.classList.toggle('armed', !!this._weaponOut);
+      }
       bar.appendChild(b);
     });
     bar.style.display = list.length > 1 ? 'flex' : 'none';
+  },
+  // el botón ARMA se ilumina mientras el arma está fuera
+  setWeaponOut(on) {
+    this._weaponOut = on;
+    const b = $('skillbar') && $('skillbar').querySelector('.skill[data-role="arma"]');
+    if (b) b.classList.toggle('armed', on);
   },
   selectAbilityUI(i) {
     [...$('skillbar').querySelectorAll('.skill')].forEach((b, k) => b.classList.toggle('sel', k === i));

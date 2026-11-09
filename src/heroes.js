@@ -3,6 +3,26 @@ import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeom
 import { loadGLB, normalizeModel, prepareMeshes, measure } from './glb.js';
 import { HERO_SCALE, modelUrl } from './scale.js';
 import { makeCanvas, texFromCanvas, makeRng, clamp, lerp, damp, TAU } from './utils.js';
+import STRIP from './weapons/strip.json';
+
+/* Quita de la malla de los GLB las armas que venían incrustadas (katana, hacha, lanza a la espalda,
+   bumerán): cada héroe solo debe llevar el arma nueva de src/weapons, y únicamente cuando la saca.
+   La lista de vértices del arma vieja de cada modelo está en weapons/strip.json. */
+function stripBuiltInWeapon(id, model) {
+  const rec = STRIP[id];
+  if (!rec) return 0;
+  let removed = 0;
+  model.traverse((o) => {
+    if (!o.isSkinnedMesh || !o.geometry.index || o.geometry.attributes.position.count !== rec.verts) return;
+    const kill = new Uint8Array(rec.verts);
+    for (const r of rec.kill) { if (Array.isArray(r)) { for (let i = r[0]; i <= r[1]; i++) kill[i] = 1; } else kill[r] = 1; }
+    const a = o.geometry.index.array, out = [];
+    for (let i = 0; i < a.length; i += 3) { if (kill[a[i]] || kill[a[i + 1]] || kill[a[i + 2]]) { removed++; continue; } out.push(a[i], a[i + 1], a[i + 2]); }
+    o.geometry.setIndex(out);
+  });
+  if (!removed) console.warn('No se pudo quitar el arma incrustada de', id);
+  return removed;
+}
 
 /* ------------------------------------------------------------------ */
 /*  Datos de héroes y elementos                                        */
@@ -1177,6 +1197,7 @@ export class HeroModel {
     this.weaponUp = 0;
     this.height = target;
     this.dims = { height: target, naturalH: H_NAT, scale: target / H_NAT, source: 'procedural' };
+    if (r.ex.weapon) r.ex.weapon.visible = false; // sin arma predeterminada: el arma de verdad la pone src/weapons
   }
 
   setVisible(v) {
@@ -1335,7 +1356,7 @@ export class HeroModel {
           f.holder.rotation.z = lerp(0.05, -0.08, w);
         }
         wing.disc.rotation.y += dt * 4;
-        wing.disc.visible = w > 0.15;
+        wing.disc.visible = false; // sin discos predeterminados: los discos de Ámbar son su arma (src/weapons)
         wing.disc.scale.setScalar(0.4 + w * 0.6);
       }
     }
@@ -1374,6 +1395,7 @@ class GLBHero {
     this.body = new THREE.Group();
     this.body.add(holder);
     this.root.add(this.body);
+    this.strippedTris = stripBuiltInWeapon(def.id, model); // sin armas predeterminadas
     prepareMeshes(model).forEach((m) => { m.envMapIntensity = 1.1; });
     this.dims = { height: targetH, naturalH, scale: targetH / naturalH, source: 'glb' };
     this.height = targetH;
