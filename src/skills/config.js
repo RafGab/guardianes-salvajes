@@ -16,6 +16,7 @@ export const HERO_SKILLS = {
     skill: {
       id: 'tail', name: 'Cola Elástica', icon: '🪢', cd: 7,
       prep: 0.16, recover: 0.25,
+      delay: 0.5,                   // espera de activación (s): la cola empieza a moverse medio segundo después de pulsar
       range: 16, coneDeg: 55,       // alcance y ángulo de puntería (grados a cada lado)
       hookSpeed: 38,                // velocidad a la que la cola sale disparada
       swingSpeed: 19,               // velocidad del balanceo hacia el anclaje
@@ -159,6 +160,7 @@ export const HERO_SKILLS = {
     skill: {
       id: 'tongue', name: 'Lengua Camaleónica', icon: '👅', cd: 6.5,
       prep: 0.14, recover: 0.2,
+      delay: 0.5,                   // espera de activación (s): igual que la cola de Jaglion
       range: 15, coneDeg: 40,
       shootT: 0.16, retractT: 0.3,  // extensión y retracción de la lengua
       pullSpeed: 24, propelSpeed: 26,

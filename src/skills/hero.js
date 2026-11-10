@@ -69,7 +69,8 @@ class TailSkill extends Skill {
   }
   build() {
     const d = this.def, p = this.p, pose = this.pose;
-    const st = [{ name: 'preparacion', dur: d.prep, enter: () => { if (this.target) this.face(this.target.pos.x, this.target.pos.z); }, tick: (dt, k) => {
+    const st = [{ name: 'espera', dur: d.delay || 0 }, // espera de activación (0,5 s, skills/config.js): luego todo sigue igual
+      { name: 'preparacion', dur: d.prep, enter: () => { if (this.target) this.face(this.target.pos.x, this.target.pos.z); }, tick: (dt, k) => {
       pose.rx = -0.25 * k; pose.sy = 1 - 0.06 * k;
       const o = this.origin(), f = this.fwd; // la cola se enrosca hacia arriba antes de salir
       this.rope.set(o, V(o.x - f.x * 0.4, o.y + 0.9 * k, o.z - f.z * 0.4), { wobble: 0.12, phase: this.t * 20, waves: 1 });
@@ -651,7 +652,8 @@ class TongueSkill extends Skill {
   build() {
     const d = this.def, pose = this.pose, ov = d.overshoot || 0.12, wob = d.wobble || 0.45;
     const st = [
-      { name: 'preparacion', dur: d.prep, tick: (dt, k) => { pose.rx = -0.18 * k; pose.sy = 1 - 0.05 * k; } },
+      { name: 'espera', dur: d.delay || 0 }, // espera de activación (0,5 s, igual que la cola de Jaglion)
+      { name: 'preparacion', dur: d.prep, enter: () => { if (this.target && !this.target.dead) this.face(this.target.pos.x, this.target.pos.z); }, tick: (dt, k) => { pose.rx = -0.18 * k; pose.sy = 1 - 0.05 * k; } },
       // extensión: rápida, se pasa del objetivo y rebota (elasticidad)
       { name: 'extension', dur: d.shootT * 1.4, enter: () => { audio.whoosh(); this.sfx('slurp'); }, tick: (dt, k) => {
         const m = this.mouth(), t = this.tip(), e = 1 - Math.pow(1 - k, 3) + ov * Math.sin(k * Math.PI) * k;

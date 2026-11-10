@@ -42,6 +42,7 @@ const camera = new THREE.PerspectiveCamera(62, 16 / 9, 0.1, 1600);
 camera.position.set(0, 40, 100);
 
 let composer, bloomPass, gradePass, renderPass;
+let baseExposure = 0.95; // exposición del escenario (world.look); la zona de entrega la baja un poco al acercarse
 const GradeShader = {
   uniforms: { tDiffuse: { value: null }, uVig: { value: TOON.gradeVig }, uSat: { value: TOON.gradeSat }, uCon: { value: TOON.gradeCon }, uLift: { value: new THREE.Vector3(...TOON.gradeLift) }, uWarm: { value: new THREE.Vector3(...TOON.gradeWarm) } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0); }',
@@ -366,6 +367,10 @@ function frame(now) {
       ui.banner('find', '⚠️ Error', String(e.message || e));
     }
   }
+  // zona de entrega: exposición y resplandor bajan un poco y de forma gradual al acercarse (game.glare, 0-1)
+  const glare = (mode === 'playing' || mode === 'paused') && game ? game.glare || 0 : 0;
+  renderer.toneMappingExposure = baseExposure * (1 - 0.14 * glare);
+  if (bloomPass) bloomPass.strength = TOON.bloom.strength * (1 - 0.4 * glare);
   composer.render();
 }
 let lastMouseT = 0;
@@ -436,7 +441,7 @@ async function buildGame(scenario) {
   world = createWorld(scene, renderer, { quality, scenario });
   SHOW.x = CFG.START.x;
   SHOW.z = CFG.START.z - 5.5;
-  renderer.toneMappingExposure = world.look.exposure;
+  renderer.toneMappingExposure = baseExposure = world.look.exposure;
   if (bloomPass) bloomPass.threshold = world.look.bloom ? Math.min(world.look.bloom, TOON.bloom.threshold + 0.04) : TOON.bloom.threshold;
   await nextFrame();
   fx = new FX(scene);

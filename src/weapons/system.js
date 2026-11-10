@@ -333,7 +333,7 @@ export class WeaponSystem {
     return pt.w.trail.tip.getWorldPosition(out);
   }
   // armas arrojadizas: la de la mano desaparece mientras vuela la copia
-  setHome(i, on) { const pt = this.cur && this.cur.parts[i]; if (pt) { pt.home = on; if (on) this.flashPart(pt, 0.8); } }
+  setHome(i, on) { const pt = this.cur && this.cur.parts[i]; if (pt) { pt.home = on; if (on && !this.cur.W.lightOnThrow) this.flashPart(pt, 0.8); } } // los discos de Ámbar vuelven apagados
   // copia del arma para lanzarla (comparte geometrías y materiales)
   projectile(i = 0) {
     const pt = this.cur && this.cur.parts[i];
@@ -342,6 +342,21 @@ export class WeaponSystem {
     g.traverse((o) => { o.userData.own = false; }); // materiales compartidos con el arma de la mano: no se liberan al desaparecer
     g.scale.setScalar(pt.scale);
     return { group: g, color: pt.w.trail.color, color2: pt.w.trail.color2, spin: g.getObjectByName('w_spin') };
+  }
+  // Brillo de una pieza (0 = apagada, 1 = encendida). Los materiales los comparte la copia lanzada, así que
+  // esto también ilumina o apaga el disco que va volando.
+  partLight(i, k) {
+    const pt = this.cur && this.cur.parts[i];
+    if (!pt) return;
+    const w = pt.w;
+    for (const m of w.neon) {
+      const d = m.userData.neon;
+      // los neones sólidos se quedan con su color oscuro; los halos aditivos desaparecen
+      const lo = m.blending === THREE.AdditiveBlending ? 0 : 0.22;
+      m.color.copy(d.color).multiplyScalar(d.base * (lo + (1 - lo) * k));
+    }
+    for (const m of w.neonStd) m.emissiveIntensity = m.userData.neonStd.base * k;
+    for (const s of w.glows) { const d = s.userData.glow; s.visible = k > 0.02; s.material.opacity = d.opacity * k; s.scale.setScalar(d.size * (0.8 + 0.3 * k)); }
   }
   get partCount() { return this.cur ? this.cur.parts.length : 0; }
   // hueso del brazo que empuña (para animar el golpe)
@@ -389,10 +404,12 @@ export class WeaponSystem {
       pt.holder.visible = show && pt.home;
       w.group.scale.setScalar(pt.scale * Math.max(0.001, sk));
       if (!pt.holder.visible) { inst.trails[i].update(dt, false); continue; }
+      // armas que solo se iluminan al lanzarlas (discos de Ámbar): en la mano, apagadas
+      if (inst.W.lightOnThrow) { this.partLight(i, 0); inst.trails[i].update(dt, false); for (const sp of w.spin) sp.bone.rotation.z += dt * sp.speed; continue; }
       n++;
       for (const m of w.neon) { const d = m.userData.neon; m.color.copy(d.color).multiplyScalar(d.base * pulse); }
       for (const m of w.neonStd) m.emissiveIntensity = m.userData.neonStd.base * pulse;
-      for (const s of w.glows) { const d = s.userData.glow; s.scale.setScalar(d.size * (0.9 + 0.12 * Math.sin(this.t * 4 + d.size * 10) + this.boost * 0.7)); s.material.opacity = Math.min(1, d.opacity * (0.85 + this.boost * 0.5)); }
+      for (const s of w.glows) { const d = s.userData.glow; s.visible = true; s.scale.setScalar(d.size * (0.9 + 0.12 * Math.sin(this.t * 4 + d.size * 10) + this.boost * 0.7)); s.material.opacity = Math.min(1, d.opacity * (0.85 + this.boost * 0.5)); }
       for (const a of w.arcs) a.update(dt, Math.min(1, this.boost));
       for (const sp of w.spin) sp.bone.rotation.z += dt * sp.speed * (1 + this.boost * 3);
       // estela durante los ataques

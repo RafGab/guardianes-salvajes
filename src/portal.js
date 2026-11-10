@@ -168,7 +168,7 @@ void main(){
   gl_Position = projectionMatrix * viewMatrix * wp;
 }`;
 const FIELD_FS = /* glsl */`
-uniform float uT, uMode, uCharge, uBurst, uOpen, uW, uHC, uSwap;
+uniform float uT, uMode, uCharge, uBurst, uOpen, uW, uHC, uSwap, uDim;
 uniform vec3 uC1, uC2, uC3;
 varying vec2 vP; varying vec3 vV;
 float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
@@ -248,7 +248,7 @@ void main(){
   alpha *= mix(1.0, iris, 0.8);
   col += uC3 * ring * 1.4;
   alpha = clamp(alpha + ring * 0.45 + uSwap * 0.3, 0.0, 0.92) * smoothstep(0.0, 0.06, d);
-  vec3 o = min(col * (0.85 + v * 0.6) * e, vec3(6.0));
+  vec3 o = min(col * (0.85 + v * 0.6) * e, vec3(6.0)) * uDim; // uDim: menos brillo cuando el héroe está cerca
   gl_FragColor = vec4(o, alpha);
 }`;
 const MODE = { roca: 0, fuego: 1, arena: 2, hielo: 3, aire: 4, agua: 5, tierra: 6 };
@@ -269,7 +269,7 @@ function makeField(el, c1, c2, c3) {
   return new THREE.ShaderMaterial({
     transparent: true, depthWrite: false, side: THREE.DoubleSide,
     uniforms: {
-      uT: { value: 0 }, uMode: { value: MODE[el] }, uCharge: { value: 0 }, uBurst: { value: 0 }, uOpen: { value: 0 }, uSwap: { value: 0 },
+      uT: { value: 0 }, uMode: { value: MODE[el] }, uCharge: { value: 0 }, uBurst: { value: 0 }, uOpen: { value: 0 }, uSwap: { value: 0 }, uDim: { value: 1 },
       uW: { value: W }, uHC: { value: HC },
       uC1: { value: col3(c1) }, uC2: { value: col3(c2) }, uC3: { value: col3(c3) },
     },
@@ -1125,8 +1125,13 @@ export class RescuePortal {
     P.root.scale.setScalar(pop);
     const u = P.field.uniforms;
     u.uT.value = t; u.uCharge.value = st.charge; u.uBurst.value = st.burst; u.uOpen.value = st.open; u.uSwap.value = st.swap;
-    const k = st.charge * 0.35 + st.burst * 1.1 + st.swap * 0.8;
-    for (const q of P.pulses) q.mat.color.copy(q.base).multiplyScalar(1 + q.amp * Math.sin(t * q.speed + q.ph) + k);
+    // cerca de la zona de entrega el portal brilla algo menos (sin apagarse): se distinguen mejor las personas
+    const glare = ctx.glare || 0, dim = 1 - 0.3 * glare;
+    u.uDim.value = dim;
+    const so = this.safe;
+    if (so && so.safeLight) so.safeLight.intensity = 4 * (1 - 0.35 * glare);
+    const k = (st.charge * 0.35 + st.burst * 1.1 + st.swap * 0.8) * dim;
+    for (const q of P.pulses) q.mat.color.copy(q.base).multiplyScalar((1 + q.amp * Math.sin(t * q.speed + q.ph)) * (1 - 0.25 * glare) + k);
     for (const a of P.anims) a(t, dt, st);
     const boost = st.charge * 0.3 + st.burst;
     for (const m of P.motesL) m.update(dt, t, boost);

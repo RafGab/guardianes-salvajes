@@ -1281,7 +1281,11 @@ export class Game {
       }
     } else this.deliverT = 0.3;
 
-    this.portal.update(real, { carrying: player.carrying.length > 0, dSafe });
+    // DESLUMBRAMIENTO DE LA ZONA DE ENTREGA: al acercarse, el brillo baja un poco y de forma gradual
+    // (0 a más de 26 m → 1 a 5 m o menos); main.js lo aplica a la exposición y al resplandor, y el portal a su luz.
+    const near = Math.min(1, Math.max(0, (26 - dSafe) / 21)), glareT = near * near * (3 - 2 * near);
+    this.glare = (this.glare || 0) + (glareT - (this.glare || 0)) * (1 - Math.exp(-2.2 * real));
+    this.portal.update(real, { carrying: player.carrying.length > 0, dSafe, glare: this.glare });
     this.updatePrompt(inSafe);
     this.missionEvents(real);
     if (this.state === 'playing') this.contextTips();

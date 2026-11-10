@@ -10,6 +10,90 @@ import { Trail } from '../weapons/system.js';
 // Números en skills/config.js (HERO_SKILLS / HERO_BUTTONS).
 
 const back = (k) => 1 - Math.pow(1 - k, 3);
+const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
+
+/* ---------- recursos compartidos de los efectos de velocidad (se crean una vez) ---------- */
+// NILO: chorro de agua de las botas (cono abierto con franjas que bajan) y burbujas
+let JET_GEO = null, BUBBLE_GEO = null, CRYST_GEO = null;
+const JET_MAT = new THREE.ShaderMaterial({
+  uniforms: { uT: { value: 0 }, uK: { value: 0 } },
+  vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+  fragmentShader: `varying vec2 vUv; uniform float uT; uniform float uK;
+    void main(){
+      float flow = fract(vUv.y * 3.0 + uT * 7.0);
+      float streak = 0.5 + 0.5 * sin(vUv.x * 37.7 + vUv.y * 6.0 + uT * 3.0);
+      float a = (0.28 + 0.45 * smoothstep(0.55, 1.0, flow)) * (0.55 + 0.45 * streak);
+      a *= smoothstep(0.0, 0.18, vUv.y) * (0.6 + 0.4 * vUv.y) * uK;
+      vec3 c = mix(vec3(0.2, 0.58, 1.0), vec3(0.9, 0.97, 1.0), 0.15 + 0.6 * flow * streak);
+      gl_FragColor = vec4(c * 1.2, a * 0.95);
+    }`,
+  transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false,
+});
+const BUBBLE_MAT = new THREE.MeshStandardMaterial({ color: 0xd8f4ff, emissive: 0x2a7ab8, emissiveIntensity: 0.35, roughness: 0.05, metalness: 0.1, transparent: true, opacity: 0.45, depthWrite: false });
+const BUBBLES = { list: [] };
+// KYRA: textura de hielo cristalino (grietas, escarcha y bordes difuminados) y cristales de escarcha
+const CRYST_MAT = new THREE.MeshStandardMaterial({ color: 0xcff4ff, emissive: 0x4ab8ff, emissiveIntensity: 0.45, roughness: 0.1, metalness: 0.2, transparent: true, opacity: 0.88, flatShading: true });
+// ÁMBAR: embudo de tornado (se dobla y ondula con el tiempo) y bandas de viento en espiral que suben
+const tornadoGeo = (rt, rb, h) => new THREE.CylinderGeometry(rt, rb, h, 28, 12, true);
+function tornadoMat(opacity, swirl, phase, ring = false) {
+  return new THREE.ShaderMaterial({
+    uniforms: { uT: { value: 0 }, uO: { value: opacity }, uSw: { value: swirl }, uPh: { value: phase }, uRing: { value: ring ? 1 : 0 } },
+    vertexShader: `varying vec2 vUv; uniform float uT; uniform float uPh; uniform float uRing;
+      void main(){
+        vUv = uv; vec3 p = position;
+        if (uRing < 0.5) { float h = uv.y; p.x += sin(h * 3.5 + uT * 2.2 + uPh) * 0.14 * h; p.z += cos(h * 3.0 + uT * 1.8 + uPh) * 0.14 * h; }
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: `varying vec2 vUv; uniform float uT; uniform float uO; uniform float uSw; uniform float uPh; uniform float uRing;
+      void main(){
+        float a;
+        if (uRing > 0.5) {
+          float d = fract(vUv.x * 7.0 - uT * uSw * 0.25 + uPh);
+          a = smoothstep(0.0, 0.12, d) * smoothstep(0.7, 0.3, d) * 0.8;
+        } else {
+          float band = 0.5 + 0.5 * sin(vUv.x * 18.85 + vUv.y * 9.0 - uT * uSw * 4.0 + uPh);
+          float fine = 0.5 + 0.5 * sin(vUv.x * 43.98 - vUv.y * 14.0 - uT * uSw * 6.0);
+          a = 0.1 + 0.55 * band * band * band + 0.22 * fine * band;
+          a *= smoothstep(0.0, 0.12, vUv.y) * smoothstep(1.0, 0.72, vUv.y);
+        }
+        vec3 c = mix(vec3(0.7, 0.85, 0.95), vec3(1.0), clamp(a * 1.4, 0.0, 1.0));
+        gl_FragColor = vec4(c, a * uO);
+      }`,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide,
+  });
+}
+let ICE_TEX = null;
+const ICE_TILE = 2.2; // metros de pista que cubre la textura del hielo
+function iceTexture() {
+  if (ICE_TEX) return ICE_TEX;
+  const W = 256, H = 128, c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  // base: hielo azul translúcido, más claro en el centro de la pista y difuminado en los bordes
+  const grd = g.createLinearGradient(0, 0, 0, H);
+  grd.addColorStop(0, 'rgba(90,170,240,0)'); grd.addColorStop(0.1, 'rgba(70,160,240,0.75)'); grd.addColorStop(0.2, 'rgba(140,205,255,0.7)');
+  grd.addColorStop(0.5, 'rgba(195,235,255,0.82)'); grd.addColorStop(0.8, 'rgba(140,205,255,0.7)'); grd.addColorStop(0.9, 'rgba(70,160,240,0.75)'); grd.addColorStop(1, 'rgba(90,170,240,0)');
+  g.fillStyle = grd; g.fillRect(0, 0, W, H);
+  // borde de escarcha blanca (contorno definido de la pista)
+  g.fillStyle = 'rgba(255,255,255,0.55)';
+  for (let x = 0; x < W; x += 2) { g.fillRect(x, H * 0.12 + Math.sin(x * 0.3) * 2, 2, 2); g.fillRect(x, H * 0.86 + Math.cos(x * 0.27) * 2, 2, 2); }
+  // marcas de patín (dos líneas brillantes) y grietas cristalinas
+  g.strokeStyle = 'rgba(255,255,255,0.85)'; g.lineWidth = 2;
+  for (const y of [H * 0.38, H * 0.62]) { g.beginPath(); g.moveTo(0, y); g.lineTo(W, y + 2); g.stroke(); }
+  g.strokeStyle = 'rgba(255,255,255,0.6)'; g.lineWidth = 1.2;
+  for (let i = 0; i < 26; i++) {
+    let x = Math.random() * W, y = H * (0.2 + Math.random() * 0.6);
+    g.beginPath(); g.moveTo(x, y);
+    for (let s = 0; s < 4; s++) { x += (Math.random() - 0.5) * 40; y += (Math.random() - 0.5) * 22; g.lineTo(x, y); }
+    g.stroke();
+  }
+  // escarcha: puntitos y estrellitas
+  for (let i = 0; i < 120; i++) { const y = H * (0.12 + Math.random() * 0.76); g.fillStyle = `rgba(255,255,255,${0.3 + Math.random() * 0.6})`; g.fillRect(Math.random() * W, y, 1.5, 1.5); }
+  ICE_TEX = new THREE.CanvasTexture(c);
+  ICE_TEX.colorSpace = THREE.SRGBColorSpace;
+  ICE_TEX.wrapS = THREE.RepeatWrapping;
+  return ICE_TEX;
+}
 
 /* ====================================================================== */
 /*  BOTÓN 1 — VELOCIDAD: capa de animación mientras dura el impulso        */
@@ -113,31 +197,170 @@ export class SpeedFxSkill extends Skill {
     if (Math.random() < 0.3) fx.dustPuff(w.x, w.y, w.z, 0.8 * (1 - k));
     return true;
   }
-  // NILO — Botas propulsoras: chorros de agua hacia abajo, pequeños saltos, burbujas y espuma
-  nilo(dt, k, bx, bz, sp) {
+  // NILO — Botas propulsoras tipo skyboard: se eleva un poco sobre dos chorros de agua que salen de las botas,
+  // se inclina en las curvas y deja una estela de burbujas que van apareciendo a su paso.
+  // (Solo visual: la altura es la pose del modelo; la física y la velocidad siguen siendo las del poder base.)
+  nilo(dt, k, bx, bz, sp, step, turn) {
     const pose = this.pose, p = this.p, fx = this.g.fx;
-    pose.dy = Math.abs(Math.sin(this.t * 6.5)) * 0.35 * k; pose.rx = Math.max(pose.rx, 0.25 * k);
-    const y = p.pos.y + pose.dy;
-    for (let i = 0; i < 3; i++) fx.spray(p.pos.x + rnd(-0.15, 0.15), y + 0.15, p.pos.z + rnd(-0.15, 0.15), bx * 2 + rnd(-0.5, 0.5), -5 - 3 * k, bz * 2 + rnd(-0.5, 0.5), 1.1);
-    if (pose.dy < 0.05 && sp > 2) { fx.splash(p.pos.x, p.pos.y + 0.1, p.pos.z, 3, 0.5); }
-    if (Math.random() < 0.7) { const f = this.feet(0.8, bx, bz); fx.sparkle(f.x + rnd(-0.4, 0.4), f.y + rnd(0.1, 0.6), f.z + rnd(-0.4, 0.4), 0xbfeaff, 0.5); } // burbujas
-    if (Math.random() < 0.4) { const f = this.feet(0.5, bx, bz); fx.mist(f.x, f.y + 0.1, f.z, 0xffffff, 0.6); } // espuma
+    const on = this.active ? 1 : 0;
+    // elevación suave que acompaña a la velocidad: 18-28 cm, con un leve vaivén sobre los chorros (no es un vuelo)
+    this.lift = damp(this.lift || 0, on * (0.18 + 0.1 * Math.min(1, k)), on ? 5 : 7, dt);
+    const lift = this.lift, bob = Math.sin(this.t * 9) * 0.022 * (lift / 0.28);
+    pose.dy = lift + bob;
+    pose.rx = Math.max(pose.rx, 0.18 * k);
+    this.carve = lerp(this.carve || 0, clamp(-turn * 14, -0.3, 0.3) * k, Math.min(1, dt * 7));
+    pose.rz = this.carve; // se inclina en las curvas como sobre una tabla
+    const jets = this.jets || (this.jets = this.makeJets());
+    const gy = p.floorY(p.pos.x, p.pos.z, p.pos.y + 0.5);
+    const feet = ['foot_L', 'foot_R'].map((n, i) => {
+      const b = boneWorld(this, n);
+      if (b) return b;
+      const s = i ? -0.14 : 0.14; // modelo de reserva: a cada lado
+      return V(p.pos.x + Math.cos(p.facing) * s, p.pos.y + pose.dy + 0.05, p.pos.z - Math.sin(p.facing) * s);
+    });
+    JET_MAT.uniforms.uT.value = this.t;
+    JET_MAT.uniforms.uK.value = Math.min(1, lift / 0.12);
+    feet.forEach((f, i) => {
+      const j = jets[i], top = f.y - 0.04, h = Math.max(0.02, top - gy);
+      j.position.set(f.x + bx * 0.04, top, f.z + bz * 0.04);
+      j.scale.set(1, h, 1);
+      j.rotation.set(-bz * 0.25 * k, 0, bx * 0.25 * k); // el chorro se inclina hacia atrás al avanzar
+      j.visible = lift > 0.02;
+      // gotas que salen disparadas hacia abajo y salpicaduras en el suelo
+      if (lift > 0.05) {
+        fx.spray(f.x + rnd(-0.05, 0.05), top - 0.05, f.z + rnd(-0.05, 0.05), bx * 1.5 + rnd(-0.4, 0.4), -6 - 3 * k, bz * 1.5 + rnd(-0.4, 0.4), 0.8);
+        if (Math.random() < 0.6) fx.spray(f.x, gy + 0.04, f.z, bx * 2.5 + rnd(-1.2, 1.2), rnd(0.5, 1.6), bz * 2.5 + rnd(-1.2, 1.2), 0.7);
+      }
+    });
+    // ondas en el suelo bajo las botas
+    this.rippleT = (this.rippleT || 0) - dt;
+    if (lift > 0.08 && this.rippleT <= 0) {
+      this.rippleT = 0.16;
+      this.vfx.ring(p.pos.x, gy + 0.03, p.pos.z, { r0: 0.15, r1: 0.9 + 0.4 * k, dur: 0.45, color: 0x6ac0ff, opacity: 0.4 });
+    }
+    if (lift > 0.05 && Math.random() < 0.25) { const f = this.feet(0.6, bx, bz); fx.mist(f.x, gy + 0.08, f.z, 0xf4fbff, 0.45); } // espuma
+    // estela de burbujas: aparecen poco a poco detrás de Nilo, más cuanto más rápido va
+    this.bubbleT = (this.bubbleT || 0) - dt * (0.5 + Math.min(1.2, k));
+    if (on && sp > 1 && this.bubbleT <= 0) {
+      this.bubbleT = 0.05;
+      const f = feet[Math.random() < 0.5 ? 0 : 1];
+      this.bubble(f.x + bx * 0.25 + rnd(-0.12, 0.12), lerp(gy + 0.05, f.y, Math.random()), f.z + bz * 0.25 + rnd(-0.12, 0.12), 0.025 + Math.random() * 0.04 * (0.6 + k));
+    }
   }
-  // KYRA — Deslizamiento sobre hielo: pista de hielo bajo los pies, curvas inclinadas y nieve en polvo
+  makeJets() {
+    if (!JET_GEO) {
+      JET_GEO = new THREE.CylinderGeometry(0.045, 0.13, 1, 14, 1, true);
+      JET_GEO.translate(0, -0.5, 0); // arriba = la bota, abajo = el suelo
+    }
+    return [0, 1].map(() => { const m = new THREE.Mesh(JET_GEO, JET_MAT); m.renderOrder = 4; m.frustumCulled = false; this.prop(m); return m; });
+  }
+  bubble(x, y, z, r) {
+    BUBBLES.list = BUBBLES.list.filter((q) => !q.dead && q.t < q.life);
+    if (BUBBLES.list.length > 70) return; // tope de burbujas vivas
+    if (!BUBBLE_GEO) BUBBLE_GEO = new THREE.SphereGeometry(1, 12, 8);
+    const m = new THREE.Mesh(BUBBLE_GEO, BUBBLE_MAT);
+    m.position.set(x, y, z);
+    m.scale.setScalar(0.001);
+    const life = 0.9 + Math.random() * 0.8, rise = 0.25 + Math.random() * 0.5, ph = Math.random() * TAU, fx = this.g.fx;
+    const it = this.vfx.add(m, life, (q, dt) => {
+      const t = q.t, u = t / life;
+      m.position.y += rise * dt;
+      m.position.x += Math.sin(t * 7 + ph) * 0.15 * dt;
+      m.position.z += Math.cos(t * 6 + ph) * 0.15 * dt;
+      const grow = Math.min(1, t / 0.15), pop = u > 0.88 ? 1 + (u - 0.88) * 3 : 1; // crece al nacer y se hincha antes de explotar
+      m.scale.setScalar(r * grow * pop);
+      if (u >= 0.985 && !q.popped) { q.popped = true; fx.sparkle(m.position.x, m.position.y, m.position.z, 0xdff4ff, 0.3); }
+    });
+    BUBBLES.list.push(it);
+  }
+  // KYRA — Deslizamiento sobre hielo: una pista de hielo cristalino que se va formando bajo sus pies, con
+  // cristales que brotan y se funden, destellos y vaho frío. Se inclina en las curvas como una esquiadora.
   kyra(dt, k, bx, bz, sp, step, turn) {
     const pose = this.pose, p = this.p, fx = this.g.fx;
     pose.rx = Math.max(pose.rx, 0.22 * k);
     this.carve = lerp(this.carve || 0, clamp(-turn * 18, -0.45, 0.45) * k, Math.min(1, dt * 8));
     pose.rz = this.carve; // se inclina en las curvas como una esquiadora
     this.trailT -= dt;
-    if (this.trailT <= 0 && sp > 1.5) {
-      this.trailT = 0.1;
-      const a = this.last.clone();
-      this.vfx.strip(V(a.x, p.floorY(a.x, a.z, p.pos.y + 0.5), a.z), V(p.pos.x, p.pos.y, p.pos.z), { width: 0.9, color: 0xcff4ff, opacity: 0.6, life: 1.6 });
+    const moved = Math.hypot(p.pos.x - this.last.x, p.pos.z - this.last.z);
+    if (this.trailT <= 0 && sp > 1.5 && moved > 0.25) {
+      this.trailT = 0.05;
+      if (p.grounded) this.iceSegment(this.last, p.pos, 0.95 + 0.25 * Math.min(1, k)); else this.iceEdge = null; // en el aire no deja hielo
+      // destellos sobre el hielo recién formado
+      for (let i = 0; i < 2; i++) { const u = Math.random(); fx.sparkle(lerp(this.last.x, p.pos.x, u) + rnd(-0.35, 0.35), p.pos.y + 0.06, lerp(this.last.z, p.pos.z, u) + rnd(-0.35, 0.35), Math.random() < 0.5 ? 0xffffff : 0xa8e8ff, 0.35); }
       this.last.copy(p.pos);
     }
-    for (let i = 0; i < 2; i++) { const s = (i ? 1 : -1) * 0.5, f = this.feet(0.3, bx, bz); fx.mist(f.x - bz * s, f.y + 0.1, f.z + bx * s, 0xffffff, 0.5 + 0.5 * k); }
-    if (Math.random() < 0.6) { const f = this.feet(0.4, bx, bz); fx.iceShard(f.x, f.y + 0.2, f.z, 0.5); }
+    // cristales de escarcha que brotan a los lados de la pista y se funden
+    this.crystT = (this.crystT || 0) - dt;
+    if (this.crystT <= 0 && sp > 2) {
+      this.crystT = 0.13;
+      const s = Math.random() < 0.5 ? -1 : 1, f = this.feet(0.5, bx, bz);
+      this.crystal(f.x - bz * s * 0.45, p.floorY(f.x, f.z, p.pos.y + 0.5), f.z + bx * s * 0.45, 0.6 + 0.4 * k);
+    }
+    // el hielo de atrás sigue brillando un momento (rastro centelleante)
+    if (this.path.length > 12 && Math.random() < 0.5) { const q = this.path[8 + Math.floor(Math.random() * (this.path.length - 8))]; fx.sparkle(q.x + rnd(-0.4, 0.4), q.y + 0.05, q.z + rnd(-0.4, 0.4), 0xe8f8ff, 0.2); }
+    // nieve en polvo y vaho frío en los patines
+    for (let i = 0; i < 2; i++) { const s = (i ? 1 : -1) * 0.4, f = this.feet(0.3, bx, bz); fx.mist(f.x - bz * s, f.y + 0.08, f.z + bx * s, 0xf2fbff, 0.35 + 0.35 * k); }
+    if (Math.random() < 0.35 * k) { const f = this.feet(0.4, bx, bz); fx.iceShard(f.x, f.y + 0.15, f.z, 0.4); }
+    if (Math.abs(this.carve) > 0.2 && Math.random() < 0.5) { const f = this.feet(0.2, bx, bz), s = Math.sign(this.carve); fx.spray(f.x, f.y + 0.1, f.z, -bz * s * 2, 1.5, bx * s * 2, 0.7); } // nieve que salta en las curvas
+  }
+  // tramo de pista de hielo entre a y b: aparece estrechito y se ensancha (se va formando), luego se derrite
+  // Es una cinta continua: cada tramo empieza exactamente donde acabó el anterior (también en las curvas) y la
+  // textura sigue la distancia recorrida, así que las grietas y marcas no se cortan entre tramos.
+  iceSegment(a, b, width) {
+    const p = this.p, dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz) || 0.01;
+    const nx = -dz / len, nz = dx / len; // normal (a la izquierda del avance)
+    // borde inicial: el mismo que el borde final del tramo anterior si es contiguo (si no, perpendicular)
+    const prev = this.iceEdge && Math.hypot(this.iceEdge.x - a.x, this.iceEdge.z - a.z) < 0.05 ? this.iceEdge : null;
+    let ax = nx, az = nz;
+    if (prev) { ax = prev.nx; az = prev.nz; } // mismo borde exacto: la cinta no deja huecos en las curvas
+    this.iceEdge = { x: b.x, z: b.z, nx, nz };
+    const ya = p.floorY(a.x, a.z, p.pos.y + 0.5) + 0.035, yb = p.floorY(b.x, b.z, p.pos.y + 0.5) + 0.035;
+    if (Math.abs(ya - yb) > 0.25) { this.iceEdge = null; return; } // escalón (caja, bordillo): la pista se corta, nunca sube en vertical
+    const u0 = this.iceU || 0, u1 = u0 + len / ICE_TILE;
+    this.iceU = u1 % 64;
+    const pos = new Float32Array(12), uv = new Float32Array([u0, 0, u0, 1, u1, 0, u1, 1]);
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    geo.setIndex([0, 1, 2, 2, 1, 3]);
+    const full = width * 0.5;
+    const setW = (hw) => { // ancho actual: el borde final crece al formarse; el inicial ya coincide con el tramo anterior
+      const ha = prev ? full : hw;
+      pos.set([a.x - ax * ha, ya, a.z - az * ha, a.x + ax * ha, ya, a.z + az * ha, b.x - nx * hw, yb, b.z - nz * hw, b.x + nx * hw, yb, b.z + nz * hw]);
+      geo.attributes.position.needsUpdate = true;
+    };
+    setW(full * 0.25);
+    geo.computeBoundingSphere();
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: iceTexture(), color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -2 }));
+    m.userData.own = true;
+    m.renderOrder = 3;
+    const life = 2.4;
+    this.vfx.add(m, life, (it) => {
+      const t = it.t, form = Math.min(1, t / 0.2), e = 1 - Math.pow(1 - form, 3);
+      if (form < 1 || !it.full) { setW(full * (0.25 + 0.75 * e)); it.full = form >= 1; }
+      const fade = t > life * 0.55 ? 1 - (t - life * 0.55) / (life * 0.45) : 1;
+      m.material.opacity = 0.85 * e * fade;
+      if (t >= life) geo.dispose(); // último fotograma: se libera su geometría
+    });
+  }
+  crystal(x, y, z, k) {
+    if (!CRYST_GEO) CRYST_GEO = new THREE.ConeGeometry(0.05, 0.28, 5);
+    const g = new THREE.Group();
+    const n = 2 + Math.floor(Math.random() * 2), parts = [];
+    for (let i = 0; i < n; i++) {
+      const c = new THREE.Mesh(CRYST_GEO, CRYST_MAT);
+      c.position.set(rnd(-0.08, 0.08), 0, rnd(-0.08, 0.08));
+      c.rotation.set(rnd(-0.5, 0.5), rnd(0, TAU), rnd(-0.5, 0.5));
+      const s = (0.6 + Math.random() * 0.7) * k;
+      parts.push({ c, s });
+      g.add(c);
+    }
+    g.position.set(x, y, z);
+    const life = 1.3;
+    this.vfx.add(g, life, (it) => {
+      const t = it.t, grow = t < 0.18 ? back(t / 0.18) : t > life - 0.5 ? (life - t) / 0.5 : 1;
+      for (const q of parts) { q.c.scale.setScalar(Math.max(0.001, q.s * grow)); q.c.position.y = 0.12 * q.s * grow; }
+    });
   }
   // LIRA — Raíces impulsoras: raíces y brotes que aparecen y desaparecen bajo sus pasos
   lira(dt, k, bx, bz, sp, step) {
@@ -683,13 +906,18 @@ export class DiscSkill extends WeaponSkill {
     let target = order > 0 && cands[order] ? cands[order] : combat.aimTarget(p.pos.x, p.pos.z, p.facing, 35 * DEG, d.range);
     let bounces = d.bounces, travelled = 0, back = false;
     const dir = V(f.x - (order ? f.z * 0.3 : 0), 0, f.z + (order ? f.x * 0.3 : 0)).normalize();
+    // LUZ SOLO AL LANZAR: el disco se enciende al salir disparado y se apaga en cuanto emprende el regreso
+    let light = 1;
+    W.partLight(idx, 1);
     const it0 = vfx.add(g, 5, (it, dt) => {
       if (spin) spin.rotation.z += dt * 30;
       g.rotation.set(-Math.PI / 2 + 0.3, 0, 0);
+      light = back ? Math.max(0, light - dt / 0.15) : 1; // al volver: se apaga en 0,15 s, sin cortes bruscos
+      W.partLight(idx, light);
       const r = 0.2, a = it.t * 30;
-      trail.push(V(g.position.x + Math.cos(a) * r, g.position.y, g.position.z + Math.sin(a) * r), V(g.position.x - Math.cos(a) * r, g.position.y, g.position.z - Math.sin(a) * r));
-      trail.update(dt, true);
-      if (Math.random() < 0.7) fx.sparkle(g.position.x, g.position.y, g.position.z, Math.random() < 0.5 ? 0xff3a1a : 0xffc020, 1.2);
+      if (!back) trail.push(V(g.position.x + Math.cos(a) * r, g.position.y, g.position.z + Math.sin(a) * r), V(g.position.x - Math.cos(a) * r, g.position.y, g.position.z - Math.sin(a) * r));
+      trail.update(dt, !back);
+      if (!back && Math.random() < 0.7) fx.sparkle(g.position.x, g.position.y, g.position.z, Math.random() < 0.5 ? 0xff3a1a : 0xffc020, 1.2);
       if (back) { // vuelve a la mano de Ámbar
         const home = V(p.pos.x, p.pos.y + p.H * 0.55, p.pos.z);
         dir.subVectors(home, g.position);
@@ -725,7 +953,7 @@ export class DiscSkill extends WeaponSkill {
     // al terminar su vuelo, el disco reaparece en la mano
     let finished = false;
     const orig = it0.onUpdate;
-    it0.onUpdate = (it, dt) => { orig(it, dt); if (!finished && it.t >= 4.99) { finished = true; trail.dispose(); W.setHome(idx, true); } };
+    it0.onUpdate = (it, dt) => { orig(it, dt); if (!finished && it.t >= 4.99) { finished = true; trail.dispose(); W.partLight(idx, 0); W.setHome(idx, true); } };
   }
 }
 
@@ -737,43 +965,79 @@ export class TornadoShieldSkill extends Skill {
   build() {
     const d = this.def, pose = this.pose;
     return [
-      { name: 'invocar', dur: d.prep, enter: this.enterCall, tick: (dt, k) => { pose.rx = -0.2 * k; pose.spin = k * TAU * 0.5; this.place(k); } },
+      { name: 'invocar', dur: d.prep, enter: this.enterCall, tick: (dt, k) => { pose.rx = -0.2 * k; pose.spin = k * TAU * 0.5; this.place(back(k), 1, dt); } },
       { name: 'escudo', dur: d.exec, tick: this.tickShield },
-      { name: 'disipar', dur: d.recover, tick: (dt, k) => { pose.spin = 0; this.place(1 - k, 1 + k); } },
+      { name: 'disipar', dur: d.recover, tick: (dt, k) => { pose.spin = 0; this.place(1 - k, 1 + 0.6 * k, dt); } },
     ];
   }
   enterCall() {
     const d = this.def;
     this.sfx('wind');
     this.torn = [];
+    this.ang = 0;
+    // cada tornado: tres embudos con remolinos que suben (shader), de dentro afuera, y una base de polvo
     for (let i = 0; i < d.count; i++) {
-      const mat = glowMat({ color: 0x9ad4f0, rim: 0xffffff, opacity: 0.32, power: 1.8, core: 0.06, fadeY: 0.15, side: THREE.DoubleSide });
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.1, 2.8, 20, 6, true), mat);
-      m.userData.own = true;
-      const inner = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.05, 2.4, 16, 4, true), mat);
-      inner.userData.own = true;
       const g = new THREE.Group();
-      g.add(m, inner);
+      const layers = [[0.62, 0.1, 2.9, 0.55, 1], [0.44, 0.07, 2.6, 0.8, -1.4], [0.26, 0.04, 2.3, 1, 2]].map(([rt, rb, h, op, sw]) => {
+        const mat = tornadoMat(op, sw, i * 1.7);
+        const m = new THREE.Mesh(tornadoGeo(rt, rb, h), mat);
+        m.userData.own = true;
+        m.renderOrder = 5;
+        g.add(m);
+        return m;
+      });
       this.prop(g);
-      this.torn.push({ g, m, inner, a: (i / d.count) * TAU });
+      this.torn.push({ g, layers, a0: (i / d.count) * TAU, ph: Math.random() * TAU });
     }
+    // corrientes de aire: anillos de viento discontinuos que giran alrededor del águila a distintas alturas
+    this.currents = [0.5, 1.2, 1.9].map((h, i) => {
+      const m = new THREE.Mesh(new THREE.TorusGeometry(d.orbit * (0.82 + i * 0.1), 0.025, 6, 96), tornadoMat(0.7, 3 + i, i * 2.3, true));
+      m.userData.own = true;
+      m.rotation.x = Math.PI / 2;
+      m.renderOrder = 5;
+      this.prop(m);
+      return { m, h, tilt: rnd(-0.18, 0.18) };
+    });
     this.ringT = 0;
   }
-  // los tornados orbitan a su alrededor; k = tamaño, rr = escala del radio de órbita
-  place(k, rr = 1) {
+  // los tornados orbitan a su alrededor siguiendo al águila (también en el aire); k = tamaño, rr = escala del radio
+  place(k, rr = 1, dt = 1 / 60) {
     const d = this.def, p = this.p;
+    this.ang += dt * 2.4; // vuelta completa cada ~2,6 s, igual a cualquier velocidad de fotogramas
+    const y = p.pos.y;
     for (const t of this.torn) {
-      t.a += 0.06;
-      const r = d.orbit * rr;
-      t.g.position.set(p.pos.x + Math.cos(t.a) * r, p.floorY(p.pos.x, p.pos.z, p.pos.y + 0.5) + 1.6 * k, p.pos.z + Math.sin(t.a) * r);
+      const a = this.ang + t.a0, r = d.orbit * rr * (1 + 0.04 * Math.sin(this.t * 3 + t.ph));
+      t.g.position.set(p.pos.x + Math.cos(a) * r, y + 1.45 * k, p.pos.z + Math.sin(a) * r);
       t.g.scale.set(k, k, k);
-      t.m.rotation.y += 0.5; t.inner.rotation.y -= 0.7;
+      t.g.rotation.set(Math.cos(a) * 0.12, 0, -Math.sin(a) * 0.12); // ligeramente abiertos hacia fuera
+      for (const m of t.layers) m.material.uniforms.uT.value = this.t;
     }
+    for (const c of this.currents || []) {
+      c.m.position.set(p.pos.x, y + c.h * k, p.pos.z);
+      c.m.rotation.set(Math.PI / 2 + c.tilt, 0, -this.ang * 1.3);
+      c.m.scale.setScalar(Math.max(0.001, k) * rr);
+      c.m.material.uniforms.uT.value = this.t;
+      c.m.material.uniforms.uO.value = 0.7 * Math.min(1, k);
+    }
+  }
+  dispose() {
+    for (const t of this.torn || []) for (const m of t.layers) { m.geometry.dispose(); m.material.dispose(); }
+    for (const c of this.currents || []) { c.m.geometry.dispose(); c.m.material.dispose(); }
+    this.torn = []; this.currents = [];
+    super.dispose();
   }
   tickShield(dt) {
     const d = this.def, p = this.p, c = this.combat;
     this.pose.spin = 0;
-    this.place(1 + 0.05 * Math.sin(this.t * 9));
+    this.place(1 + 0.05 * Math.sin(this.t * 9), 1, dt);
+    // polvo y hojas que suben en espiral por cada embudo
+    for (const t of this.torn) {
+      if (Math.random() < 0.55) {
+        const h = Math.random(), a = this.t * 9 + h * 8 + t.ph, rr = 0.12 + 0.5 * h, q = t.g.position;
+        this.g.fx.sparkle(q.x + Math.cos(a) * rr, q.y - 1.45 + h * 2.8, q.z + Math.sin(a) * rr, Math.random() < 0.7 ? 0xf2fbff : 0xc8e8ff, 0.35);
+      }
+      if (Math.random() < 0.2) { const q = t.g.position; this.g.fx.mist(q.x + rnd(-0.3, 0.3), q.y - 1.3, q.z + rnd(-0.3, 0.3), 0xe8f4fb, 0.6); } // remolino de aire en la base
+    }
     p.evadeT = Math.max(p.evadeT, 0.15);       // protegida
     c.deflect(p.pos.x, p.pos.z, d.radius);       // devuelve los proyectiles
     for (const t of c.inCircle(p.pos.x, p.pos.z, d.radius)) { // aparta a los enemigos
