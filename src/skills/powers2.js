@@ -14,7 +14,7 @@ const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 
 /* ---------- recursos compartidos de los efectos de velocidad (se crean una vez) ---------- */
 // NILO: chorro de agua de las botas (cono abierto con franjas que bajan) y burbujas
-let JET_GEO = null, BUBBLE_GEO = null, CRYST_GEO = null;
+let JET_GEO = null, BUBBLE_GEO = null, CRYST_GEO = null, SPEED_GEO = null;
 const JET_MAT = new THREE.ShaderMaterial({
   uniforms: { uT: { value: 0 }, uK: { value: 0 } },
   vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
@@ -277,24 +277,46 @@ export class SpeedFxSkill extends Skill {
   // cristales que brotan y se funden, destellos y vaho frío. Se inclina en las curvas como una esquiadora.
   kyra(dt, k, bx, bz, sp, step, turn) {
     const pose = this.pose, p = this.p, fx = this.g.fx;
-    // PATINAJE: el ritmo de los impulsos sigue a la velocidad real; entre impulso e impulso se desliza
-    if (this.active && p.model) p.model.skate = Math.min(1, Math.max(p.model.skate || 0, k)); // piernas: zancadas largas y lentas
-    this.skPh = (this.skPh || 0) + dt * (1.6 + sp * 0.22);
-    const sw = Math.sin(this.skPh * Math.PI); // -1 izquierda · +1 derecha
-    pose.rx = Math.max(pose.rx, 0.26 * k);
-    this.carve = lerp(this.carve || 0, clamp(-turn * 18, -0.45, 0.45) * k, Math.min(1, dt * 8));
-    pose.rz = this.carve + sw * 0.13 * k; // se balancea de un patín al otro (y se inclina en las curvas)
-    pose.spin = sw * 0.12 * k;          // el torso acompaña cada impulso
+    // PATINAJE. Todo se suaviza (sin saltos de pose) y sigue a la velocidad real:
+    //  · ARRANQUE: se agacha, apoya el patín y empuja fuerte (estallido de nieve); se inclina más mientras acelera
+    //  · DESLIZAMIENTO: zancadas largas; el peso se queda en cada patín un momento (glide) antes de cambiar de lado
+    //  · VELOCIDAD: líneas de viento helado que pasan junto a ella y nieve que levanta cada impulso
+    const on = this.active ? 1 : 0;
+    if (on && p.model) p.model.skate = Math.min(1, Math.max(p.model.skate || 0, k)); // piernas: zancadas largas y lentas
+    this.skT = on ? (this.skT || 0) + dt : 0;
+    const accel = p.boostT > 0 ? 1 - Math.min(1, p.boostAge / Math.max(0.2, (p.boostRamp || 0.6) * 1.4)) : 0; // 1 al arrancar → 0 a toda velocidad
+    if (on && !this.launched && sp > 0.5) { // empujón inicial
+      this.launched = true;
+      const f = this.feet(0.1, bx, bz);
+      for (let i = 0; i < 14; i++) fx.spray(f.x, f.y + 0.08, f.z, bx * rnd(2, 4.5) + rnd(-1.2, 1.2), rnd(0.6, 2.4), bz * rnd(2, 4.5) + rnd(-1.2, 1.2), 0.7);
+      for (let i = 0; i < 5; i++) fx.iceShard(f.x, f.y + 0.15, f.z, 0.6);
+      this.vfx.ring(f.x, null, f.z, { r0: 0.2, r1: 1.6, dur: 0.45, color: 0xd8f4ff, opacity: 0.55 });
+    }
+    this.skPh = (this.skPh || 0) + dt * (1.0 + sp * 0.11);   // zancadas más largas cuanto más rápida va
+    const s0 = Math.sin(this.skPh * Math.PI), sw = Math.sign(s0) * Math.pow(Math.abs(s0), 0.55); // se mantiene en cada patín
+    const crouch = Math.max(accel, this.skT < 0.35 ? 1 - this.skT / 0.35 : 0);
+    const turnTo = clamp(-turn * 18, -0.45, 0.45) * k;
+    const sm = this.skSm || (this.skSm = { rx: 0, rz: 0, spin: 0, sy: 1 });
+    const kk = Math.min(1, dt * 9);
+    sm.rx = lerp(sm.rx, (0.16 + 0.16 * k + 0.16 * crouch) * on + (on ? 0 : sm.rx * 0.5), kk);
+    sm.rz = lerp(sm.rz, (turnTo + sw * 0.15 * k) * on, kk);
+    sm.spin = lerp(sm.spin, sw * 0.1 * k * on, kk);
+    sm.sy = lerp(sm.sy, 1 - 0.06 * crouch * on, kk);
+    pose.rx = Math.max(pose.rx, sm.rx); pose.rz = sm.rz; pose.spin = sm.spin; pose.sy = Math.min(pose.sy, sm.sy);
+    this.carve = sm.rz;
     // en cada impulso: el patín empuja hacia fuera y levanta nieve y esquirlas de hielo hacia atrás
     const side = sw > 0 ? 1 : -1;
     if (this.lastSide !== side && sp > 2) {
       this.lastSide = side;
-      const f = this.feet(0.15, bx, bz), ox = -bz * side * 0.35, oz = bx * side * 0.35;
-      for (let i = 0; i < 6; i++) fx.spray(f.x + ox, f.y + 0.08, f.z + oz, (bx * 2.2 - bz * side * 1.8) + rnd(-0.6, 0.6), rnd(0.8, 2.2), (bz * 2.2 + bx * side * 1.8) + rnd(-0.6, 0.6), 0.6);
+      const f = this.feet(0.15, bx, bz), ox = -bz * side * 0.35, oz = bx * side * 0.35, n = 4 + Math.round(4 * k);
+      for (let i = 0; i < n; i++) fx.spray(f.x + ox, f.y + 0.08, f.z + oz, (bx * 2.4 - bz * side * 1.8) + rnd(-0.6, 0.6), rnd(0.8, 2.2), (bz * 2.4 + bx * side * 1.8) + rnd(-0.6, 0.6), 0.6);
       for (let i = 0; i < 3; i++) fx.iceShard(f.x + ox, f.y + 0.12, f.z + oz, 0.45);
       fx.mist(f.x + ox, f.y + 0.1, f.z + oz, 0xffffff, 0.9);
       this.vfx.ring(f.x + ox, null, f.z + oz, { r0: 0.1, r1: 0.7, dur: 0.35, color: 0xd8f4ff, opacity: 0.45 });
     }
+    // líneas de viento helado (sensación de velocidad), más cuanto más rápido va
+    this.lineT = (this.lineT || 0) - dt;
+    if (on && k > 0.45 && this.lineT <= 0) { this.lineT = 0.05 / k; this.speedLine(bx, bz, k); }
     this.trailT -= dt;
     const moved = Math.hypot(p.pos.x - this.last.x, p.pos.z - this.last.z);
     if (this.trailT <= 0 && sp > 1.5 && moved > 0.25) {
@@ -317,6 +339,25 @@ export class SpeedFxSkill extends Skill {
     for (let i = 0; i < 2; i++) { const s = (i ? 1 : -1) * 0.4, f = this.feet(0.3, bx, bz); fx.mist(f.x - bz * s, f.y + 0.08, f.z + bx * s, 0xf2fbff, 0.35 + 0.35 * k); }
     if (Math.random() < 0.35 * k) { const f = this.feet(0.4, bx, bz); fx.iceShard(f.x, f.y + 0.15, f.z, 0.4); }
     if (Math.abs(this.carve) > 0.2 && Math.random() < 0.5) { const f = this.feet(0.2, bx, bz), s = Math.sign(this.carve); fx.spray(f.x, f.y + 0.1, f.z, -bz * s * 2, 1.5, bx * s * 2, 0.7); } // nieve que salta en las curvas
+  }
+  // línea de viento helado: trazo fino que pasa junto a la zorra hacia atrás y se desvanece (0,28 s)
+  speedLine(bx, bz, k) {
+    const p = this.p;
+    if (!SPEED_GEO) { SPEED_GEO = new THREE.PlaneGeometry(1, 0.025); SPEED_GEO.translate(0.5, 0, 0); }
+    const m = new THREE.Mesh(SPEED_GEO, new THREE.MeshBasicMaterial({ color: 0xdff6ff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    m.userData.own = true;
+    const sx = -bz, sz = bx, off = rnd(0.35, 0.9) * (Math.random() < 0.5 ? -1 : 1);
+    const x0 = p.pos.x - bx * 0.4 + sx * off, y0 = p.pos.y + rnd(0.15, p.H * 0.95), z0 = p.pos.z - bz * 0.4 + sz * off;
+    m.position.set(x0, y0, z0);
+    m.rotation.order = 'YXZ'; // a lo largo de la marcha (hacia atrás), girada sobre su eje para que se vea desde cualquier lado
+    m.rotation.set(rnd(0, Math.PI), Math.atan2(-bz, bx), rnd(-0.08, 0.08));
+    const len = 0.8 + 1.4 * k, life = 0.28;
+    this.vfx.add(m, life, (it) => {
+      const u = it.t / life;
+      m.scale.set(len * (0.4 + 0.6 * Math.min(1, u * 3)), 1, 1);
+      m.position.set(x0 + bx * u * 2.2, y0, z0 + bz * u * 2.2);
+      m.material.opacity = 0.55 * Math.sin(Math.min(1, u) * Math.PI);
+    });
   }
   // tramo de pista de hielo entre a y b: aparece estrechito y se ensancha (se va formando), luego se derrite
   // Es una cinta continua: cada tramo empieza exactamente donde acabó el anterior (también en las curvas) y la
@@ -902,8 +943,8 @@ export class DiscSkill extends WeaponSkill {
     const W = this.W, parts = (W && W.cur && W.cur.parts) || [];
     const ready = parts.map((pt, i) => (pt.home ? i : -1)).filter((i) => i >= 0);
     if (parts.length && !ready.length) return false; // los dos discos están volando: se espera a que vuelvan
-    const pick = (want) => (ready.includes(want) ? want : ready[0] ?? 0);
-    this.which = this.step === 2 ? (ready.length ? ready : [0]) : [pick(Math.min(this.step, Math.max(0, parts.length - 1)))];
+    // cada lanzamiento suelta LOS DOS discos (uno por ala), cada uno hacia su propio objetivo
+    this.which = ready.length ? ready : [0];
     this.wing = !!(parts[0] && parts[0].wing);
     this.start();
     return true;

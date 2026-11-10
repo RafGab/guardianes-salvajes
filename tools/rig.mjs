@@ -81,7 +81,7 @@ for (let v = 0; v < NV; v++) {
     let best = -1;
     for (let b = 0; b < NB; b++) if (best < 0 || raw[b] > raw[best]) best = b;
     const k = tailKey[best];
-    if (k) for (let b = 0; b < NB; b++) if ((tailKey[b] && tailKey[b] !== k) || group[b] === 'arm') raw[b] = 0; // ni otras colas ni los brazos
+    if (k) for (let b = 0; b < NB; b++) if ((tailKey[b] && tailKey[b] !== k) || group[b] === 'arm' || group[b] === 'leg') raw[b] = 0; // ni otras colas, ni brazos, ni piernas (las colas bajas cuelgan junto a los muslos)
     if (group[best] === 'arm') for (let b = 0; b < NB; b++) if (tailKey[b]) raw[b] = 0;               // el brazo no arrastra colas
   }
   // los 4 más fuertes

@@ -227,7 +227,7 @@ export const HERO_SKILLS = {
     scythe: { id: 'scythe', name: 'Guadaña', icon: '⚡', cd: 1.4, prep: 0.22, swing: 0.24, recover: 0.25, reach: 3.4, arcDeg: 170, range: 16, speed: 26, damage: 8, waveDamage: 5, force: 5 },
     // VISIÓN ESPECIAL: ve enemigos, trampas, personas ocultas y puntos débiles a través de las paredes
     // + DETENCIÓN DEL TIEMPO: el entorno se para timeStop s (fijo, no se alarga); el cronómetro de la misión sigue. Dura la mitad que antes (9,8 → 4,9 s)
-    vision: { id: 'vision', name: 'Visión Especial', icon: '👁️', cd: 16, prep: 0.25, exec: 4.5, recover: 0.15, range: 130, weakMul: 1.5, timeStop: 5 },
+    vision: { id: 'vision', name: 'Visión Especial', icon: '👁️', cd: 16, prep: 0.25, exec: 4.5, recover: 0.15, range: 130, weakMul: 1.5, timeStop: 10 }, // 10 s de tiempo detenido (5 + 5) para buscar a las personas
   },
 };
 
