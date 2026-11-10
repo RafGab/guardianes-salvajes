@@ -45,6 +45,7 @@ const scaleOf = (n) => (spec.radius && spec.radius[n]) || (groupOf(n) === 'core'
 const radius = order.map(scaleOf);
 const group = order.map(groupOf);
 const side = order.map(sideOf);
+const tailKey = order.map((n) => n.match(/^tail_([a-z]+)_/)?.[1] || null);
 const midX = J.root[0];
 const hipY = Math.max(...['thigh_L', 'thigh_R'].filter((n) => J[n]).map((n) => J[n][1]), -1);
 
@@ -72,7 +73,16 @@ for (let v = 0; v < NV; v++) {
     if (sd !== 0 && group[b] !== 'wing') { const dx = (px - midX) * sd; if (dx < -0.03) d *= 1 + Math.min(4, (-dx - 0.03) * 40); } // el lado contrario cuesta más
     if (group[b] === 'leg' && py > hipY + 0.02) d *= 1 + (py - hipY) * 14;  // las piernas no capturan la barriga
     if (group[b] === 'arm' && sd !== 0 && py < (spec.armMinY ?? 0.2)) d *= 3; // los brazos no capturan los pies
+    if (group[b] === 'arm' && spec.armMinZ !== undefined && pz < spec.armMinZ) d *= 20; // ni lo que queda detrás de la espalda (colas)
     raw[b] = 1 / (Math.pow(d, power) + 1e-3);
+  }
+  // varias colas (tail_<color>_N): cada vértice se queda solo con la cola más cercana, para que no se mezclen al moverse
+  if (tailKey.some(Boolean)) {
+    let best = -1;
+    for (let b = 0; b < NB; b++) if (best < 0 || raw[b] > raw[best]) best = b;
+    const k = tailKey[best];
+    if (k) for (let b = 0; b < NB; b++) if ((tailKey[b] && tailKey[b] !== k) || group[b] === 'arm') raw[b] = 0; // ni otras colas ni los brazos
+    if (group[best] === 'arm') for (let b = 0; b < NB; b++) if (tailKey[b]) raw[b] = 0;               // el brazo no arrastra colas
   }
   // los 4 más fuertes
   const top = [];

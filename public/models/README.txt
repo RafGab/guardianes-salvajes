@@ -43,3 +43,15 @@ LOS 7 HÉROES YA TIENEN ESQUELETO Y ANIMACIONES (idle, walk, run, swim, jump, po
   Proceso completo de un personaje: tools/pipe.sh NOMBRE MODELO.glb ESPECIFICACION.json RATIO
     (ESPECIFICACION '-' si el GLB ya trae esqueleto). La especificación solo da la posición de cada articulación
     (ver tools/rigspec.js); el resto (jerarquía, pesos de piel, cara rígida, animaciones) es automático.
+
+DISEÑOS DEFINITIVOS H2.5 MAX (Jaglion, Zorra Ártica, Lince, Komodo y Nutria)
+  jago.glb, kyra.glb, lira.glb, kairo.glb y nilo.glb son los diseños nuevos (carpeta "H2.5 MAX"), con el mismo
+  esqueleto de siempre (mismos nombres de huesos, ~33-62 huesos) y las 7 animaciones. Fénec (halley) y Águila (ambar)
+  NO cambian. Posición de cada articulación: tools/rigspecs/NOMBRE.json. Proceso:
+    gltf-transform optimize ORIGINAL.glb BAJO.glb --compress false --simplify true --simplify-ratio 0.09 --texture-compress webp --texture-size 2048
+    node tools/rig.mjs BAJO.glb tools/rigspecs/NOMBRE.json RIG.glb
+    node tools/make_anims.mjs RIG.glb ANIM.glb        (Zorra Ártica: TAIL_AMP=0.35, sus 5 colas son muy grandes)
+    gltf-transform optimize ANIM.glb public/models/NOMBRE.glb --compress meshopt --simplify false --texture-compress webp --texture-size 2048
+  La Zorra Ártica tiene 5 colas (tail_pink, tail_lblue, tail_orange, tail_blue, tail_navy); cada vértice de una cola
+  pertenece solo a esa cola y los brazos no arrastran nada de detrás de la espalda (armMinZ en su especificación).
+  Los nuevos modelos no traen armas pegadas: weapons/strip.json ya solo tiene la entrada del Fénec.

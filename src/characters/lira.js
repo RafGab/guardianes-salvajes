@@ -28,6 +28,7 @@ const NOSE_X = 0.005;
 const BODY_X = -0.085; // línea media del torso de la malla (el esqueleto del GLB está desplazado: x = -0.14)
 const EYE_R = { c: V3(-0.089, 0.537, 0.423), n: V3(-0.36, 0.05, 0.93), kind: 'sol' };   // su ojo derecho: verde
 const EYE_L = { c: V3(0.090, 0.5365, 0.403), n: V3(0.36, 0.05, 0.93), kind: 'luna' };   // su ojo izquierdo: azul
+const EYES_3D = false; // ver upgradeLira
 const EYE_RADIUS = 0.044; // medido sobre el ojo verde pintado (≈3,5 cm); centros a ras de la superficie de la cara
 
 function canvasTex(w, h, draw) {
@@ -325,7 +326,9 @@ export function upgradeLira(hero, model) {
   // ojos 3D
   void bindPos;
   const fur = new THREE.Color(0xd9662a);
-  const eyes = [buildEye(EYE_R, sk, hero.bones, fur), buildEye(EYE_L, sk, hero.bones, fur)];
+  // Los ojos 3D se hicieron para el modelo anterior (su ojo derecho era una mancha rota). El diseño definitivo
+  // (H2.5) ya trae los dos ojos pintados (verde y azul), así que se conserva su cara tal cual.
+  const eyes = EYES_3D ? [buildEye(EYE_R, sk, hero.bones, fur), buildEye(EYE_L, sk, hero.bones, fur)] : [];
   // accesorios
   const ear = buildEarJewelry(hero, sk);
   const pendant = buildPendant(hero, sk);

@@ -70,7 +70,10 @@ for (const n of Object.keys(bones)) {
 }
 const TAIL_GROUPS = Object.values(TAILS).map((g) => g.sort((a, b) => a[0] - b[0]).map((x) => x[1]));
 const TAIL_Z = TAIL_GROUPS.length > 1 ? 0.8 : 0; // varias colas que apuntan hacia arriba: también ondulan de lado a lado en Z
+// TAIL_AMP (variable de entorno) suaviza o exagera la cola: colas muy grandes o muchas colas juntas necesitan menos giro
+const TAIL_AMP = Number(process.env.TAIL_AMP || 1);
 const tail = (t, amp, speed = 1, lift = 0) => {
+  amp *= TAIL_AMP; lift *= TAIL_AMP;
   const o = {};
   TAIL_GROUPS.forEach((names, gi) => {
     const per = amp * 5 / names.length; // la amplitud total no depende del número de huesos
