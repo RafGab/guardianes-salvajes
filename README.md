@@ -66,6 +66,40 @@ Mejora del modelo de Lira hecha en código (`src/characters/lira.js`), sin herra
 - **Movimiento secundario:** cola expresiva (meneo feliz, alzada al concentrarse, punta impaciente si está quieta), orejas independientes (tics y posturas por expresión), dedos (puño en guardia, relajados con leve movimiento) y huellas luminosas verde y azul al correr.
 - **Límites:** la malla y la textura son las del modelo original (no se generó un modelo nuevo); la boca no tiene expresiones; el esqueleto original de Lira está desplazado respecto a la malla (≈14 cm hacia su derecha), por lo que en algunas posturas extremas los brazos se estiran un poco.
 
+## Portal de rescate elemental
+Cada nivel tiene **un único portal de rescate**, dentro del refugio (`src/portal.js`). Su aspecto cambia según el héroe activo, también al cambiar de héroe en plena partida: **personaje seleccionado → variante visual**. La mecánica no cambia: el rescate se sigue completando al entrar en el círculo del refugio, con la misma puntuación, los mismos contadores y los mismos tiempos.
+
+| Héroe | Elemento | Portal |
+|---|---|---|
+| Jago (Jaglión) | Roca | Santuario de la Montaña: bloques de piedra, cristales dorados, grietas luminosas, cabeza de león con melena dorada; fragmentos de roca flotando |
+| Kairo (Komodo) | Fuego | Santuario de la Llama: piedra volcánica, columnas en forma de llama, vetas de lava, braseros con fuego mágico, cabeza de komodo con cresta |
+| Halley (Feneco) | Arena | Santuario de las Dunas: arenisca, columnas onduladas, grandes orejas de feneco, remolino de arena dorada |
+| Kyra (Zorra ártica) | Hielo | Santuario de Cristal: prismas de hielo, copos, aurora boreal, cabeza de zorra ártica |
+| Ámbar (Águila) | Aire | Santuario de las Nubes: columnas ligeras blancas y doradas, grandes alas, nubes, águila con las alas abiertas, plumas y corrientes de viento |
+| Nilo (Nutria) | Agua | Santuario de las Corrientes: piedras de río, cristal turquesa, cascadas, nutria, remolino y burbujas |
+| Lira (Lince) | Tierra | Santuario de la Vida: piedra con musgo, raíces que abrazan las columnas, flores, madera, lince con penachos y hojas luminosas |
+
+- **Estructura común:** arco, dos columnas, figura del animal arriba, campo de energía, plataforma circular amplia y despejada, detalles del elemento, luz mágica y partículas. Las columnas son sólidas; el campo central se puede atravesar.
+- **Campo de energía:** un shader común con transparencia parcial, profundidad (dos capas con paralaje), ondas y movimiento continuo. Cada elemento tiene su propio patrón y sus colores.
+- **Animación de llegada:**
+  1. Al acercarse el héroe con rescatados, el campo se ilumina.
+  2. Al entregar, salta la animación del elemento:
+
+     | Elemento | Animación |
+     |---|---|
+     | Roca | fragmentos que giran |
+     | Fuego | llamas que recorren el arco |
+     | Arena | remolino dorado |
+     | Hielo | cristales que brillan |
+     | Aire | corriente que atraviesa el arco |
+     | Agua | burbujas |
+     | Tierra | hojas y raíces que brotan |
+
+  3. El campo se abre en iris.
+  4. La persona lo cruza y al llegar al otro lado se activa un destello de llegada segura; luego camina a su sitio.
+- **Colocación:** dentro del refugio, en el hueco libre que mejor se ve desde el camino de llegada, sin chocar con tiendas, vehículos ni edificios. El cartel y la bandera del refugio se colocan a los lados del portal, y la columna de luz nace sobre su figura con el color del elemento.
+- **Rendimiento:** cada variante se construye la primera vez que hace falta (menos de 40 ms) y se funde en unas 11–31 mallas; la lógica cuesta unos 0,01 ms por fotograma.
+
 ## Esqueleto de manos y pies
 Al cargar cada héroe (`src/anatomy.js`) se completa su esqueleto:
 - **Mano:** carpo (muñeca) → metacarpo (palma) → índice, corazón, anular y meñique con falange proximal, media y distal; el **pulgar solo con proximal y distal**.

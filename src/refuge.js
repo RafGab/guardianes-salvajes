@@ -124,9 +124,9 @@ export function buildRefuge(scene, addSolid, styleName = 'camp') {
     // baliza
     const beaconMat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
-      uniforms: { uTime: { value: 0 } },
+      uniforms: { uTime: { value: 0 }, uCol: { value: new THREE.Vector3(0.2, 1.0, 0.6) } }, // uCol: el portal la tiñe con el color del elemento
       vertexShader: 'varying vec2 vUv; void main(){ vUv=uv; gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.); }',
-      fragmentShader: `varying vec2 vUv; uniform float uTime; void main(){ float a = pow(1.0-vUv.y,1.6)*0.5*(0.75+0.25*sin(uTime*2.0+vUv.y*10.0)); gl_FragColor=vec4(vec3(0.2,1.0,0.6)*2.0,a); }`,
+      fragmentShader: `varying vec2 vUv; uniform float uTime; uniform vec3 uCol; void main(){ float a = pow(1.0-vUv.y,1.6)*0.5*(0.75+0.25*sin(uTime*2.0+vUv.y*10.0)); gl_FragColor=vec4(uCol*2.0,a); }`,
     });
     const beacon = new THREE.Mesh(new THREE.CylinderGeometry(1.2, 1.6, 55, 24, 1, true), beaconMat);
     beacon.position.set(0, 27.5, 0);
@@ -195,5 +195,86 @@ export function buildRefuge(scene, addSolid, styleName = 'camp') {
       }
     }
   }
-  return { group: safe, rotor, tailRotor, flag, ring, beaconMat, safeLight };
+  const portalFrame = placePortal(addSolid, eg);
+  // El cartel y la bandera pasan a enmarcar el portal (a sus lados) en lugar de taparlo desde la llegada
+  const pf = portalFrame, fx = Math.sin(pf.yaw), fz = Math.cos(pf.yaw), qx = Math.cos(pf.yaw), qz = -Math.sin(pf.yaw);
+  const keep = refugeKeepOut(eg);
+  const free = (x, z) => Math.hypot(x, z) < 9 && !keep.some((b) => x > b[0] - 0.6 && x < b[1] + 0.6 && z > b[2] - 0.6 && z < b[3] + 0.6);
+  const tries = [];
+  for (const lat of [3.9, 4.4, 5.0, 3.6]) for (const fw of [3.0, 2.2, 3.8, 1.5]) for (const sg of [1, -1]) tries.push([lat, fw, sg]);
+  for (const [lat, fw, sg] of tries) {
+    const sx = pf.lx + qx * lat * sg + fx * fw, sz = pf.lz + qz * lat * sg + fz * fw;
+    const gx = pf.lx - qx * (lat - 0.2) * sg + fx * (fw - 0.5), gz = pf.lz - qz * (lat - 0.2) * sg + fz * (fw - 0.5);
+    if (!free(sx, sz) || !free(gx, gz)) continue;
+    const sy = pf.yaw - sg * 0.35; // ligeramente girado hacia el camino de llegada
+    signB.position.set(sx, 3.4, sz); signB.rotation.y = sy;
+    signP.position.set(sx - Math.sin(sy) * 0.12, 3.4, sz - Math.cos(sy) * 0.12); signP.rotation.y = sy;
+    pole.position.set(gx, 3.5, gz);
+    flag.position.set(gx + qx * 1.4 * -sg, 6.0, gz + qz * 1.4 * -sg); flag.rotation.y = pf.yaw;
+    break;
+  }
+  return { group: safe, rotor, tailRotor, flag, ring, beaconMat, safeLight, beacon, portalFrame };
+}
+
+/* ---------- emplazamiento del portal de rescate ----------
+   Un único portal por nivel, dentro del refugio (la zona de entrega no cambia: sigue siendo el círculo CFG.SAFE).
+   Se busca el hueco libre más cercano al centro que no choque con tiendas, ambulancia, helicóptero (y su rotor)
+   ni con el edificio propio del refugio, y se orienta hacia el punto de inicio del nivel (por donde llega el héroe).
+   Las dos columnas son sólidas; el campo de energía central se puede atravesar. */
+export const PORTAL_DIM = { col: 2.62, colHalf: 0.55, half: 3.2, depth: 0.8, plat: 3.4, colTop: 4.3 };
+const KEEP = [
+  [4.2, 6.8, -6.4, -1.6], [-4.8, -0.4, -8.8, -4.2],                                  // ambulancia, helicóptero
+  [-8.3, -4.7, -4.8, -1.2], [-8.3, -4.7, 1.2, 4.8], [4.7, 8.3, 1.7, 5.3],              // tiendas
+];
+const TALL = { bunker: 1, lighthouse: 1, lodge: 1, tank: 1, palms: 0.4 }; // cuánto tapa el edificio propio del refugio
+const KEEP_EXTRA = {
+  bunker: [[-5.2, 1.2, 1.8, 7.2]], lighthouse: [[-6.7, -3.3, 3.3, 6.7]], lodge: [[-6.2, 2.2, 2.8, 8.2]], tank: [[-7.2, -2.8, 2.8, 7.2]],
+  palms: [[-6.6, -5.4, 3.4, 4.6], [5.9, 7.1, 4.9, 6.1], [-1.6, -0.4, 7.4, 8.6]],
+};
+export function refugeKeepOut(extra) { return KEEP.concat(KEEP_EXTRA[extra] || []); }
+function placePortal(addSolid, extra) {
+  const S0 = CFG.SAFE, T = CFG.START, D = PORTAL_DIM;
+  const boxes = refugeKeepOut(extra);
+  const inBox = (x, z, m) => boxes.some((b) => x > b[0] - m && x < b[1] + m && z > b[2] - m && z < b[3] + m);
+  const rotorHit = (x, z) => Math.hypot(x + 2.5, z + 6.5) < 4.8;
+  let best = null;
+  const tents = KEEP.slice(2), tall = KEEP_EXTRA[extra] || [];
+  const hit = (list, x, z) => list.some((b) => x > b[0] && x < b[1] && z > b[2] && z < b[3]);
+  for (const r of [0, 0.75, 1.5, 2.25, 3, 3.75, 4.5, 5.25]) {
+    for (let k = 0; k < (r ? 24 : 1); k++) for (const yo of [0, 0.3, -0.3, 0.6, -0.6]) {
+      const a = (k / 24) * TAU, px = Math.cos(a) * r, pz = Math.sin(a) * r;
+      if (r + D.plat > 9.0) continue; // la plataforma queda dentro del refugio
+      const toS = Math.atan2(T.x - (S0.x + px), T.z - (S0.z + pz));
+      const yaw = toS + yo;
+      const dx = Math.sin(yaw), dz = Math.cos(yaw), qx = Math.cos(yaw), qz = -Math.sin(yaw);
+      let bad = false;
+      for (let s = -1; s <= 1.001 && !bad; s += 0.1) {
+        for (const d of [-D.depth, 0, D.depth]) {
+          const x = px + qx * s * D.half + dx * d, z = pz + qz * s * D.half + dz * d;
+          if (inBox(x, z, 0.2) || rotorHit(x, z)) { bad = true; break; }
+        }
+      }
+      // delante del portal debe quedar paso libre hacia el campo de energía
+      for (let d = 1; d <= 3.5 && !bad; d += 0.5) if (inBox(px + dx * d, pz + dz * d, 0.3)) bad = true;
+      if (bad) continue;
+      // y vista despejada desde el camino de llegada (hacia el inicio del nivel): que edificios y tiendas no lo tapen
+      let pen = Math.abs(yo) * 2.0;
+      const sx = Math.sin(toS), sz = Math.cos(toS), lx = Math.cos(toS), lz = -Math.sin(toS);
+      for (let d = 3.5; d <= 13; d += 0.5) for (const l of [-2.6, -1.3, 0, 1.3, 2.6]) {
+        const x = px + sx * d + lx * l, z = pz + sz * d + lz * l;
+        if (hit(tall, x, z)) pen += 0.6 * (TALL[extra] || 1);
+        else if (hit(tents, x, z)) pen += 0.15;
+      }
+      for (let i = 0; i < 20; i++) { const b = (i / 20) * TAU; if (inBox(px + Math.cos(b) * 3.2, pz + Math.sin(b) * 3.2, 0)) pen++; }
+      const score = r + pen * 0.8;
+      if (!best || score < best.score) best = { score, lx: px, lz: pz, yaw };
+    }
+  }
+  if (!best) best = { lx: 0, lz: 0, yaw: Math.atan2(T.x - S0.x, T.z - S0.z) };
+  const qx = Math.cos(best.yaw), qz = -Math.sin(best.yaw);
+  for (const sg of [-1, 1]) {
+    const cx = S0.x + best.lx + qx * D.col * sg, cz = S0.z + best.lz + qz * D.col * sg;
+    addSolid(cx - D.colHalf, cx + D.colHalf, S0.y - 1, S0.y + D.colTop, cz - D.colHalf, cz + D.colHalf, 'portal');
+  }
+  return { lx: best.lx, lz: best.lz, yaw: best.yaw, extra };
 }

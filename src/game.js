@@ -21,6 +21,7 @@ import { TEAM, HERO_SKILLS, HEALTH, HEAL_ITEMS, MINIONS, DESTRUCTIBLE } from './
 import { Bag, healAmount } from './health.js';
 import { Pickups } from './pickups.js';
 import { WeaponSystem } from './weapons/system.js';
+import { RescuePortal } from './portal.js';
 const HERO_SKILLS_CD = (id) => (HERO_SKILLS[id] && HERO_SKILLS[id].flight ? HERO_SKILLS[id].flight.cd : 4);
 import { IS_TOUCH } from './platform.js';
 const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
@@ -97,6 +98,7 @@ export class Game {
     this.combat = new Combat(this);
     this.skills = new HeroSkills(this);
     this.weapons = new WeaponSystem(this); // arma 3D de cada héroe (botón ARMA), unida al hueso de su mano
+    this.portal = new RescuePortal(this);  // portal de rescate del refugio: su aspecto depende del héroe activo
     this.team = new Team();          // equipo del combate de jefe (vida por héroe, cambio en combate)
     this.bag = new Bag();            // mochila de recuperación (bebidas y botiquines)
     this.pickups = new Pickups(this); // bebidas y botiquines repartidos por el mapa
@@ -464,6 +466,10 @@ export class Game {
     });
     this.hazards.reset();
     this.buildAbilities();
+    // portal de rescate único del nivel, con la variante del héroe elegido
+    this.portal.mount(world.sc.safeObj, def.element);
+    const pspots = this.portal.spots(this.safeSpots.length);
+    if (pspots) this.safeSpots = pspots;
 
     ui.setHero(def);
     ui.setRescued(0, this.total);
@@ -672,6 +678,7 @@ export class Game {
     v.setMode('walk');
     v.marker.visible = false;
     v.root.position.y = CFG.SAFE.y + 0.02;
+    this.portal.welcome(v); // el portal se abre y la persona lo cruza antes de ir a su sitio
     this.delivered++;
     if (v.info.animal) { this.stats.animals++; this.stats.eco += 10; } else { this.stats.people++; this.stats.eco += 5; }
     const urgentBonus = v.urgent ? 50 : 0;
@@ -824,6 +831,7 @@ export class Game {
     model.setVisible(true);
     model.light.intensity = 0.35;
     this.hero = def;
+    this.portal.setElement(def.element, silent);
     player.setHero(def, model);
     player.pos.copy(pos);
     player.facing = facing;
@@ -1243,9 +1251,11 @@ export class Game {
           }
         }
       } else if (v.state === 'delivered' && v.walkTo) {
-        const dx = v.walkTo[0] - v.wpos.x, dz = v.walkTo[1] - v.wpos.z;
+        const tgt = v.via && v.via.length ? v.via[0] : v.walkTo; // primero cruza el campo del portal
+        const dx = tgt[0] - v.wpos.x, dz = tgt[1] - v.wpos.z;
         const dist = Math.hypot(dx, dz);
-        if (dist > 0.3) {
+        if (v.via && v.via.length && dist <= 0.3) { v.via.shift(); if (!v.via.length) v.via = null; }
+        else if (dist > 0.3) {
           const sp = 2.0 * dtg;
           v.root.position.x += (dx / dist) * Math.min(sp, dist);
           v.root.position.z += (dz / dist) * Math.min(sp, dist);
@@ -1271,6 +1281,7 @@ export class Game {
       }
     } else this.deliverT = 0.3;
 
+    this.portal.update(real, { carrying: player.carrying.length > 0, dSafe });
     this.updatePrompt(inSafe);
     this.missionEvents(real);
     if (this.state === 'playing') this.contextTips();
