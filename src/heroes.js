@@ -1496,6 +1496,9 @@ class GLBHero {
       else if (s.role === 'arma' && C.attack) name = 'attack';
       else if (s.power > 0.2 && C.power) name = 'power';
       else if (run > 0.15) { name = run > 0.8 ? (s.sprint && C.sprint ? 'sprint' : 'run') : 'walk'; sp = clamp(run * 1.1, 0.5, 1.6); }
+      // patinaje (velocidad de la Zorra Ártica): zancadas más largas y lentas, se desliza entre impulso e impulso
+      if (this.skate > 0 && (name === 'run' || name === 'walk' || name === 'sprint')) sp *= 1 - 0.5 * this.skate;
+      this.skate = Math.max(0, (this.skate || 0) - dt * 2.5);
       this.play(name, 0.22, sp);
       // los huesos que movió una habilidad vuelven a su reposo antes de animar (así no se acumulan giros)
       for (const bn of this._touched) { bn.quaternion.copy(bn.userData.q0); bn.scale.copy(bn.userData.s0); }

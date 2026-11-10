@@ -98,7 +98,7 @@ export const HERO_SKILLS = {
     // AURORA POLAR: cortinas de aurora en el cielo y una zona de energía polar que congela
     aurora: {
       id: 'aurora', name: 'Aurora Polar', icon: '🌌', cd: 20,
-      prep: 0.9, exec: 6.5, recover: 0.5,
+      prep: 0.7, exec: 3.2, recover: 0.6,    // duración total 4,5 s (antes 7,9 s), como las demás habilidades
       radius: 8, tick: 0.5,         // zona y frecuencia de los pulsos
       slowF: 0.35, damage: 2.5, freezeEvery: 2.0, freezeT: 1.1, // ralentiza, daña y congela cada cierto tiempo
       cdHeal: 0.35,                 // dentro de la zona, las recargas del héroe avanzan un 35 % más rápido
@@ -178,7 +178,7 @@ export const HERO_SKILLS = {
   nilo: {
     skill: {
       id: 'blink', name: 'Blink Acuático', icon: '💧', cd: 5.5,
-      vanishT: 0.2, appearT: 0.22, recover: 0.12,
+      vanishT: 0.2, travelT: 0.12, appearT: 0.24, recover: 0.12, // fundirse en el agua, viajar por el arco, salir del géiser
       distance: 9.5,
       trailTime: 3.6, trailWidth: 2.0,
       trailSlowF: 0.5, trailSlowT: 1.6, trailForce: 4,
@@ -226,7 +226,8 @@ export const HERO_SKILLS = {
     // ARMA — GUADAÑA DE RAYO: barrido amplio y onda de rayo en media luna que atraviesa
     scythe: { id: 'scythe', name: 'Guadaña', icon: '⚡', cd: 1.4, prep: 0.22, swing: 0.24, recover: 0.25, reach: 3.4, arcDeg: 170, range: 16, speed: 26, damage: 8, waveDamage: 5, force: 5 },
     // VISIÓN ESPECIAL: ve enemigos, trampas, personas ocultas y puntos débiles a través de las paredes
-    vision: { id: 'vision', name: 'Visión Especial', icon: '👁️', cd: 16, prep: 0.5, exec: 9, recover: 0.3, range: 130, weakMul: 1.5 },
+    // + DETENCIÓN DEL TIEMPO: el entorno se para timeStop s (fijo, no se alarga); el cronómetro de la misión sigue. Dura la mitad que antes (9,8 → 4,9 s)
+    vision: { id: 'vision', name: 'Visión Especial', icon: '👁️', cd: 16, prep: 0.25, exec: 4.5, recover: 0.15, range: 130, weakMul: 1.5, timeStop: 5 },
   },
 };
 

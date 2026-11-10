@@ -94,7 +94,7 @@ export class Vfx2 {
     this.g = game;
     this.vfx = game.vfx;
     this.layers = [];     // capas de ambiente (tinte de pantalla + exposición)
-    this.baseExposure = null;
+    this.expMul = 1;      // multiplicador de exposición de las capas (lo aplica main.js)
     this.shardGeo = new THREE.OctahedronGeometry(1, 0);
     this.rockGeo = (() => { // roca irregular (bola del Jaglion, piedras)
       const gg = new THREE.IcosahedronGeometry(1, 2), p = gg.attributes.position, v = new THREE.Vector3();
@@ -117,9 +117,10 @@ export class Vfx2 {
     const L = { el, alpha, exposure, dur, fin, fout, t: 0, k: 0, dead: false };
     L.end = () => { if (!L.dead && L.t < L.dur - L.fout) L.t = Math.max(L.t, L.dur - L.fout); };
     this.layers.push(L);
-    if (this.baseExposure === null) this.baseExposure = this.g.renderer.toneMappingExposure;
     return L;
   }
+  // La exposición final la calcula main.js en cada fotograma: exposición del escenario × zona de entrega × expMul.
+  // (Antes se escribía aquí directamente en el renderizador y el ajuste de la zona de entrega la pisaba.)
   update(dt) {
     let exp = 1;
     for (let i = this.layers.length - 1; i >= 0; i--) {
@@ -131,15 +132,12 @@ export class Vfx2 {
       exp *= 1 + (L.exposure - 1) * L.k;
       if (L.t >= L.dur) { L.el.remove(); L.dead = true; this.layers.splice(i, 1); }
     }
-    if (this.baseExposure !== null) {
-      this.g.renderer.toneMappingExposure = this.baseExposure * exp;
-      if (!this.layers.length) { this.g.renderer.toneMappingExposure = this.baseExposure; this.baseExposure = null; }
-    }
+    this.expMul = exp;
   }
   clear() {
     for (const L of this.layers) L.el.remove();
     this.layers.length = 0;
-    if (this.baseExposure !== null) { this.g.renderer.toneMappingExposure = this.baseExposure; this.baseExposure = null; }
+    this.expMul = 1;
   }
 
   /* ---------------- CIELO: astro que mira a la cámara ---------------- */

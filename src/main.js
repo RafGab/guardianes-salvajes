@@ -369,7 +369,8 @@ function frame(now) {
   }
   // zona de entrega: exposición y resplandor bajan un poco y de forma gradual al acercarse (game.glare, 0-1)
   const glare = (mode === 'playing' || mode === 'paused') && game ? game.glare || 0 : 0;
-  renderer.toneMappingExposure = baseExposure * (1 - 0.14 * glare);
+  const ambExp = (mode === 'playing' || mode === 'paused') && game && game.vfx2 ? game.vfx2.expMul ?? 1 : 1; // tintes de las habilidades (eclipse, aurora, visión)
+  renderer.toneMappingExposure = baseExposure * (1 - 0.14 * glare) * ambExp;
   if (bloomPass) bloomPass.strength = TOON.bloom.strength * (1 - 0.4 * glare);
   composer.render();
 }

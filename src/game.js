@@ -405,6 +405,7 @@ export class Game {
     this.introT = 0;
     this.timeScale = 1;
     this.slowT = 0;
+    this.timeStopT = 0; // detención del tiempo (visión del Lince): nunca pasa de un nivel a otro
     this.pingT = 0;
     this.pingCd = 0;
     this.playerHitT = 0;
@@ -1110,15 +1111,78 @@ export class Game {
     }
   }
 
+  /* ---------- detención del tiempo (visión del Lince) ---------- */
+  // Dura `sec` segundos REALES y no se puede alargar: si ya está activa, otra activación no reinicia la cuenta.
+  // Los efectos visuales los lleva el juego (no la habilidad), así que terminan exactamente con el tiempo detenido
+  // aunque se cambie de héroe a mitad.
+  startTimeStop(sec = 5, origin = this.player.pos) {
+    if (this.timeStopT > 0 || this.state !== 'playing') return false;
+    this.timeStopT = sec;
+    const o = origin.clone();
+    // pantalla: colores apagados y un velo verde-dorado (el mismo tono de los ojos de la visión)
+    this.tsLayers = [
+      this.vfx2.ambience({ color: '#8a8a8a', alpha: 0.55, blend: 'saturation', exposure: 0.95, dur: sec, fin: 0.35, fout: 0.45 }),
+      this.vfx2.ambience({ color: '#cfe8a8', alpha: 0.18, blend: 'multiply', exposure: 1, dur: sec, fin: 0.35, fout: 0.45 }),
+    ];
+    // onda que congela: sale de la Lince y se expande por el escenario
+    this.vfx.ring(o.x, null, o.z, { r0: 0.5, r1: 34, dur: 0.9, color: 0xd8ffa0, opacity: 0.7 });
+    this.vfx.ring(o.x, o.y + 1.2, o.z, { r0: 0.3, r1: 22, dur: 0.7, color: 0xffe38a, opacity: 0.55 });
+    this.tsDial = this.makeTimeDial(sec);
+    audio.power && audio.power('ice');
+    ui.banner('find', '⏳ Tiempo detenido', `El entorno se para ${sec} s · el cronómetro de la misión sigue corriendo`);
+    return true;
+  }
+  endTimeStop() {
+    const p = this.player.pos;
+    this.vfx.ring(p.x, null, p.z, { r0: 30, r1: 0.5, dur: 0.6, color: 0xd8ffa0, opacity: 0.5 }); // el tiempo "vuelve" hacia ella
+    for (const L of this.tsLayers || []) L.end();
+    this.tsLayers = null;
+    ui.banner('find', '⏱️', 'El tiempo vuelve a correr');
+  }
+  // esfera de reloj luminosa a los pies del héroe: 12 marcas y dos agujas que avanzan a saltos; se apaga al terminar
+  makeTimeDial(sec) {
+    const g = new THREE.Group(), mats = [];
+    const mk = (col, op) => { const m = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: op, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, toneMapped: false }); mats.push(m); return m; };
+    const rimM = mk(0x9cff5a, 0.75), tickM = mk(0xffcf3a, 0.85), handM = mk(0xfff2b0, 0.9); // verde-dorado: el color de los ojos de la visión
+    const add = (geo, m, f) => { const o = new THREE.Mesh(geo, m); o.rotation.x = -Math.PI / 2; if (f) f(o); g.add(o); return o; };
+    add(new THREE.RingGeometry(2.05, 2.2, 64), rimM);
+    add(new THREE.RingGeometry(1.25, 1.3, 48), rimM);
+    for (let i = 0; i < 12; i++) { const a = (i / 12) * TAU, big = i % 3 === 0; add(new THREE.PlaneGeometry(big ? 0.09 : 0.05, big ? 0.38 : 0.22), tickM, (o) => { o.position.set(Math.sin(a) * 1.82, 0, Math.cos(a) * 1.82); o.rotation.z = -a; }); }
+    const hand = (len, w) => { const pivot = new THREE.Group(); const geo = new THREE.PlaneGeometry(w, len); geo.translate(0, len / 2, 0); const o = new THREE.Mesh(geo, handM); o.rotation.x = -Math.PI / 2; pivot.add(o); g.add(pivot); return pivot; };
+    const hMin = hand(1.55, 0.06), hHour = hand(1.0, 0.09);
+    g.renderOrder = 6;
+    g.traverse((o) => { o.frustumCulled = false; });
+    const p = this.player;
+    let tick = 0;
+    this.vfx.add(g, sec, (it) => {
+      const t = it.t, fin = Math.min(1, t / 0.35), fout = Math.min(1, (sec - t) / 0.45);
+      const k = Math.max(0, Math.min(fin, fout));
+      g.position.set(p.pos.x, p.floorY(p.pos.x, p.pos.z, p.pos.y + 0.5) + 0.06, p.pos.z);
+      g.scale.setScalar(0.6 + 0.4 * (1 - Math.pow(1 - fin, 3)));
+      const s = Math.floor(t); // la aguja larga avanza a saltos, una vez por segundo (cuenta atrás visual)
+      if (s !== tick) { tick = s; }
+      hMin.rotation.y = -(tick + Math.min(1, (t - tick) * 8)) * (TAU / 12);
+      hHour.rotation.y = -t * 0.12;
+      rimM.opacity = 0.75 * k; tickM.opacity = 0.85 * k; handM.opacity = 0.9 * k;
+      if (it.t >= sec) { for (const m of mats) m.dispose(); g.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); }
+    });
+    return g;
+  }
+
   /* ---------- actualización ---------- */
   update(dt) {
     if (this.state === 'idle' || this.state === 'done') return;
     const { world, player, chase, input, camera } = this;
     const real = dt;
     this.slowT = Math.max(0, this.slowT - real);
+    // DETENCIÓN DEL TIEMPO (visión del Lince): cuenta en tiempo REAL y dura exactamente lo que se pidió (5 s).
+    // Solo se congela el ENTORNO (enemigos, jefe, peligros, escenario y personas que esperan); el héroe, sus poderes
+    // y el CRONÓMETRO DE LA MISIÓN siguen igual (this.t usa dtg, nunca envDt).
+    if (this.timeStopT > 0) { this.timeStopT = Math.max(0, this.timeStopT - real); if (this.timeStopT === 0) this.endTimeStop(); }
     const targetScale = this.slowT > 0 ? 0.45 : this.state === 'ending' ? 0.55 : 1;
     this.timeScale = damp(this.timeScale, targetScale, 10, real);
     const dtg = dt * this.timeScale;
+    const envDt = this.timeStopT > 0 ? 0 : dtg; // tiempo del entorno (0 mientras está detenido)
 
     const introLocked = this.state === 'intro';
     if (introLocked) {
@@ -1176,7 +1240,7 @@ export class Game {
     this.weapons.update(dtg); // después de animar al héroe: el arma sigue al hueso de la mano
     this.handlePlayerEvents();
     player.events.length = 0;
-    if (this.hazards && (this.state === 'playing' || this.state === 'ending')) this.hazards.update(dtg, this.t);
+    if (this.hazards && (this.state === 'playing' || this.state === 'ending')) this.hazards.update(envDt, this.t);
     if (this.playerHitT > 0) this.playerHitT = Math.max(0, this.playerHitT - real);
     if (this.boss && this.state === 'playing') {
       this.team.update(dtg);
@@ -1184,7 +1248,7 @@ export class Game {
       this.updateBossHud(real);
     }
     if (this.boss && this.state === 'playing') {
-      this.boss.update(dtg);
+      this.boss.update(envDt);
       if (this.boss.state === 'dead' && this.boss.deathT > 1.1 && !this.bossDone) this.finishBoss();
     }
     if (this.ally && this.state === 'playing') this.ally.update(dtg);
@@ -1202,10 +1266,11 @@ export class Game {
     if (this.state === 'playing') this.pickups.update(dtg, player, (p) => this.onPickup(p), (p) => this.onPickupFull(p));
     this.hpSaveT = (this.hpSaveT || 0) + real;
     if (this.hpSaveT > 1.5) { this.hpSaveT = 0; this.saveHp(); }
-    this.combat.update(dtg);
+    this.combat.update(envDt);
     this.vfx.update(dtg);
     this.vfx2.update(dtg);
-    world.update(dtg, performance.now() / 1000, camera.position, player.pos, missionT, true);
+    this.envClock = (this.envClock ?? performance.now() / 1000) + envDt; // reloj de las animaciones del escenario (se para con el tiempo)
+    world.update(envDt, this.envClock, camera.position, player.pos, missionT, true);
     const p = player.pos;
 
     // visuales de escudo, linterna y gafas
@@ -1213,7 +1278,7 @@ export class Game {
 
     // víctimas
     for (const v of this.victims) {
-      v.update(dtg);
+      v.update(v.state === 'carried' ? dtg : envDt); // las que esperan o caminan se detienen con el tiempo
       v.root.getWorldPosition(v.wpos);
       if (v.state === 'waiting') {
         if (v.hidden) {
@@ -1225,7 +1290,7 @@ export class Game {
         v.marker.visible = true;
         if (!v.parentBody) {
           const want = Math.max(v.baseY, world.waterY - v.height * 0.45);
-          v.root.position.y = damp(v.root.position.y, want, 4, dtg);
+          v.root.position.y = damp(v.root.position.y, want, 4, envDt);
         }
         v.platformY = v.parentBody ? v.parentBody.y + v.baseY : v.baseY;
         const margin = world.hasWater ? (v.parentBody ? 9 : v.platformY - world.waterY) : 99;
@@ -1256,7 +1321,7 @@ export class Game {
         const dist = Math.hypot(dx, dz);
         if (v.via && v.via.length && dist <= 0.3) { v.via.shift(); if (!v.via.length) v.via = null; }
         else if (dist > 0.3) {
-          const sp = 2.0 * dtg;
+          const sp = 2.0 * envDt;
           v.root.position.x += (dx / dist) * Math.min(sp, dist);
           v.root.position.z += (dz / dist) * Math.min(sp, dist);
           v.root.rotation.y = Math.atan2(dx, dz);

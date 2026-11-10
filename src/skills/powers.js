@@ -591,7 +591,7 @@ export class AuroraSkill extends Skill {
     ];
   }
   enterCall() {
-    const d = this.def, total = d.prep + d.exec + d.recover + 1;
+    const d = this.def, total = d.prep + d.exec + d.recover + 0.4; // la aurora se apaga 0,4 s después de la habilidad (antes 1 s)
     this.lock(true);
     this.amb = this.v2.ambience({ color: '#3a5a8a', alpha: 0.35, blend: 'multiply', exposure: 0.62, dur: total, fin: d.prep, fout: 1 }); // noche polar: la aurora resalta
     this.aur = this.v2.aurora(V(this.p.pos.x, this.p.pos.y, this.p.pos.z), { life: total });

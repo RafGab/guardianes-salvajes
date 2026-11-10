@@ -277,9 +277,24 @@ export class SpeedFxSkill extends Skill {
   // cristales que brotan y se funden, destellos y vaho frío. Se inclina en las curvas como una esquiadora.
   kyra(dt, k, bx, bz, sp, step, turn) {
     const pose = this.pose, p = this.p, fx = this.g.fx;
-    pose.rx = Math.max(pose.rx, 0.22 * k);
+    // PATINAJE: el ritmo de los impulsos sigue a la velocidad real; entre impulso e impulso se desliza
+    if (this.active && p.model) p.model.skate = Math.min(1, Math.max(p.model.skate || 0, k)); // piernas: zancadas largas y lentas
+    this.skPh = (this.skPh || 0) + dt * (1.6 + sp * 0.22);
+    const sw = Math.sin(this.skPh * Math.PI); // -1 izquierda · +1 derecha
+    pose.rx = Math.max(pose.rx, 0.26 * k);
     this.carve = lerp(this.carve || 0, clamp(-turn * 18, -0.45, 0.45) * k, Math.min(1, dt * 8));
-    pose.rz = this.carve; // se inclina en las curvas como una esquiadora
+    pose.rz = this.carve + sw * 0.13 * k; // se balancea de un patín al otro (y se inclina en las curvas)
+    pose.spin = sw * 0.12 * k;          // el torso acompaña cada impulso
+    // en cada impulso: el patín empuja hacia fuera y levanta nieve y esquirlas de hielo hacia atrás
+    const side = sw > 0 ? 1 : -1;
+    if (this.lastSide !== side && sp > 2) {
+      this.lastSide = side;
+      const f = this.feet(0.15, bx, bz), ox = -bz * side * 0.35, oz = bx * side * 0.35;
+      for (let i = 0; i < 6; i++) fx.spray(f.x + ox, f.y + 0.08, f.z + oz, (bx * 2.2 - bz * side * 1.8) + rnd(-0.6, 0.6), rnd(0.8, 2.2), (bz * 2.2 + bx * side * 1.8) + rnd(-0.6, 0.6), 0.6);
+      for (let i = 0; i < 3; i++) fx.iceShard(f.x + ox, f.y + 0.12, f.z + oz, 0.45);
+      fx.mist(f.x + ox, f.y + 0.1, f.z + oz, 0xffffff, 0.9);
+      this.vfx.ring(f.x + ox, null, f.z + oz, { r0: 0.1, r1: 0.7, dur: 0.35, color: 0xd8f4ff, opacity: 0.45 });
+    }
     this.trailT -= dt;
     const moved = Math.hypot(p.pos.x - this.last.x, p.pos.z - this.last.z);
     if (this.trailT <= 0 && sp > 1.5 && moved > 0.25) {
@@ -875,13 +890,41 @@ export class ScytheSkill extends WeaponSkill {
 /* ---------------------------------------------------------------------- */
 /*  ÁMBAR — DOS DISCOS · disco derecho → disco izquierdo → los dos a la vez */
 /* ---------------------------------------------------------------------- */
+// ÁMBAR — DOS DISCOS. Cada disco va sujeto por su ala (weapons/system.js · attachWing). El lanzamiento lo hace el ala:
+// se abre hacia atrás, barre hacia delante y suelta el disco a mitad del barrido; el disco vuelve al mismo punto del
+// ala y se queda sujeto sin saltos. Para que nada se pause ni se reinicie:
+//  · no se dispara la animación 'power' del modelo (aleteaba las alas y luego saltaba de golpe a 'idle');
+//  · solo se lanza un disco que esté en el ala (antes se podía relanzar uno en vuelo → copias y apariciones bruscas).
 export class DiscSkill extends WeaponSkill {
-  begin() { this.aim(this.def.range, 35); this.draw(); this.start(); return true; }
+  begin() {
+    this.aim(this.def.range, 35);
+    this.draw();
+    const W = this.W, parts = (W && W.cur && W.cur.parts) || [];
+    const ready = parts.map((pt, i) => (pt.home ? i : -1)).filter((i) => i >= 0);
+    if (parts.length && !ready.length) return false; // los dos discos están volando: se espera a que vuelvan
+    const pick = (want) => (ready.includes(want) ? want : ready[0] ?? 0);
+    this.which = this.step === 2 ? (ready.length ? ready : [0]) : [pick(Math.min(this.step, Math.max(0, parts.length - 1)))];
+    this.wing = !!(parts[0] && parts[0].wing);
+    this.start();
+    return true;
+  }
   build() {
-    const d = this.def, extra = this.drawn ? 0.12 : 0, W = this.W;
-    const n = W ? W.partCount : 1;
-    this.which = this.step === 2 ? [0, 1].slice(0, n) : [Math.min(this.step, n - 1)];
+    const d = this.def, extra = this.drawn ? 0.12 : 0;
     this.armPart = this.which.length > 1 ? -1 : this.which[0];
+    const both = this.which.length > 1;
+    if (this.wing) {
+      this.thrown = false;
+      const sideSpin = both ? 0 : (this.W.cur.parts[this.which[0]].side > 0 ? 0.35 : -0.35); // el cuerpo acompaña al ala que lanza
+      return [
+        // el ala se abre hacia fuera y atrás (carga)
+        this.stage('apuntar', d.prep + extra + (both ? 0.08 : 0), { x: 0.85, y: -0.45, f: -0.25, w: 0.1 }, { spin: -sideSpin, rx: -0.05, tick: () => this.energy(0xff4a2a, 1, 0.8) }),
+        // barrido rápido hacia delante: el disco sale a mitad del gesto, con la velocidad del ala
+        this.stage('lanzar', 0.16, { x: 0.3, y: 1.35, f: 0.55, w: -0.3 }, { spin: sideSpin * 0.8, rx: 0.12, easeFn: back, tick: (dt, k) => {
+          if (!this.thrown && k >= 0.45) { this.thrown = true; this.which.forEach((i, n) => this.throwDisc(i, n)); if (this.step === 2) this.finisher(0xff3a1a, 0xffc020); }
+        } }),
+        this.recover(d.recover + 0.08),
+      ];
+    }
     return [
       this.stage('apuntar', d.prep + extra + (this.step === 2 ? 0.1 : 0), { x: -0.8, y: -0.45, f: -0.3 }, { spin: this.step === 1 ? 0.5 : -0.5, enter: () => { this.p.powerAnim = 1; }, tick: () => this.energy(0xff4a2a, 2, 1) }),
       this.stage('lanzar', 0.12, { x: -0.8, y: 0.4, f: -0.3 }, { spin: this.step === 1 ? -0.3 : 0.4, easeFn: back, enter: () => { this.which.forEach((i, k) => this.throwDisc(i, k)); if (this.step === 2) this.finisher(0xff3a1a, 0xffc020); } }),
@@ -890,11 +933,17 @@ export class DiscSkill extends WeaponSkill {
   }
   throwDisc(idx, order) {
     const d = this.def, p = this.p, f = this.fwd, W = this.W;
+    const part = W.cur && W.cur.parts[idx];
+    if (part && !part.home) return; // ya está volando
     const pr = W.projectile(idx);
     const g = pr ? pr.group : new THREE.Group();
     const spin = pr && pr.spin;
-    const startP = (W.cur && W.cur.parts[idx]) ? W.partCenter(W.cur.parts[idx], new THREE.Vector3()) : this.center(0.6);
+    const startP = part ? W.partCenter(part, new THREE.Vector3()) : this.center(0.6);
     g.position.copy(startP);
+    // orientación de vuelo (plano, ligeramente inclinado) y la del disco en el ala, para el regreso suave
+    const qFly = new THREE.Quaternion().setFromEuler(new THREE.Euler(-Math.PI / 2 + 0.3, 0, 0));
+    const qHold = new THREE.Quaternion(), qTmp = new THREE.Quaternion();
+    if (part) { part.w.group.getWorldQuaternion(g.quaternion); g.quaternion.slerp(qFly, 0.5); }
     W.setHome(idx, false);
     W.swing(0.25);
     this.sfx('wind');
@@ -909,21 +958,25 @@ export class DiscSkill extends WeaponSkill {
     // LUZ SOLO AL LANZAR: el disco se enciende al salir disparado y se apaga en cuanto emprende el regreso
     let light = 1;
     W.partLight(idx, 1);
-    const it0 = vfx.add(g, 5, (it, dt) => {
+    const LIFE = 8; // margen de sobra: el disco siempre vuelve antes (antes, a los 5 s desaparecía en el aire)
+    const it0 = vfx.add(g, LIFE, (it, dt) => {
       if (spin) spin.rotation.z += dt * 30;
-      g.rotation.set(-Math.PI / 2 + 0.3, 0, 0);
+      if (!back) g.quaternion.slerp(qFly, Math.min(1, dt * 14)); // se aplana al salir (sin giro brusco)
       light = back ? Math.max(0, light - dt / 0.15) : 1; // al volver: se apaga en 0,15 s, sin cortes bruscos
       W.partLight(idx, light);
       const r = 0.2, a = it.t * 30;
       if (!back) trail.push(V(g.position.x + Math.cos(a) * r, g.position.y, g.position.z + Math.sin(a) * r), V(g.position.x - Math.cos(a) * r, g.position.y, g.position.z - Math.sin(a) * r));
       trail.update(dt, !back);
       if (!back && Math.random() < 0.7) fx.sparkle(g.position.x, g.position.y, g.position.z, Math.random() < 0.5 ? 0xff3a1a : 0xffc020, 1.2);
-      if (back) { // vuelve a la mano de Ámbar
-        const home = V(p.pos.x, p.pos.y + p.H * 0.55, p.pos.z);
+      if (back) { // vuelve exactamente al punto del ala (o de la mano) que lo sujeta
+        const home = part ? W.partCenter(part, V()) : V(p.pos.x, p.pos.y + p.H * 0.55, p.pos.z);
         dir.subVectors(home, g.position);
         const l = dir.length();
-        if (l < 0.5) { it.t = 5; return; }
-        g.position.addScaledVector(dir.divideScalar(l), d.speed * 1.1 * dt);
+        // al acercarse se va girando hasta la orientación con la que lo sujeta el ala: el relevo no se nota
+        if (part && l < 2.5) { part.w.group.getWorldQuaternion(qHold); qTmp.copy(g.quaternion).slerp(qHold, Math.min(1, dt * 10 + (1 - l / 2.5) * 0.3)); g.quaternion.copy(qTmp); }
+        const step = Math.max(d.speed * 1.1, Math.hypot(p.vx, p.vz) + 8) * dt; // siempre alcanza a Ámbar aunque corra
+        if (l <= step + 0.05) { g.position.copy(home); it.t = LIFE; return; }
+        g.position.addScaledVector(dir.divideScalar(l), step);
         return;
       }
       if (target && !target.dead) {
@@ -953,7 +1006,7 @@ export class DiscSkill extends WeaponSkill {
     // al terminar su vuelo, el disco reaparece en la mano
     let finished = false;
     const orig = it0.onUpdate;
-    it0.onUpdate = (it, dt) => { orig(it, dt); if (!finished && it.t >= 4.99) { finished = true; trail.dispose(); W.partLight(idx, 0); W.setHome(idx, true); } };
+    it0.onUpdate = (it, dt) => { orig(it, dt); if (!finished && it.t >= LIFE - 0.001) { finished = true; trail.dispose(); W.partLight(idx, 0); W.setHome(idx, true); } };
   }
 }
 
@@ -1148,7 +1201,9 @@ export class VisionSkill extends Skill {
   }
   enterVision() {
     const d = this.def;
-    this.amb = this.v2.ambience({ color: '#1a3a2a', alpha: 0.45, blend: 'multiply', exposure: 0.85, dur: d.exec + d.recover + 0.4, fin: 0.4, fout: 0.5 });
+    this.amb = this.v2.ambience({ color: '#1a3a2a', alpha: 0.45, blend: 'multiply', exposure: 0.85, dur: d.exec + d.recover + 0.2, fin: 0.25, fout: 0.35 });
+    // al abrir los ojos, el tiempo del entorno se detiene (5 s fijos, game.startTimeStop); el cronómetro sigue
+    if (d.timeStop) this.g.startTimeStop(d.timeStop, this.p.pos);
     this.marks = new Map(); // objeto observado → sprite
     this.scanT = 0;
     this.pulse = 0;

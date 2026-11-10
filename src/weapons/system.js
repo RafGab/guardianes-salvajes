@@ -121,6 +121,8 @@ export class WeaponSystem {
     const sides = W.dual ? ['R', 'L'] : [W.hand];
     const parts = [];
     for (const side of sides) {
+      // ÁMBAR: cada disco lo sujeta su ala (articulación de la muñeca del ala, por fuera del borde de las plumas)
+      if (W.holdBy === 'wing' && this.attachWing(model, W, side, frame, parts)) continue;
       const hb = this.handBones(model, side);
       if (!hb) continue;
       const w = W.build();
@@ -185,6 +187,40 @@ export class WeaponSystem {
     model.armFx = (bones, dt, t, fx) => this.applyArm(inst, dt, fx);
     return inst;
   }
+  // Disco sujeto por el ala: va colgado del hueso de la muñeca del ala (wing_X_3), justo por fuera del borde de las
+  // plumas, de canto y mirando hacia fuera. Las plumas de la punta (wing_X_4) se curvan por debajo para sujetarlo.
+  attachWing(model, W, side, frame, parts) {
+    const B = model.bones || {};
+    const w1 = B[`wing_${side}_1`], w2 = B[`wing_${side}_2`], w3 = B[`wing_${side}_3`], w4 = B[`wing_${side}_4`];
+    if (!w1 || !w3 || !w4) return false;
+    const w = W.build();
+    const H = model.height || 1.6;
+    w3.getWorldPosition(_a); w4.getWorldPosition(_b);
+    _a.lerp(_b, W.wingAt ?? 0.4);
+    frame.worldToLocal(_c.copy(_a));
+    const sx = Math.sign(_c.x) || (side === 'R' ? -1 : 1);
+    const off = W.wingOffset || [0.06, 0, 0.05];
+    _c.x += sx * off[0] * H; _c.y += off[1] * H; _c.z += off[2] * H;
+    frame.localToWorld(_a.copy(_c));
+    const dir = new THREE.Vector3(0, 1, 0), fc = new THREE.Vector3(sx, 0, 0.2).normalize(); // de canto, con la cara hacia fuera
+    const xx = new THREE.Vector3().crossVectors(dir, fc).normalize();
+    _m.makeBasis(xx, dir, fc);
+    const qLocal = new THREE.Quaternion().setFromRotationMatrix(_m);
+    frame.getWorldQuaternion(_q);
+    _q.multiply(qLocal);
+    w3.getWorldQuaternion(_q2);
+    const holder = new THREE.Group();
+    holder.name = `soporte_${W.id}_ala_${side}`;
+    holder.quaternion.copy(_q2.invert().multiply(_q));
+    holder.position.copy(w3.worldToLocal(_a.clone()));
+    w3.getWorldScale(_s);
+    holder.scale.setScalar(1 / (_s.x || 1));
+    holder.add(w.group);
+    holder.visible = false;
+    w3.add(holder);
+    parts.push({ w, holder, side: sx, S: side, bones: { hand: w3, wing: [w1, w2, w3, w4] }, scale: w.group.scale.x, home: true, wing: true });
+    return true;
+  }
   boneScale(b) { b.updateWorldMatrix(true, false); b.getWorldScale(_s); const r = this.g.player && this.g.player.model && this.g.player.model.root; void r; return _s.x || 1; }
 
   /* ---------------- brazo: guardia, golpes y defensa ---------------- */
@@ -207,6 +243,18 @@ export class WeaponSystem {
       st.x += (tg.x - st.x) * k; st.y += (tg.y - st.y) * k; st.f += ((tg.f || 0) - st.f) * k; st.w += ((tg.w || 0) - st.w) * k;
       st.r = (st.r || 0) + ((tg.r || 0) - (st.r || 0)) * k;
       const hb = pt.bones;
+      if (pt.wing) { // ALA: x = abrir hacia fuera, y = barrer hacia delante, f = doblar el codo del ala, w = curvar la punta
+        const [w1, w2, , w4] = hb.wing, sd = pt.side;
+        if (Math.abs(st.x) + Math.abs(st.y) + Math.abs(st.f) > 0.002) {
+          fx.rot(w1, 0, 1, 0, -sd * st.y);
+          fx.rot(w1, 0, 0, 1, sd * st.x);
+          if (w2 && st.f) fx.rot(w2, 0, 1, 0, -sd * st.f);
+        }
+        // agarre: mientras sujeta el disco, las plumas de la punta se curvan por debajo de él
+        pt.hold = (pt.hold || 0) + ((show && pt.home ? 1 : 0) - (pt.hold || 0)) * (1 - Math.exp(-12 * dt));
+        if (w4 && pt.hold > 0.01) fx.rot(w4, 0, 0, 1, sd * (0.5 + (st.w || 0)) * pt.hold);
+        continue;
+      }
       const us = W.upperScale ?? 1; // Ámbar: sus alas van unidas al brazo → el hombro se mueve poco (sin estirar plumas)
       if (Math.abs(st.x) + Math.abs(st.y) + Math.abs(st.f) + Math.abs(st.r) > 0.002 && hb.upper) {
         fx.rot(hb.upper, 0, 1, 0, -pt.side * st.y * us);

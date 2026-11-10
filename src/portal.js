@@ -249,6 +249,7 @@ void main(){
   col += uC3 * ring * 1.4;
   alpha = clamp(alpha + ring * 0.45 + uSwap * 0.3, 0.0, 0.92) * smoothstep(0.0, 0.06, d);
   vec3 o = min(col * (0.85 + v * 0.6) * e, vec3(6.0)) * uDim; // uDim: menos brillo cuando el héroe está cerca
+  if (uMode > 3.5 && uMode < 4.5) { o *= 0.66; alpha *= 0.85; } // AIRE (Águila): era el más deslumbrante (blanco puro + resplandor)
   gl_FragColor = vec4(o, alpha);
 }`;
 const MODE = { roca: 0, fuego: 1, arena: 2, hielo: 3, aire: 4, agua: 5, tierra: 6 };
@@ -763,12 +764,12 @@ function featherGeo() {
   return new THREE.ShapeGeometry(s, 6);
 }
 function buildAire(mobile) {          // 5. SANTUARIO DE LAS NUBES — Águila
-  const P = base('aire', [0x8fd4ff, 0xffffff, 0xffd870]);
+  const P = base('aire', [0x7cc4f4, 0xd6ecff, 0xf0c860]); // blanco azulado en vez de blanco puro: menos deslumbrante, se distinguen las corrientes
   const { root, anims } = P;
   const white = M(0xf8f8f4), cream = M(0xece4d2);
   const gold = M(0xffcf5a, { emissive: 0x7a5200, emissiveIntensity: 0.35 });
   const sky = P.pulse(glow(0x9ad8ff, 2.0), 0.25, 1.6), goldG = P.pulse(glow(0xffd870, 2.0), 0.3, 2.0, 1);
-  const cloud = M(0xffffff, { emissive: 0xbad8ff, emissiveIntensity: 0.25 });
+  const cloud = M(0xf2f6fa, { emissive: 0xbad8ff, emissiveIntensity: 0.1 });
   platform(root, white, cream, goldG, { seg: 48, studMat: sky });
   add(root, new THREE.TorusGeometry(3.0, 0.06, 6, 64), gold, 0, 0.18, 0, Math.PI / 2);
   // columnas ligeras y estilizadas

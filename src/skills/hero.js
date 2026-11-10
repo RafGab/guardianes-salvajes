@@ -1,7 +1,6 @@
 import * as THREE from 'three';
 import { Staged, rnd, TAU } from './attack.js';
 import { HERO_SKILLS, HERO_BUTTONS } from './config.js';
-import { makeTentacle } from './props.js';
 import { terrainH } from '../terrain.js';
 import { Audio3D as audio } from '../audio.js';
 import { ui } from '../ui.js';
@@ -13,6 +12,8 @@ import { ui } from '../ui.js';
 import { Skill, DEG, ease, lerp, clamp, V, NEUTRAL, SKIP_TAGS, makeElastic, boneWorld } from './base.js';
 import { POWER_CLASSES } from './powers.js';
 import { POWER2_CLASSES } from './powers2.js';
+import { SandStorm, WaterGate, SpringWard, puddle } from './fx3.js';
+const damp1 = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 
 /* ====================================================================== */
 /*  JAGLION — Cola Elástica (extensión → agarre → balanceo → trepado)      */
@@ -226,45 +227,76 @@ class HaboobSkill extends Skill {
     if (this.realEars) { this.p.powerAnim = amount > 0.2 ? 1 : this.p.powerAnim; return; }
     for (const e of this.ears) { e.pivot.rotation.z = -e.s * (0.45 + amount * Math.sin(t * 24)); e.pivot.rotation.x = 0.15 * Math.sin(t * 24 + 1); }
   }
+  // HABOOB: la tormenta nace delante del feneco mientras él la invoca (las orejas aspiran la arena y la lanzan por
+  // una corriente que las une a la tormenta), crece, avanza bajo su control y al final se abre, sube y se aclara
+  // hasta desaparecer (sin encogerse de golpe). Mecánica intacta: avance, empuje, cegado, daño y desvío.
   build() {
     const d = this.def, pose = this.pose;
     return [
-      { name: 'preparacion', dur: d.prep, enter: () => { this.lock(true); this.makeEars(); audio.whoosh(); }, tick: (dt, k) => {
+      { name: 'preparacion', dur: d.prep, enter: () => { this.lock(true); this.makeEars(); this.makeStorm(); audio.whoosh(); }, tick: (dt, k) => {
         pose.sy = 1 - 0.1 * k; pose.rx = 0.25 * k; // planta las patas y se inclina
         pose.rz = d.earShake * Math.sin(this.t * 30) * k;
         this.flap(this.t, 0.6 * k);
-        if (Math.random() < 0.5) { const c = this.center(0.1); this.vfx.sand(c.x, c.y, c.z, 1); }
+        this.gather(dt, k);
+        this.storm.update(dt, { grow: 0.45 * k, fade: 1, yaw: this.yaw });
+        this.storm.updateLink(dt, this.earPos(), V(this.pos.x, this.pos.y + 2.4, this.pos.z), k);
       } },
       { name: 'tormenta', dur: d.exec, enter: this.enterStorm, tick: this.tickStorm, exit: this.exitStorm },
-      { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.sy = lerp(0.9, 1, k); pose.rx = lerp(0.25, 0, k); this.flap(this.t, 0.5 * (1 - k)); } },
+      { name: 'recuperacion', dur: d.recover, tick: (dt, k) => {
+        pose.sy = lerp(0.9, 1, k); pose.rx = lerp(0.25, 0, k); this.flap(this.t, 0.5 * (1 - k));
+        this.advance(dt * (1 - k));
+        this.storm.update(dt, { grow: 1, fade: this.fadeAt * (1 - k), yaw: this.yaw });
+        this.storm.updateLink(dt, this.earPos(), V(this.pos.x, this.pos.y + 2.4, this.pos.z), 0);
+      } },
     ];
   }
-  enterStorm() {
+  earPos() { const h = boneWorld(this, 'head_end') || this.center(0.95); return h; }
+  makeStorm() {
     const d = this.def, p = this.p, f = this.fwd;
     this.dir = { x: f.x, z: f.z };
-    this.pos = V(p.pos.x + f.x * 2, 0, p.pos.z + f.z * 2);
-    const g = new THREE.Group();
-    this.layers = [0.62, 0.45, 0.3].map((r, i) => {
-      const m = new THREE.Mesh(new THREE.CylinderGeometry(d.width * r * 1.25, d.width * r * 0.6, 3.6, 16, 1, true), new THREE.MeshBasicMaterial({ color: i === 1 ? 0xc89a58 : 0xe0bd7a, transparent: true, opacity: 0.3 - i * 0.05, depthWrite: false, side: THREE.DoubleSide }));
-      m.userData.own = true;
-      m.position.y = 1.8;
-      g.add(m);
-      return m;
-    });
-    this.stormGroup = g;
-    this.prop(g);
+    this.yaw = Math.atan2(f.x, f.z);
+    this.pos = V(p.pos.x + f.x * 2.6, 0, p.pos.z + f.z * 2.6);
+    this.pos.y = this.gy(this.pos.x, this.pos.z);
+    this.storm = new SandStorm(d.width, 5.2);
+    this.storm.group.position.copy(this.pos);
+    this.prop(this.storm.group);
+    this.prop(this.storm.link);
+    this.track({ kill: () => this.storm.dispose() });
+    this.fadeAt = 1;
+  }
+  // formación: remolinos de arena que se levantan alrededor del feneco y se dejan arrastrar hacia la tormenta
+  gather(dt, k) {
+    const p = this.p, fx = this.g.fx;
+    for (let i = 0; i < 2; i++) {
+      const a = this.t * 7 + i * Math.PI, r = 1.8 - 1.2 * k;
+      fx.mist(p.pos.x + Math.cos(a) * r, p.pos.y + 0.2 + k * 0.8, p.pos.z + Math.sin(a) * r, 0xe0bd7a, 0.6 + 0.4 * k);
+    }
+    if (Math.random() < 0.6) this.g.fx.dustPuff(this.pos.x + rnd(-1.5, 1.5), this.pos.y, this.pos.z + rnd(-1.5, 1.5), 1.2 + k);
+  }
+  advance(dt) {
+    const d = this.def;
+    this.pos.x += this.dir.x * d.speed * dt; this.pos.z += this.dir.z * d.speed * dt;
+    this.pos.y = damp1(this.pos.y, this.gy(this.pos.x, this.pos.z), 8, dt);
+    this.storm.group.position.copy(this.pos);
+  }
+  enterStorm() {
     audio.noiseBurst(0.9, 500, 0.3, 'bandpass');
-    this.shake(0.15);
+    this.shake(0.2);
+    this.vfx.ring(this.pos.x, null, this.pos.z, { r0: 0.5, r1: this.def.width * 0.9, dur: 0.6, color: 0xe0bd7a, opacity: 0.6, additive: false });
   }
   tickStorm(dt, k) {
     const d = this.def, pose = this.pose;
     if (this._lock && this.t > d.rootT) this.lock(false);
-    this.pos.x += this.dir.x * d.speed * dt; this.pos.z += this.dir.z * d.speed * dt;
-    this.pos.y = this.gy(this.pos.x, this.pos.z);
-    this.stormGroup.position.copy(this.pos);
-    this.layers.forEach((m, i) => { m.rotation.y += dt * (9 - i * 2) * (i % 2 ? -1 : 1); });
-    pose.sy = 0.9; pose.rx = 0.25; pose.rz = d.earShake * Math.sin(this.t * 30);
-    this.flap(this.t + 1, 0.9);
+    this.advance(dt);
+    // crece del 45 % al 100 % en 0,45 s; en el último 30 % empieza a disiparse
+    const grow = 0.45 + 0.55 * Math.min(1, this.t / 0.45);
+    this.fadeAt = k > 0.7 ? 1 - ((k - 0.7) / 0.3) * 0.55 : 1;
+    this.storm.update(dt, { grow, fade: this.fadeAt, yaw: this.yaw });
+    // mientras está plantado la controla con las orejas (corriente de arena); luego la suelta poco a poco
+    const control = this._lock ? 1 : Math.max(0, 1 - (this.t - d.rootT) / 0.4);
+    this.storm.updateLink(dt, this.earPos(), V(this.pos.x, this.pos.y + 2.4, this.pos.z), control);
+    pose.sy = lerp(1, 0.9, control); pose.rx = 0.25 * control; pose.rz = d.earShake * Math.sin(this.t * 30) * control;
+    this.flap(this.t + 1, 0.9 * Math.max(0.3, control));
     const r = d.width * 0.5;
     for (const t of this.combat.inCircle(this.pos.x, this.pos.z, r)) { // empuja, ciega y daña
       const { dx, dz } = this.awayFrom(t, this.pos.x, this.pos.z);
@@ -274,10 +306,14 @@ class HaboobSkill extends Skill {
     }
     this.combat.deflect(this.pos.x, this.pos.z, d.deflectRadius); // desvía proyectiles ligeros
     if (d.clearsObstacles) this.clearObstacles(this.pos.x, this.pos.z, r);
+    // polvo que levanta en la base y estela de arena detrás de la tormenta
     this.sandT = (this.sandT || 0) - dt;
-    if (this.sandT <= 0) { this.sandT = 0.06; this.vfx.sand(this.pos.x + rnd(-r, r), this.pos.y + 0.4, this.pos.z + rnd(-r, r), 2); }
-    // la cola de la tormenta: el viento sigue arrastrando arena
-    if (k > 0.8) this.stormGroup.scale.setScalar(lerp(1, 0.3, (k - 0.8) / 0.2));
+    if (this.sandT <= 0) {
+      this.sandT = 0.05;
+      const fx = this.g.fx, a = rnd(0, TAU), rr = r * Math.sqrt(Math.random());
+      fx.dustPuff(this.pos.x + Math.cos(a) * rr, this.pos.y + 0.1, this.pos.z + Math.sin(a) * rr, 1.6 * this.fadeAt);
+      fx.mist(this.pos.x - this.dir.x * r * 0.8 + rnd(-r, r) * 0.5, this.pos.y + rnd(0.3, 2.5), this.pos.z - this.dir.z * r * 0.8 + rnd(-r, r) * 0.5, 0xd8b070, 1.4 * this.fadeAt);
+    }
   }
   clearObstacles(x, z, r) {
     const w = this.g.world;
@@ -286,7 +322,7 @@ class HaboobSkill extends Skill {
       if (Math.hypot(o.x - x, o.z - z) < r + 1) w.breakObstacle(o);
     }
   }
-  exitStorm() { this.vfx.sand(this.pos.x, this.pos.y + 0.5, this.pos.z, 6); }
+  exitStorm() { for (let i = 0; i < 8; i++) this.g.fx.mist(this.pos.x + rnd(-2, 2), this.pos.y + rnd(0.5, 3), this.pos.z + rnd(-2, 2), 0xe0c890, 1.8); } // la arena se dispersa en el aire
 }
 
 /* ====================================================================== */
@@ -305,6 +341,8 @@ class SeasonsSkill extends Skill {
     const fr = this.fwd, reach = tgt ? Math.hypot(tgt.pos.x - p.pos.x, tgt.pos.z - p.pos.z) : (this.s.range || 8) * 0.8;
     this.at = V(p.pos.x + fr.x * reach, 0, p.pos.z + fr.z * reach);
     this.at.y = this.gy(this.at.x, this.at.z);
+    // PRIMAVERA = ESCUDO: la naturaleza crece alrededor de la propia zorra (no a lo lejos)
+    if (this.key === 'spring') { this.at = p.pos.clone(); this.at.y = p.floorY(p.pos.x, p.pos.z, p.pos.y + 0.5); }
     ui.alert(`${this.s.label}`, 900);
     this.start();
     return true;
@@ -325,67 +363,39 @@ class SeasonsSkill extends Skill {
       { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.rx = lerp(0.1, 0, k); } },
     ];
   }
-  /* primavera: enredaderas que inmovilizan */
+  /* primavera: ESCUDO NATURAL. La zorra se queda de pie sobre un suelo rosa en flor y a su alrededor brotan árboles,
+     arbustos y flores que forman una muralla, con una cúpula de energía verde-rosa. Dentro: los enemigos quedan
+     enraizados y reciben daño (como siempre); la barrera los empuja hacia fuera y desvía los proyectiles. */
   enterSpring() {
     const s = this.s;
-    this.vines = [];
-    for (let i = 0; i < 9; i++) {
-      const a = (i / 9) * TAU + rnd(-0.3, 0.3), r = i === 0 ? 0 : rnd(0.4, 1) * s.radius;
-      const v = makeTentacle(0x3fae4a);
-      v.group.position.set(this.at.x + Math.cos(a) * r, this.gy(this.at.x + Math.cos(a) * r, this.at.z + Math.sin(a) * r) - 0.1, this.at.z + Math.sin(a) * r);
-      v.group.rotation.set(rnd(-0.3, 0.3), rnd(0, TAU), rnd(-0.3, 0.3));
-      v.group.scale.setScalar(0.55);
-      this.prop(v.group);
-      this.vines.push({ ...v, h: rnd(1.6, 2.6) });
-    }
-    this.zone = this.track(this.vfx.telegraph('disc', { x: this.at.x, z: this.at.z, r: s.radius, color: s.color, opacity: 0.3 }));
-    this.zone.setProgress(1);
-    this.vfx.petals(this.at.x, this.at.y + 0.5, this.at.z, 10);
+    const ward = new SpringWard(s.radius);
+    ward.group.position.copy(this.at);
+    ward.fitGround((x, z) => this.p.floorY(x, z, this.at.y + 1.5));
+    this.ward = ward;
+    this.prop(ward.group);
+    this.track({ kill: () => ward.dispose() });
+    this.vfx.ring(this.at.x, null, this.at.z, { r0: 0.3, r1: s.radius * 1.15, dur: 0.6, color: 0xff9ad0, opacity: 0.7 });
+    this.vfx.petals(this.at.x, this.at.y + 0.5, this.at.z, 14);
     audio.whoosh();
-    this.sfx('rumble');
-    this.growGreens();
-  }
-  // árboles y montículos vegetales que brotan del suelo (y se vuelven a hundir al acabar)
-  growGreens() {
-    const s = this.s, trunkM = new THREE.MeshStandardMaterial({ color: 0x7a5232, roughness: 0.9 });
-    const leafs = [0x4cb84a, 0x6ad050, 0x3a9a40].map((c) => new THREE.MeshStandardMaterial({ color: c, roughness: 0.75, flatShading: true }));
-    const flower = new THREE.MeshStandardMaterial({ color: 0xff9ad0, roughness: 0.6, emissive: 0x401020 });
-    this.greens = [];
-    const place = (r0, r1) => { const a = rnd(0, TAU), r = rnd(r0, r1); const x = this.at.x + Math.cos(a) * r, z = this.at.z + Math.sin(a) * r; return { x, z, y: this.gy(x, z) }; };
-    for (let i = 0; i < (s.trees || 6); i++) {
-      const q = place(0.6, s.radius * 0.95), g = new THREE.Group(), h = rnd(1.4, 2.4);
-      const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.16, h, 7), trunkM);
-      trunk.position.y = h / 2; trunk.castShadow = true;
-      g.add(trunk);
-      for (let j = 0; j < 3; j++) { const f = new THREE.Mesh(new THREE.IcosahedronGeometry(rnd(0.45, 0.7), 0), leafs[j % 3]); f.position.set(rnd(-0.3, 0.3), h + rnd(-0.1, 0.4), rnd(-0.3, 0.3)); f.castShadow = true; g.add(f); }
-      for (let j = 0; j < 4; j++) { const b = new THREE.Mesh(this.vfx.sphGeo, flower); b.scale.setScalar(0.08); b.position.set(rnd(-0.5, 0.5), h + rnd(0, 0.5), rnd(-0.5, 0.5)); g.add(b); }
-      g.position.set(q.x, q.y, q.z);
-      g.rotation.y = rnd(0, TAU);
-      this.prop(g);
-      this.greens.push({ g, delay: i * 0.07 + rnd(0, 0.1), tree: true });
-    }
-    for (let i = 0; i < (s.mounds || 4); i++) { // montañitas vegetales
-      const q = place(0.5, s.radius * 0.8), m = new THREE.Mesh(new THREE.SphereGeometry(1, 10, 6, 0, TAU, 0, Math.PI / 2), leafs[i % 3]);
-      m.scale.set(rnd(0.7, 1.1), 1, rnd(0.7, 1.1));
-      m.position.set(q.x, q.y - 0.02, q.z);
-      m.castShadow = true;
-      this.prop(m);
-      this.greens.push({ g: m, delay: rnd(0, 0.2), mound: rnd(0.5, 0.9) });
-    }
-    this.track({ kill: () => { trunkM.dispose(); leafs.forEach((m) => m.dispose()); flower.dispose(); for (const q of this.greens) q.g.traverse((o) => { if (o.geometry && o.geometry !== this.vfx.sphGeo) o.geometry.dispose(); }); } });
+    this.sfx('chime');
   }
   tickSpring(dt, k) {
-    const s = this.s;
-    for (const q of this.greens || []) { // brotan con un pequeño rebote y se hunden al final
-      const lt = clamp((this.t - q.delay) / 0.45, 0, 1), grow = lt < 1 ? 1 - Math.pow(1 - lt, 3) * Math.cos(lt * 6) : 1, sink = k > 0.82 ? 1 - (k - 0.82) / 0.18 : 1;
-      const v = Math.max(0.001, grow * sink);
-      if (q.tree) q.g.scale.set(Math.max(0.001, 0.5 + 0.5 * v), v, Math.max(0.001, 0.5 + 0.5 * v));
-      else q.g.scale.y = Math.max(0.001, q.mound * v);
-      if (lt > 0 && lt < 0.2 && Math.random() < 0.3) this.vfx.dust(q.g.position.x, q.g.position.y + 0.1, q.g.position.z, 2, 1);
+    const s = this.s, at = this.at, fx = this.g.fx, gy = (x, z) => this.p.floorY(x, z, at.y + 1);
+    const fade = k > 0.85 ? 1 - (k - 0.85) / 0.15 : 1;
+    this.ward.update(dt, { fade, groundY: gy });
+    this.pose.dy = 0; // de pie, apoyada en el suelo
+    // la barrera: dentro, enraizados y daño (mecánica original); empujados hacia fuera; proyectiles desviados
+    for (const t of this.combat.inCircle(at.x, at.z, s.radius)) {
+      this.combat.root(t, 0.4); this.dot(t, s.damage, dt);
+      const { dx, dz } = this.awayFrom(t, at.x, at.z);
+      this.shove(t, dx, dz, 6, dt);
     }
-    this.vines.forEach((v, i) => v.setHeight(v.h * ease(clamp(this.t * 3 - i * 0.08, 0, 1)) * (k > 0.85 ? (1 - k) / 0.15 : 1)));
-    for (const t of this.combat.inCircle(this.at.x, this.at.z, s.radius)) { this.combat.root(t, 0.4); this.dot(t, s.damage, dt); }
-    if (Math.random() < 0.25) this.vfx.petals(this.at.x, this.at.y + 0.5, this.at.z, 2);
+    this.combat.deflect(at.x, at.z, s.radius);
+    // pétalos que giran alrededor y chispas de energía que suben por la cúpula
+    const a = this.t * 2.2;
+    for (let i = 0; i < 2; i++) { const aa = a + i * Math.PI + rnd(-0.3, 0.3), r = s.radius * rnd(0.55, 1); fx.sparkle(at.x + Math.cos(aa) * r, at.y + rnd(0.2, 2.6), at.z + Math.sin(aa) * r, Math.random() < 0.6 ? 0xffa8d8 : 0x9aff9a, 0.5); }
+    if (Math.random() < 0.3) this.vfx.petals(at.x, at.y + 0.6, at.z, 1);
+    if (fade < 1 && Math.random() < 0.4) this.vfx.petals(at.x + rnd(-2, 2), at.y + 1, at.z + rnd(-2, 2), 2); // al recogerse sueltan pétalos
   }
   /* verano: ola de calor alrededor del héroe */
   enterSummer() {
@@ -749,37 +759,78 @@ class BlinkSkill extends Skill {
     this.start();
     return true;
   }
+  // HIDROTELETRANSPORTE: se funde girando en un remolino de agua, viaja dentro de un arco de agua y sale disparada
+  // de un géiser en el destino. Los efectos de agua viven por su cuenta (vfx) y se desvanecen con suavidad aunque
+  // la habilidad ya haya terminado; la Nutria solo está oculta mientras viaja.
   build() {
-    const d = this.def, pose = this.pose;
+    const d = this.def, pose = this.pose, tv = d.travelT || 0;
     return [
       { name: 'desvanecer', dur: d.vanishT, enter: () => {
         this.lock(true);
         const c = this.from;
-        this.vfx.splash(c.x, c.y + 0.3, c.z, 18, 1.1);
-        this.vfx.ring(c.x, null, c.z, { r0: 0.3, r1: 2.6, dur: 0.5, color: 0x8ae0ff });
+        this.makeGate();
+        this.vfx.splash(c.x, c.y + 0.3, c.z, 12, 0.8);
         audio.splash();
-      }, tick: (dt, k) => { pose.sy = lerp(1, 0.15, ease(k)); pose.spin = k * TAU; pose.hidden = k > 0.65; } },
-      { name: 'aparecer', dur: d.appearT, enter: this.enterAppear, tick: (dt, k) => { pose.hidden = false; pose.sy = k < 0.55 ? lerp(0.15, 1.15, k / 0.55) : lerp(1.15, 1, (k - 0.55) / 0.45); pose.spin = (1 - k) * -TAU * 0.5; } },
+      }, tick: (dt, k) => {
+        // se funde en el agua: se aplasta, se hunde un poco y gira con el remolino
+        const e = ease(k);
+        pose.sy = lerp(1, 0.12, e); pose.dy = -0.25 * e; pose.spin = e * TAU * 1.25; pose.rx = 0.15 * Math.sin(k * Math.PI);
+        pose.hidden = k > 0.85;
+        if (Math.random() < 0.8) { const c = this.from, a = this.t * 14; this.g.fx.spray(c.x + Math.cos(a) * 0.6, c.y + 0.2, c.z + Math.sin(a) * 0.6, -Math.cos(a) * 1.5, 1.5, -Math.sin(a) * 1.5, 0.8); } // gotas que el remolino absorbe
+      } },
+      ...(tv > 0 ? [{ name: 'viaje', dur: tv, tick: () => { pose.hidden = true; } }] : []),
+      { name: 'aparecer', dur: d.appearT, enter: this.enterAppear, tick: (dt, k) => {
+        // sale del géiser estirada y se asienta con un rebote
+        pose.hidden = false; pose.dy = lerp(0.5, 0, ease(k));
+        pose.sy = k < 0.5 ? lerp(0.25, 1.15, k / 0.5) : lerp(1.15, 1, (k - 0.5) / 0.5);
+        pose.spin = (1 - ease(k)) * -TAU * 0.5;
+      } },
       { name: 'recuperacion', dur: d.recover, tick: () => { pose.hidden = false; } },
     ];
   }
+  // efectos de agua del viaje completo, en su propia línea de tiempo (1,5 s)
+  makeGate() {
+    const d = this.def, a = this.from.clone(), b = this.dest.clone(), tv = d.travelT || 0;
+    const T0 = d.vanishT, T1 = T0 + tv, T2 = T1 + d.appearT, LIFE = T2 + 1.0;
+    const gate = new WaterGate();
+    gate.setArc(a, b, 1.6 + 0.12 * a.distanceTo(b));
+    const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 20, 14), gate.vMat);
+    gate.group.add(head);
+    const fx = this.g.fx, vfx = this.vfx;
+    let splashed = false;
+    vfx.add(gate.group, LIFE, (it, dt) => {
+      const t = it.t, sm = (x0, x1) => clamp((t - x0) / (x1 - x0), 0, 1);
+      const vortex = Math.min(sm(0, T0 * 0.6), 1 - sm(T1, T1 + 0.25));
+      const arcHead = sm(T0 * 0.7, T1 + 0.04);
+      const arc = Math.min(sm(T0 * 0.6, T0 * 0.9), 1 - sm(T2, T2 + 0.6));
+      const geyser = Math.min(sm(T1 - 0.04, T1 + 0.12), 1 - sm(T2 - 0.05, T2 + 0.5));
+      const poolA = 0.85 * Math.min(sm(0, 0.12), 1 - sm(T1, T1 + 0.7)), poolB = 0.85 * Math.min(sm(T1 - 0.05, T1 + 0.1), 1 - sm(T2 + 0.2, LIFE));
+      gate.update(dt, { a, b, vortex, arc, arcHead, geyser, poolA, poolB });
+      // la "gota" que viaja por el arco
+      const u = sm(T0 * 0.7, T1 + 0.02);
+      head.visible = u > 0 && u < 1;
+      if (head.visible) { gate.pointOnArc(u, head.position); head.scale.setScalar(0.6 + 0.6 * Math.sin(u * Math.PI)); if (Math.random() < 0.8) fx.spray(head.position.x, head.position.y, head.position.z, 0, -1, 0, 0.7); }
+      if (!splashed && t >= T1) { splashed = true; fx.splash(b.x, b.y + 0.2, b.z, 22, 1.4); vfx.ring(b.x, null, b.z, { r0: 0.3, r1: 3.2, dur: 0.6, color: 0x8ae0ff }); vfx.ring(b.x, null, b.z, { r0: 0.2, r1: 2.0, dur: 0.8, color: 0xffffff, opacity: 0.5 }); }
+      if (geyser > 0.2 && Math.random() < 0.7) fx.spray(b.x + rnd(-0.3, 0.3), b.y + 0.3 + geyser * 2, b.z + rnd(-0.3, 0.3), rnd(-1.5, 1.5), 1 + geyser * 3, rnd(-1.5, 1.5), 1);
+      if (t >= LIFE - 0.001) { head.geometry.dispose(); gate.dispose(); }
+    });
+    vfx.ring(a.x, null, a.z, { r0: 0.2, r1: 2.4, dur: 0.6, color: 0x8ae0ff });
+  }
   enterAppear() {
-    const d = this.def, p = this.p, to = this.dest;
+    const p = this.p, to = this.dest;
     p.pos.copy(to);
     p.vx = this.dir.x * 6; p.vz = this.dir.z * 6; p.vy = 0;
     this.lock(false);
-    this.vfx.splash(to.x, to.y + 0.3, to.z, 20, 1.3);
-    this.vfx.ring(to.x, null, to.z, { r0: 0.3, r1: 3, dur: 0.55, color: 0x8ae0ff });
     this.makeTrail(this.from, to);
   }
   // estela de agua: salpicaduras y ondas; empuja y ralentiza a los enemigos que la cruzan
   makeTrail(a, b) {
     const d = this.def, dx = b.x - a.x, dz = b.z - a.z, len = Math.hypot(dx, dz) || 1, ux = dx / len, uz = dz / len;
-    this.vfx.strip(a, b, { width: d.trailWidth, color: 0x5ac8ff, opacity: 0.5, life: d.trailTime });
-    for (let r = 0.5; r < len; r += 1.6) {
-      const x = a.x + ux * r, z = a.z + uz * r;
-      this.vfx.ring(x, null, z, { r0: 0.2, r1: d.trailWidth * 0.9, dur: 0.9, color: 0xbfeaff, opacity: 0.5 });
-      this.vfx.splash(x, this.gy(x, z) + 0.2, z, 3, 0.5);
+    // estela visible: charcos de bordes suaves a lo largo del camino (misma anchura que la zona que frena)
+    for (let r = 0.3; r <= len; r += 0.9) {
+      const x = a.x + ux * r, z = a.z + uz * r, y = this.p.floorY(x, z, Math.max(a.y, b.y) + 1);
+      puddle(this.vfx, x, y, z, d.trailWidth * 0.55, d.trailTime);
+      if (r % 1.8 < 0.9) this.vfx.ring(x, null, z, { r0: 0.2, r1: d.trailWidth * 0.8, dur: 0.9, color: 0xbfeaff, opacity: 0.4 });
     }
     const combat = this.combat, vfx = this.vfx, gy = this.gy;
     let drop = 0;
