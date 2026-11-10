@@ -319,6 +319,8 @@ export const ui = {
     if (b.hurt && !this._bbHurt) { const bb = $('bossbar'); bb.classList.remove('hit'); void bb.offsetWidth; bb.classList.add('hit'); }
     this._bbHurt = b.hurt;
     const st = [];
+    // enemigos que siguen activos: el jefe y cada soldado (la victoria exige derrotarlos a todos)
+    if (b.soldiers != null) st.push(`<span class="chip foes">⚔️ ${b.soldiers ? `Soldados: ${b.soldiers}` : 'Soldados derrotados'}${b.hp <= 0 ? ' · jefe derrotado' : ''}</span>`);
     if (b.slow) st.push('<span class="chip slow">🐢 Ralentizado</span>');
     if (b.root) st.push('<span class="chip root">🌿 Inmovilizado</span>');
     if (b.blind) st.push('<span class="chip blind">🌫️ Cegado</span>');
@@ -414,7 +416,7 @@ export const ui = {
       let el = this._npc.get(b.t);
       if (!el) {
         el = document.createElement('div');
-        el.className = `npcbar${b.prop ? ' prop' : ''}${b.big ? ' big' : ''}`;
+        el.className = `npcbar${b.prop ? ' prop' : ''}${b.big ? ' big' : ''}${b.ally ? ' ally' : ''}`;
         el.innerHTML = `<div class="nm"></div><div class="bar"><i></i></div>`;
         el.querySelector('.nm').textContent = b.label;
         box.appendChild(el);
@@ -756,11 +758,11 @@ export const ui = {
   /* ---------- resultados, recompensa e inventario ---------- */
   showResults(d) {
     $('end-mission').textContent = d.level ? `${d.level.icon} ${d.level.name}` : '';
-    $('end-kicker').textContent = d.success ? 'MISIÓN COMPLETADA' : 'SE ACABÓ EL TIEMPO';
+    $('end-kicker').textContent = d.success ? 'MISIÓN COMPLETADA' : d.teamLost ? 'DERROTA' : 'SE ACABÓ EL TIEMPO';
     $('end-kicker').classList.toggle('fail', !d.success);
     $('end-title').textContent = d.success
       ? (d.rescued >= d.total ? `¡Increíble, ${d.heroName}! Has salvado a todos.` : `¡Bien hecho, ${d.heroName}! Misión superada.`)
-      : `${d.level ? d.level.failTitle : 'El tiempo se agotó'}. ¡Inténtalo de nuevo!`;
+      : d.teamLost ? 'Los tres héroes han caído ante el Jefe de Zona. ¡Inténtalo de nuevo!' : `${d.level ? d.level.failTitle : 'El tiempo se agotó'}. ¡Inténtalo de nuevo!`;
     $('end-stars').innerHTML = [0, 1, 2].map((i) => `<span class="${i < d.stars ? '' : 'off'}">⭐</span>`).join('');
     $('end-people').textContent = String(d.people);
     $('end-animals').textContent = String(d.animals);

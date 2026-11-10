@@ -23,6 +23,7 @@ import { Pickups } from './pickups.js';
 import { WeaponSystem } from './weapons/system.js';
 import { RescuePortal } from './portal.js';
 import { RescueBubbles } from './rescue.js';
+import { Allies } from './allies.js';
 const HERO_SKILLS_CD = (id) => (HERO_SKILLS[id] && HERO_SKILLS[id].flight ? HERO_SKILLS[id].flight.cd : 4);
 import { IS_TOUCH } from './platform.js';
 const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
@@ -101,6 +102,7 @@ export class Game {
     this.weapons = new WeaponSystem(this); // arma 3D de cada héroe (botón ARMA), unida al hueso de su mano
     this.portal = new RescuePortal(this);  // portal de rescate del refugio: su aspecto depende del héroe activo
     this.bubbles = new RescueBubbles(this); // rescate con burbujas de energía (una por víctima, siguen al héroe)
+    this.allies = new Allies(this);         // combate de jefe: los otros dos héroes del equipo luchan a la vez
     this.team = new Team();          // equipo del combate de jefe (vida por héroe, cambio en combate)
     this.bag = new Bag();            // mochila de recuperación (bebidas y botiquines)
     this.pickups = new Pickups(this); // bebidas y botiquines repartidos por el mapa
@@ -394,6 +396,8 @@ export class Game {
     this.tips = { ...TIPS, ...(LEVEL_TIPS[level.id] || {}) };
     this.missionTime = level.time;
     world.duration = level.time;
+    this.allies.clear();
+    this.allyWin = false; this.victoryT = 0;
     this.clearVictims();
     world.reset();
     ui.tips.reset();
@@ -724,6 +728,10 @@ export class Game {
     this.boss.hpMax = Math.round(this.boss.hpMax * hk);
     this.boss.hp = this.boss.hpMax;
     this.boss.title = this.mission.bossTitle || '';
+    // SOLDADOS: el jefe entra con 2 (primeras zonas) o 3 (el tercero, un bruto); hay que derrotarlos a todos
+    this.combat.spawnMinions(this.mission.n <= 2 ? 2 : 3, this.boss.pos);
+    this.allyWin = false; this.victoryT = 0; this.foesMsg = '';
+    this.team.allOnField = true;
     this.pickups.placeArena(this.mission, arena);
     if (this.mission.ally) this.ally = createAlly(this.mission.ally, { scene, world, player, chase, camera, fx: this.fx, audio, ui, game: this });
     this.setBossCamera();
@@ -780,7 +788,8 @@ export class Game {
     if (this.bossIntroT <= 0) return;
     this.bossIntroT -= real;
     for (const b of this.bench || []) b.model.update(real, { speed: 0, grounded: true });
-    if ((this.bench || []).length && this.bossIntroT < TEAM.introT - 3.0) this.hideFormation();
+    // los compañeros ya no se retiran: se quedan en el campo y combaten junto al héroe del jugador
+    if ((this.bench || []).length && this.bossIntroT < TEAM.introT - 3.0) { this.bench = []; this.allies.sync(); }
     if (this.bossIntroT <= 0) {
       this.player.locked = false;
       ui.banner('find', '⚔ ¡A combatir!', IS_TOUCH ? 'Toca los retratos para cambiar de héroe' : 'Z / X cambian de héroe · Q ataca');
@@ -792,7 +801,7 @@ export class Game {
     if (this.bossHudAcc < 0.06) return;
     this.bossHudAcc = 0;
     const b = this.boss;
-    ui.setBossBar({ icon: b.icon, name: b.name, title: b.title, hp: b.hp, max: b.hpMax, phase: b.phase, slow: b.st.slow > 0, root: b.st.root > 0, blind: b.st.blind > 0, mark: b.st.mark > 0, hurt: b.hitFlash > 0.15 });
+    ui.setBossBar({ icon: b.icon, name: b.name, title: b.title, hp: b.hp, max: b.hpMax, phase: b.phase, slow: b.st.slow > 0, root: b.st.root > 0, blind: b.st.blind > 0, mark: b.st.mark > 0, hurt: b.hitFlash > 0.15, soldiers: this.combat.aliveSoldiers().length, bossDead: b.state === 'dead' });
     const act = b.actionLabel ? b.actionLabel() : '';
     if (act !== this.lastBossAction) {
       this.lastBossAction = act;
@@ -842,10 +851,18 @@ export class Game {
     if (t.members[i].ko) { ui.banner('find', '💔', `${HEROES.find((h) => h.id === t.members[i].id).name} está fuera de combate`); return false; }
     if (t.switchT > 0) return false;
     if (this.player.scripted) return false;
+    // el jugador pasa a controlar al compañero elegido, en su sitio; el héroe que deja sigue luchando donde estaba
+    const ally = this.allies.list.find((a) => a.member === t.members[i]);
+    const oldPos = this.player.pos.clone(), oldFacing = this.player.facing;
     t.active = i;
     t.switchT = TEAM.switchCd;
     t.graceT = TEAM.switchGrace;
     this.swapHero(t.members[i].id);
+    if (ally) { this.player.pos.copy(ally.pos); this.player.facing = ally.facing; }
+    const before = new Set(this.allies.list);
+    this.allies.sync();
+    // el héroe que el jugador deja (si sigue en pie) se queda luchando donde estaba
+    for (const a of this.allies.list) if (!before.has(a)) { a.pos.copy(oldPos); a.facing = oldFacing; }
     ui.battleLog(`🔁 Entra ${this.hero.name}`, 'hero');
     ui.setTeamHud(t.members, t.active, (k) => this.switchTeamTo(k));
     return true;
@@ -1040,12 +1057,63 @@ export class Game {
       this.team.graceT = TEAM.switchGrace * 1.6;
     }
   }
+  // Un compañero controlado por la máquina cae
+  onAllyDown(a) {
+    ui.battleLog(`💔 ${a.def.name} cae`, 'hit');
+    ui.banner('find', `💔 ¡${a.def.name} ha caído!`, 'Sigue luchando con el resto del equipo');
+    ui.setTeamHud(this.team.members, this.team.active, (i) => this.switchTeamTo(i));
+    if (!this.team.anyAlive) this.teamDefeated();
+  }
+  // Objetivos que pueden atacar el jefe y sus soldados: el héroe del jugador y los compañeros en pie
+  heroTargets() {
+    const p = this.player;
+    const out = [{ pos: p.pos, R: p.R, H: p.H, isPlayer: true }];
+    if (this.boss && this.team.on) for (const a of this.allies.alive) out.push({ pos: a.pos, R: a.R, H: a.H, ally: a });
+    return out;
+  }
+  hitHero(h, units, from) {
+    if (h && h.ally) this.allies.hit(h.ally, units, from);
+    else this.hitPlayer(units, from);
+  }
+  // Victoria: jefe derrotado y ningún soldado en pie
+  updateVictory(dt) {
+    const b = this.boss;
+    if (!b || this.bossDone) return;
+    const left = this.combat.aliveSoldiers().length;
+    const bossDead = b.state === 'dead';
+    if (this.victoryT > 0) {
+      this.victoryT -= dt;
+      if (this.victoryT <= 0) this.finishBoss();
+      return;
+    }
+    if (bossDead && b.deathT > 1.1 && left === 0) {
+      this.allyWin = true;
+      this.player.celebrate = true;
+      this.player.locked = true;
+      ui.alert('🏆 ¡JEFE DE ZONA DERROTADO!');
+      ui.battleLog('🏆 ¡Jefe de Zona derrotado!', 'hero');
+      audio.found();
+      this.victoryT = 2.6;
+      return;
+    }
+    const msg = bossDead && left ? 'boss' : !bossDead && left === 0 && this.foesMsg === '' ? 'soldiers' : this.foesMsg;
+    if (msg !== this.foesMsg) {
+      this.foesMsg = msg;
+      if (msg === 'boss') ui.banner('find', `${b.icon} ¡${b.name} ha caído!`, `Quedan ${left} soldado${left === 1 ? '' : 's'}: derrótalos para ganar`);
+      if (msg === 'soldiers') ui.banner('find', '⚔️ Soldados derrotados', `Solo queda ${b.name}`);
+    }
+  }
   teamDefeated() {
+    if (this.boss) this.boss.victory = true;
+    this.allies.clear();
     ui.banner('find', '💔 ¡El equipo ha caído!', `${this.boss ? this.boss.name : 'El jefe'} sigue en pie. Prueba otra combinación de héroes.`);
     this.end(false, 'El equipo ha sido derrotado');
   }
   finishBoss() {
     this.bossDone = true;
+    this.allies.clear();
+    this.allyWin = false;
+    this.player.celebrate = false;
     Save.markBoss(this.mission.boss);
     this.saveHp(true);
     this.addScore(300);
@@ -1235,7 +1303,8 @@ export class Game {
     }
     if (this.boss && this.state === 'playing') {
       this.boss.update(envDt);
-      if (this.boss.state === 'dead' && this.boss.deathT > 1.1 && !this.bossDone) this.finishBoss();
+      this.allies.update(dtg); // los otros dos héroes del equipo combaten a la vez
+      this.updateVictory(real);
     }
     if (this.ally && this.state === 'playing') this.ally.update(dtg);
     // derrota del jefe: estallido de victoria
@@ -1567,6 +1636,11 @@ export class Game {
       if (!sp) continue;
       bars.push({ t, x: sp.x, y: sp.y, pct: t.hp / t.hpMax, label: t.prop ? t.label : t.cat.name, prop: !!t.prop, big: t.kind === 'bruto' });
     }
+    // compañeros del equipo en el combate de jefe: barra verde con su nombre
+    for (const a of this.allies.list) {
+      const sp = this.screenOf(a.pos, a.H + 0.4);
+      if (sp) bars.push({ t: a, x: sp.x, y: sp.y, pct: a.member.hp / (a.member.max || 100), label: a.def.name, ally: true });
+    }
     ui.npcBars(bars);
     // anillo de recarga de la habilidad seleccionada
     const a = this.abilities[this.abIndex];
@@ -1610,6 +1684,7 @@ export class Game {
     this.saveHp(true);
     this.ended = true;
     this.success = success;
+    this.teamLost = !success && !!this.boss && this.team.on && !this.team.anyAlive; // derrota del equipo ante el jefe
     this.state = 'ending';
     this.endT = 0;
     this.skills.reset();
@@ -1651,7 +1726,7 @@ export class Game {
       level: this.mission, success: this.success, rescued: d, total, people: this.stats.people, animals: this.stats.animals,
       score: this.score, eco: this.stats.eco, time: this.t, stars: this.success ? Math.max(1, stars) : stars, learned, heroName: this.hero.name,
       reward: res.newReward ? ITEMS[res.reward] : null, unlockedNext: res.unlockedNext, nextLevel: LEVELS[idx + 1] || null, newBadges: res.newBadges,
-      hasNext: this.success && idx < LEVELS.length - 1,
+      hasNext: this.success && idx < LEVELS.length - 1, teamLost: !!this.teamLost,
     });
     this.player.celebrate = false;
     this.player.model.setVisible(true);

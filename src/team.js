@@ -45,7 +45,7 @@ export class Team {
     this.switchT = Math.max(0, this.switchT - dt);
     this.graceT = Math.max(0, this.graceT - dt);
     this.members.forEach((m, i) => {
-      if (i !== this.active && !m.ko) m.hp = Math.min(m.max, m.hp + TEAM.benchRegen * dt);
+      if (i !== this.active && !m.ko && !this.allOnField) m.hp // con los tres héroes en el campo nadie descansa en reserva = Math.min(m.max, m.hp + TEAM.benchRegen * dt);
     });
   }
 }

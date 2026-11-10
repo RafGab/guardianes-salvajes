@@ -5,6 +5,7 @@ import { bossScale, ALLY_SCALE, modelUrl } from './scale.js';
 import { newStatus, tickStatus } from './combat.js';
 import { BOSS_ATTACKS } from './skills/config.js';
 import { SIGS } from './skills/bossatk.js';
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 /* ------------------------------------------------------------------ */
 /*  Helpers de geometría/material para los modelos de jefes            */
@@ -326,7 +327,8 @@ function buildCataclismoModel() {
 
 // --- Modelos con escala maestra (scale.js): GLB real si ya está cargado; si no, el procedural de reserva ---
 function glbModel(gltf, S) {
-  const model = gltf.scene.clone(true);
+  // SkeletonUtils.clone: copia también el esqueleto (un clone() normal dejaría la malla atada a los huesos del original)
+  const model = cloneSkinned(gltf.scene);
   const { root: nroot, naturalH } = normalizeModel(model); // pies en y=0, centrado, altura 1
   const root = new THREE.Group();
   const body = new THREE.Group();
@@ -336,7 +338,15 @@ function glbModel(gltf, S) {
   body.add(yawHolder);
   root.add(body);
   const mats = prepareMeshes(model);
-  return { root, body, limbs: [], mats, flies: !!S.fly, naturalH, unit: S.height, source: 'glb' };
+  model.traverse((o) => { if (o.isSkinnedMesh) o.frustumCulled = false; });
+  // ESQUELETO Y ANIMACIONES (mismo sistema que los héroes: tools/rig.mjs + tools/make_boss_anims.mjs)
+  let mixer = null;
+  const clips = {};
+  if (gltf.animations && gltf.animations.length) {
+    mixer = new THREE.AnimationMixer(model);
+    for (const c of gltf.animations) clips[c.name] = c;
+  }
+  return { root, body, limbs: [], mats, flies: !!S.fly, naturalH, unit: S.height, source: 'glb', mixer, clips };
 }
 
 function proceduralModel(builder, S) {
@@ -404,6 +414,11 @@ export class BossBase {
     this.invuln = 0.6;
     this.hitFlash = 0;
     this.deathT = 0;
+    // animación con esqueleto (si el GLB la trae) y objetivo entre los héroes del equipo
+    this.mx = this.model.mixer;
+    this.clipName = ''; this.action = null; this.hitAnimT = 0;
+    this.target = null; this.retargetT = 0; this.strafeDir = Math.random() < 0.5 ? -1 : 1; this.strafeT = 0;
+    this.victory = false; this.moving = 0;
 
     const ringGeo = new THREE.RingGeometry(0.1, 1, 40);
     this.ringMesh = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
@@ -422,9 +437,70 @@ export class BossBase {
 
   get radius() { return this.S.radius; }
 
-  // Punto al que apunta: el héroe, o un punto cercano si está cegado
+  /* ---------- objetivo: cualquiera de los héroes que siguen en pie (el del jugador o sus compañeros) ---------- */
+  heroes() { return this.ctx.game.heroTargets ? this.ctx.game.heroTargets() : [{ pos: this.ctx.player.pos, R: this.ctx.player.R, H: this.ctx.player.H }]; }
+  pickTarget(dt) {
+    this.retargetT -= dt;
+    const hs = this.heroes();
+    if (this.target && (!hs.includes(this.target) && !hs.some((h) => h.pos === this.target.pos))) this.target = null;
+    if (!this.target || this.retargetT <= 0) {
+      // el más cercano casi siempre; a veces cambia a otro para presionar a todo el equipo
+      const sorted = hs.slice().sort((a, b) => Math.hypot(a.pos.x - this.pos.x, a.pos.z - this.pos.z) - Math.hypot(b.pos.x - this.pos.x, b.pos.z - this.pos.z));
+      this.target = sorted.length > 1 && Math.random() < 0.3 ? sorted[1] : sorted[0] || null;
+      this.retargetT = rnd(3.5, 6);
+    }
+    return this.target;
+  }
+  get tpos() { return (this.target && this.target.pos) || this.ctx.player.pos; }
+  // golpe a todos los héroes dentro de un radio (el jugador y sus compañeros, cada uno con su vida)
+  hitHeroes(radius, units, knock = 0) {
+    for (const h of this.heroes()) {
+      const dx = h.pos.x - this.pos.x, dz = h.pos.z - this.pos.z, d = Math.hypot(dx, dz);
+      if (d >= radius + (h.R || 0.4)) continue;
+      if (this.ctx.game.hitHero) this.ctx.game.hitHero(h, units, this.pos); else this.ctx.game.hitPlayer(units, this.pos);
+      if (knock && h.isPlayer) { this.ctx.player.vx = (dx / (d || 1)) * knock; this.ctx.player.vz = (dz / (d || 1)) * knock; }
+      else if (knock && h.ally) { h.ally.vel.x += (dx / (d || 1)) * knock * 0.6; h.ally.vel.z += (dz / (d || 1)) * knock * 0.6; }
+    }
+  }
+
+  /* ---------- animación con esqueleto ---------- */
+  playClip(name, { once = false, fade = 0.25, speed = 1, restart = false } = {}) {
+    if (!this.mx) return;
+    const clip = this.model.clips[name];
+    if (!clip) return;
+    if (this.clipName !== name || restart) {
+      const next = this.mx.clipAction(clip);
+      next.reset();
+      next.setLoop(once ? THREE.LoopOnce : THREE.LoopRepeat, Infinity);
+      next.clampWhenFinished = once;
+      next.fadeIn(fade).play();
+      if (this.action && this.action !== next) this.action.fadeOut(fade);
+      this.action = next; this.clipName = name;
+    }
+    this.action.timeScale = speed;
+  }
+  updateAnim(dt) {
+    if (!this.mx) return;
+    this.hitAnimT = Math.max(0, this.hitAnimT - dt);
+    const s = this.state, sp = 0.85 + (this.phase - 1) * 0.15;
+    if (s === 'dead') this.playClip('death', { once: true, fade: 0.2 });
+    else if (this.victory) this.playClip('cele', { fade: 0.4 });
+    else if (s === 'enter') this.playClip('walk', { speed: 0.9 });
+    else if (this.introHold > 0 || s === 'enrage') this.playClip('cele', { fade: 0.3 });
+    else if (s === 'tg_charge') this.playClip('charge', { speed: 0.35 });   // se agacha y escarba antes de embestir
+    else if (s === 'charge') this.playClip('charge', { speed: 1.3 });
+    else if (s === 'tg_slam') this.playClip('attack', { once: true, speed: 0.5, fade: 0.15 }); // carga el golpe (alza brazos / patas)
+    else if (s === 'slam') this.playClip('attack', { once: true, speed: 1.4, fade: 0.05 });
+    else if (s === 'sig') this.playClip('attack', { speed: 0.8 });
+    else if (this.hitAnimT > 0) this.playClip('hit', { once: true, fade: 0.08 });
+    else if (this.moving > 0.4) this.playClip(this.moving > 3 ? 'run' : 'walk', { speed: clamp(0.7 + this.moving * 0.18, 0.7, 1.5) });
+    else this.playClip('idle', { fade: 0.35 });
+    this.mx.update(dt);
+  }
+
+  // Punto al que apunta: el héroe objetivo, o un punto cercano si está cegado
   aimPoint() {
-    const p = this.ctx.player.pos;
+    const p = this.tpos;
     const j = this.st.blind > 0 ? 5.5 : 0;
     return new THREE.Vector3(p.x + rnd(-j, j), p.y, p.z + rnd(-j, j));
   }
@@ -467,6 +543,7 @@ export class BossBase {
     this.hitFlash = quiet ? Math.max(this.hitFlash, 0.1) : 0.25;
     if (!quiet) {
       this.invuln = 0.35;
+      if (this.state === 'idle' || this.state === 'recover') this.hitAnimT = 0.45; // reacción al impacto (animación 'hit')
       this.ctx.chase.shake(0.18);
       this.ctx.audio.noiseBurst(0.2, 260, 0.35, 'lowpass');
       for (let i = 0; i < 10; i++) this.ctx.fx.sparkle(this.pos.x + rnd(-0.6, 0.6), this.pos.y + 1.2, this.pos.z + rnd(-0.6, 0.6), this.color, 1.6);
@@ -479,7 +556,7 @@ export class BossBase {
       this.state = 'enrage';
       this.stateT = 0;
       this.invuln = 1.0;
-      this.ctx.game.combat.spawnMinions(newPhase === 2 ? 2 : 3, this.pos); // refuerzos ligeros
+      // (sin refuerzos: el jefe lucha con sus 2-3 soldados de la presentación; la victoria exige derrotarlos a todos)
       this.ctx.ui.alert(newPhase === 3 ? `${this.icon} ¡${this.name} desata su furia final!` : `${this.icon} ¡${this.name} se enfurece!`, 2600);
       this.ctx.audio.alert();
     }
@@ -498,8 +575,18 @@ export class BossBase {
   }
 
   update(dtRaw) {
+    const prev = this.pos.clone();
+    if (this.state !== 'dead' && !this.victory) this.pickTarget(dtRaw);
+    this.updateLogic(dtRaw);
+    // velocidad real (m/s) para elegir entre reposo, caminar y correr
+    const v = dtRaw > 0 ? Math.hypot(this.pos.x - prev.x, this.pos.z - prev.z) / dtRaw : 0;
+    this.moving = damp(this.moving, v, 8, dtRaw);
+    this.updateAnim(dtRaw * (this.st.slow > 0 ? this.st.slowF : 1));
+  }
+
+  updateLogic(dtRaw) {
     const { ctx } = this;
-    const { player } = ctx;
+    const player = { pos: this.tpos }; // el héroe al que persigue (jugador o compañero)
     tickStatus(this.st, dtRaw);
     const dt = dtRaw * (this.st.slow > 0 ? this.st.slowF : 1); // ralentizado: todo va más lento
     const rooted = this.st.root > 0; // inmovilizado: no se desplaza
@@ -520,7 +607,7 @@ export class BossBase {
     if (this.state === 'dead') {
       this.deathT += dt;
       this.model.root.position.y = this.groundY(this.pos.x, this.pos.z) + this.flyHeight * Math.max(0, 1 - this.deathT * 0.8) - Math.min(this.S.height * 0.4, this.deathT * this.S.height * 0.18);
-      this.model.root.rotation.z = Math.min(1.1, this.deathT * 0.9);
+      if (!this.mx) this.model.root.rotation.z = Math.min(1.1, this.deathT * 0.9); // con esqueleto lo hace la animación 'death'
       this.ringMesh.visible = false;
       this.arrowMesh.visible = false;
       this.syncTransform(true);
@@ -551,10 +638,20 @@ export class BossBase {
     if (this.state === 'idle') {
       faceTo(player.pos.x, player.pos.z);
       const d = Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z);
-      if (!rooted && d > Math.max(7, this.reach + 2.5)) {
+      if (!rooted && d > 0.01) {
+        // nunca estático: se acerca si está lejos, retrocede si está encima y, a media distancia, rodea al héroe
         const nx = (player.pos.x - this.pos.x) / d, nz = (player.pos.z - this.pos.z) / d;
-        this.pos.x += nx * 2.2 * speedMul * dt;
-        this.pos.z += nz * 2.2 * speedMul * dt;
+        const want = Math.max(6, this.reach + 1.5);
+        let ax = 0, az = 0;
+        if (d > want + 1.5) { ax = nx * 2.6; az = nz * 2.6; }
+        else if (d < want - 2) { ax = -nx * 1.4; az = -nz * 1.4; }
+        this.strafeT -= dt;
+        if (this.strafeT <= 0) { this.strafeT = rnd(2, 4); if (Math.random() < 0.45) this.strafeDir *= -1; }
+        ax += -nz * this.strafeDir * 1.6; az += nx * this.strafeDir * 1.6;
+        this.pos.x += ax * speedMul * dt;
+        this.pos.z += az * speedMul * dt;
+        const d0 = Math.hypot(this.pos.x - this.arena.x, this.pos.z - this.arena.z), lim = this.arena.r * 0.92;
+        if (d0 > lim) { this.pos.x = this.arena.x + ((this.pos.x - this.arena.x) / d0) * lim; this.pos.z = this.arena.z + ((this.pos.z - this.arena.z) / d0) * lim; this.strafeDir *= -1; }
       }
       this.cd -= dt;
       if (this.cd <= 0) {
@@ -617,9 +714,9 @@ export class BossBase {
         this.pos.z = this.arena.z + nz * this.arena.r;
         this.state = 'recover'; this.stateT = 0;
       }
-      const dp = Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z);
-      if (dp < this.hitDist && this.stateT > 0.08) {
-        ctx.game.hitPlayer(1, this.pos);
+      // la embestida alcanza a cualquier héroe que esté en su camino (jugador o compañero)
+      if (this.stateT > 0.08 && this.heroes().some((h) => Math.hypot(h.pos.x - this.pos.x, h.pos.z - this.pos.z) < this.hitDist + (h.R || 0.4) * 0.5)) {
+        this.hitHeroes(this.hitDist, 1);
         this.state = 'recover'; this.stateT = 0;
       }
       if (this.stateT > 1.3) { this.state = 'recover'; this.stateT = 0; }
@@ -642,12 +739,7 @@ export class BossBase {
     if (this.state === 'slam') {
       this.ringMesh.visible = false;
       if (this.stateT < 0.12) {
-        const dp = Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z);
-        if (dp < this.slamRadius) {
-          const nx = (player.pos.x - this.pos.x) / (dp || 1), nz = (player.pos.z - this.pos.z) / (dp || 1);
-          ctx.game.hitPlayer(1, this.pos);
-          player.vx = nx * 10; player.vz = nz * 10;
-        }
+        if (this.stateT - dt <= 0) this.hitHeroes(this.slamRadius, 1, 10); // la onda golpea a todos los héroes dentro (una vez)
         ctx.chase.shake(0.3);
         for (let i = 0; i < 16; i++) {
           const a = Math.random() * TAU, r = Math.random() * this.slamRadius;

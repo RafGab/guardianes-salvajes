@@ -3,6 +3,7 @@ import { clamp, damp } from './utils.js';
 import { terrainH } from './terrain.js';
 import { MINIONS, TEAM, NPC_KINDS } from './skills/config.js';
 import { ui } from './ui.js';
+import { Soldier } from './soldier.js';
 
 // COMBATE COMPARTIDO: objetivos (jefes y esbirros), estados (empuje, ralentizar, inmovilizar, cegar, marcar),
 // esbirros ligeros y proyectiles. Lo usan las habilidades de los héroes y los ataques de los jefes.
@@ -19,119 +20,6 @@ export function tickStatus(st, dt) {
   st.root = Math.max(0, st.root - dt);
   st.blind = Math.max(0, st.blind - dt);
   st.mark = Math.max(0, st.mark - dt);
-}
-
-/* ------------------------------------------------------------------ */
-/*  Esbirro ligero: se puede atraer, empujar, ralentizar, marcar...    */
-/* ------------------------------------------------------------------ */
-class Minion {
-  constructor(combat, x, z, kind = 'esbirro') {
-    this.combat = combat;
-    this.heavy = false;
-    this.npc = true;
-    this.kind = kind;
-    this.cat = NPC_KINDS[kind] || NPC_KINDS.esbirro;
-    this.radius = MINIONS.radius * this.cat.scale;
-    this.barH = 1.35 * this.cat.scale;
-    this.pos = new THREE.Vector3(x, terrainH(x, z), z);
-    this.vel = new THREE.Vector3();
-    this.hp = this.cat.hp;
-    this.hpMax = this.cat.hp;
-    this.flash = 0;
-    this.st = newStatus();
-    this.pullT = 0;
-    this.pullTo = new THREE.Vector3();
-    this.pullSpeed = 0;
-    this.hitCd = 0;
-    this.t = Math.random() * 10;
-    this.dead = false;
-    const body = new THREE.MeshStandardMaterial({ color: 0x3a2a4a, roughness: 0.6, emissive: 0x2a0a3a, emissiveIntensity: 0.6, flatShading: true });
-    const eye = new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff3a5a).multiplyScalar(2) });
-    this.group = new THREE.Group();
-    const b = new THREE.Mesh(new THREE.IcosahedronGeometry(0.5, 1), body);
-    b.position.y = 0.55;
-    b.castShadow = true;
-    this.group.add(b);
-    for (const s of [-1, 1]) { const e = new THREE.Mesh(new THREE.SphereGeometry(0.1, 8, 6), eye); e.position.set(s * 0.17, 0.66, 0.4); this.group.add(e); }
-    for (const s of [-1, 1]) { const h = new THREE.Mesh(new THREE.ConeGeometry(0.1, 0.32, 6), body); h.position.set(s * 0.26, 1.0, 0); h.rotation.z = -s * 0.4; this.group.add(h); }
-    this.markRing = new THREE.Mesh(new THREE.RingGeometry(0.7, 0.85, 24), new THREE.MeshBasicMaterial({ color: 0xffd24a, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthWrite: false }));
-    this.markRing.rotation.x = -Math.PI / 2;
-    this.markRing.position.y = 0.1;
-    this.markRing.visible = false;
-    this.group.add(this.markRing);
-    this.bodyMat = body;
-    this.group.scale.setScalar(this.cat.scale);
-    combat.scene.add(this.group);
-    this.group.position.copy(this.pos);
-  }
-
-  update(dt) {
-    const c = this.combat;
-    const { player } = c.game;
-    this.t += dt;
-    tickStatus(this.st, dt);
-    this.hitCd = Math.max(0, this.hitCd - dt);
-    const slow = this.st.slow > 0 ? this.st.slowF : 1;
-    if (this.pullT > 0) {
-      // atraído por la lengua / la cola: ignora su IA
-      this.pullT -= dt;
-      const d = new THREE.Vector3().subVectors(this.pullTo, this.pos);
-      d.y = 0;
-      const l = d.length();
-      if (l > 0.6) this.pos.addScaledVector(d, Math.min(1, (this.pullSpeed * dt) / l));
-    } else if (this.st.root <= 0) {
-      let dx = player.pos.x - this.pos.x, dz = player.pos.z - this.pos.z;
-      const l = Math.hypot(dx, dz) || 1;
-      if (this.st.blind > 0) { dx = Math.sin(this.t * 2.3) * 3; dz = Math.cos(this.t * 1.9) * 3; } // cegado: deambula
-      const k = (this.cat.speed * slow) / (Math.hypot(dx, dz) || 1);
-      this.pos.x += dx * k * dt;
-      this.pos.z += dz * k * dt;
-    }
-    // empuje residual
-    this.pos.x += this.vel.x * dt;
-    this.pos.z += this.vel.z * dt;
-    this.vel.multiplyScalar(Math.max(0, 1 - 4 * dt));
-    this.pos.y = terrainH(this.pos.x, this.pos.z);
-    // contacto con el héroe
-    const dpx = player.pos.x - this.pos.x, dpz = player.pos.z - this.pos.z;
-    if (this.hitCd <= 0 && Math.hypot(dpx, dpz) < MINIONS.contact + player.R && Math.abs(player.pos.y - this.pos.y) < 1.8) {
-      this.hitCd = 1.4;
-      c.game.hitPlayer(this.cat.hit, this.pos);
-      const l = Math.hypot(dpx, dpz) || 1;
-      player.vx += (dpx / l) * 5; player.vz += (dpz / l) * 5;
-    }
-    this.group.position.copy(this.pos);
-    this.group.position.y += Math.sin(this.t * 5) * 0.08;
-    this.group.rotation.y = Math.atan2(dpx, dpz);
-    // destello de impacto
-    this.flash = Math.max(0, this.flash - dt);
-    this.bodyMat.emissive.setHex(this.flash > 0 ? 0xffffff : 0x2a0a3a);
-    this.bodyMat.emissiveIntensity = this.flash > 0 ? 1.2 : 0.6;
-    this.markRing.visible = this.st.mark > 0;
-    if (this.markRing.visible) this.markRing.rotation.z += dt * 3;
-  }
-
-  // Daño recibido (lo llama Combat.damage): destello y número
-  hurt(n) {
-    if (this.dead) return;
-    this.hp = Math.max(0, this.hp - n);
-    this.flash = 0.12;
-    if (this.hp <= 0) this.kill();
-  }
-
-  // Derrota: deja de combatir, explota en chispas, da puntos y a veces suelta una bebida
-  kill() {
-    if (this.dead) return;
-    this.dead = true;
-    this.hp = 0;
-    const c = this.combat;
-    c.vfx.sparks(this.pos.x, this.pos.y + 0.6, this.pos.z, 0xb070ff, 18, 3.4);
-    c.vfx.dust(this.pos.x, this.pos.y + 0.2, this.pos.z, 6, 1.4);
-    if (c.vfx.ring) c.vfx.ring(this.pos.x, null, this.pos.z, { r0: 0.3, r1: 1.8 * this.cat.scale, dur: 0.45, color: 0xb070ff });
-    c.game.addScore(this.cat.score);
-    c.scene.remove(this.group);
-    if (c.game.onNpcDefeated) c.game.onNpcDefeated(this);
-  }
 }
 
 /* ------------------------------------------------------------------ */
@@ -336,18 +224,25 @@ export class Combat {
   }
 
   /* ---------- esbirros ---------- */
+  // SOLDADOS del jefe de zona (src/soldier.js): esqueleto propio, animaciones, IA y barra de vida.
+  // around: punto cerca del que aparecen (por defecto, junto al jefe, uno a cada lado)
   spawnMinions(n, around, kind = null) {
     const b = this.game.boss;
-    const arena = b ? b.arena : { x: around.x, z: around.z, r: 12 };
+    const c = around || (b ? b.pos : this.game.player.pos);
+    const color = b ? b.color : 0xb070ff;
     for (let i = 0; i < n && this.minions.filter((m) => !m.dead).length < MINIONS.max; i++) {
-      const a = Math.random() * TAU, r = arena.r * rnd(0.55, 0.95);
-      // categoría: en la fase final del jefe aparece a veces un bruto (más vida, más lento, golpea más fuerte)
-      const k = kind || (b && b.phase >= 3 && Math.random() < 0.4 ? 'bruto' : 'esbirro');
-      const m = new Minion(this, arena.x + Math.cos(a) * r, arena.z + Math.sin(a) * r, k);
+      const a = (b ? b.facing : 0) + (i - (n - 1) / 2) * 1.1 + Math.PI * 0.5 * (i % 2 ? 1 : -1) * 0.4, r = (b ? b.radius : 0) + 2.4 + i * 0.6;
+      const k = kind || (i === n - 1 && n >= 3 ? 'bruto' : 'esbirro'); // el tercero es un bruto (más vida, más fuerte)
+      const m = new Soldier(this, c.x + Math.sin(a) * r, c.z + Math.cos(a) * r, NPC_KINDS[k] || NPC_KINDS.esbirro, { color, accent: 0xff4a3a, kind: k });
+      // soldados del jefe: más resistentes que un NPC suelto (+10 % por zona), para que el combate dure
+      if (b) { const k2 = 3 * (1 + ((this.game.mission && this.game.mission.n) || 1) * 0.1); m.hp = m.hpMax = Math.round(m.hpMax * k2); }
       this.minions.push(m);
-      this.vfx.sparks(m.pos.x, m.pos.y + 0.5, m.pos.z, 0xb070ff, 8, 2.5);
+      this.vfx.sparks(m.pos.x, m.pos.y + 0.5, m.pos.z, color, 12, 2.5);
+      if (this.vfx.ring) this.vfx.ring(m.pos.x, null, m.pos.z, { r0: 0.3, r1: 1.8, dur: 0.5, color });
     }
   }
+  // soldados vivos (para la condición de victoria y la interfaz)
+  aliveSoldiers() { return this.minions.filter((m) => !m.dead); }
 
   /* ---------- proyectiles ---------- */
   // owner: 'boss' (daña al héroe) | 'hero' (daña a los enemigos). light = se puede desviar con viento.
@@ -389,15 +284,7 @@ export class Combat {
     const g = this.game;
     const { player } = g;
     this.frame++;
-    // esbirros: aparecen mientras dura el combate de jefe
-    if (g.boss && g.boss.state !== 'dead' && g.boss.state !== 'enter') {
-      this.spawnT += dt;
-      if (this.spawnT >= (this.firstDone ? MINIONS.spawnEvery : MINIONS.firstAt)) {
-        this.spawnT = 0;
-        this.firstDone = true;
-        this.spawnMinions(g.boss.phase >= 2 ? 2 : 1, player.pos);
-      }
-    } else { this.spawnT = 0; this.firstDone = false; }
+    // (los soldados ya no aparecen sin fin: el jefe llega con 2-3 al empezar y hay que derrotarlos a todos)
     for (let i = this.minions.length - 1; i >= 0; i--) {
       const m = this.minions[i];
       if (m.dead) { this.minions.splice(i, 1); continue; }

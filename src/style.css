@@ -600,6 +600,9 @@ body.bossfight .battlelog { display: flex; }
 .npcbar.prop .nm { color: #f0e2c0; }
 .npcbar .bar { height: 7px; border-radius: 4px; background: rgba(0,0,0,.65); border: 1px solid rgba(255,255,255,.4); overflow: hidden; }
 .npcbar .bar i { display: block; height: 100%; background: linear-gradient(180deg, #ff8aa0, #c41a4a); transition: width .12s linear; }
+.npcbar.ally .nm { color: #c8ffd8; }
+.npcbar.ally .bar i { background: linear-gradient(180deg, #8affb0, #1fa85a); }
+.chip.foes { background: rgba(160,30,40,.75); }
 .npcbar.prop .bar i { background: linear-gradient(180deg, #f0d090, #a87a30); }
 
 /* ---------- JEFE: título y sacudida al recibir daño ---------- */
