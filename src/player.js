@@ -254,7 +254,7 @@ export class Player {
       if (this.model) {
         this.model.root.position.copy(pos);
         this.model.root.rotation.y = this.facing;
-        this.model.update(dt, { speed: 0, grounded: false, vy: 4, power: 0.6, carrying: this.carrying.length });
+        this.model.update(dt, { speed: 0, grounded: false, vy: 4, power: 0.6, carrying: 0 }); // los rescatados van en burbujas: el héroe no los lleva encima
         this.applyPose();
       }
       return;
@@ -425,7 +425,7 @@ export class Player {
         flying: !!fly, flyLean: fly ? fly.lean * Math.min(1, hs / Math.max(1, fly.speed)) : 0,
         dashing: this.dashT > 0,
         surfing: this.surfing,
-        carrying: this.carrying.length,
+        carrying: 0, // los rescatados van en sus burbujas: el héroe ya no adopta la postura de cargar
         rescue: this.rescueT,
         power: Math.max(this.powerAnim, this.swingT > 0 ? 0.5 : 0),
         celebrate: this.celebrate,

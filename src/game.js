@@ -22,6 +22,7 @@ import { Bag, healAmount } from './health.js';
 import { Pickups } from './pickups.js';
 import { WeaponSystem } from './weapons/system.js';
 import { RescuePortal } from './portal.js';
+import { RescueBubbles } from './rescue.js';
 const HERO_SKILLS_CD = (id) => (HERO_SKILLS[id] && HERO_SKILLS[id].flight ? HERO_SKILLS[id].flight.cd : 4);
 import { IS_TOUCH } from './platform.js';
 const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
@@ -99,6 +100,7 @@ export class Game {
     this.skills = new HeroSkills(this);
     this.weapons = new WeaponSystem(this); // arma 3D de cada héroe (botón ARMA), unida al hueso de su mano
     this.portal = new RescuePortal(this);  // portal de rescate del refugio: su aspecto depende del héroe activo
+    this.bubbles = new RescueBubbles(this); // rescate con burbujas de energía (una por víctima, siguen al héroe)
     this.team = new Team();          // equipo del combate de jefe (vida por héroe, cambio en combate)
     this.bag = new Bag();            // mochila de recuperación (bebidas y botiquines)
     this.pickups = new Pickups(this); // bebidas y botiquines repartidos por el mapa
@@ -183,6 +185,7 @@ export class Game {
 
   /* ---------- víctimas ---------- */
   clearVictims() {
+    if (this.bubbles) this.bubbles.clear();
     for (const v of this.victims) {
       if (v.root.parent) v.root.parent.remove(v.root);
     }
@@ -622,21 +625,23 @@ export class Game {
       ui.banner('find', '🎒', `Ya llevas a ${player.capacity}. ¡Llévalos al refugio primero!`);
       return;
     }
+    // RESCATE CON BURBUJA: sin agacharse ni cargarla; la burbuja aparece al instante alrededor de la víctima
     player.facing = Math.atan2(v.wpos.x - player.pos.x, v.wpos.z - player.pos.z);
-    player.startRescue(v);
+    const h = player.pos.clone(); h.y += player.H * 0.6;
+    const t = v.wpos.clone(); t.y += (v.height || 1) * 0.5;
+    this.vfx2.beam(h, t, { r: 0.07, color: 0x9ae8ff, opacity: 0.8, life: 0.3 }); // rayo de energía del héroe a la víctima
+    this.pickup(v);
   }
 
   pickup(v) {
-    const { player, fx } = this;
-    if (!v || v.state !== 'waiting') return;
+    const { player } = this;
+    if (!v || v.state !== 'waiting' || this.bubbles.has(v)) return; // nunca dos burbujas ni dos rescates de la misma víctima
     v.state = 'carried';
     v.setMode('carried');
     v.marker.visible = false;
     player.carrying.push(v);
-    this.reanchor();
+    this.bubbles.add(v); // la víctima va en su propia burbuja (el héroe ya no la lleva encima)
     audio.pick();
-    const p = v.wpos;
-    for (let i = 0; i < 16; i++) fx.sparkle(p.x, p.y + 0.8, p.z, 0xffe070, 2.5);
     this.chase.fovKick = -4;
     ui.setCarry(player.carrying, player.capacity);
     ui.banner('good', '🐾 ¡Te sigo!', `${v.info.label} a salvo contigo. ¡Al refugio!`);
@@ -646,32 +651,13 @@ export class Game {
     this.score += 10;
   }
 
-  reanchor() {
-    const { player } = this;
-    player.carrying.forEach((v, i) => {
-      const anchor = player.model.anchorFor(i);
-      anchor.attach(v.root);
-      v.root.scale.set(1, 1, 1);
-      const h = v.height;
-      if (i === 0) {
-        v.root.position.set(v.info.animal ? 0 : h * 0.5, v.info.animal ? -0.1 : 0.02, 0);
-        v.root.rotation.set(0, 0, v.info.animal ? 0 : Math.PI / 2);
-      } else if (i === 1) {
-        v.root.position.set(0, -0.35, -0.12);
-        v.root.rotation.set(0, 0, 0);
-      } else {
-        v.root.position.set(0, -0.1 - (i - 2) * 0.15, 0);
-        v.root.rotation.set(0, 0.5 * i, 0);
-      }
-    });
-  }
-
   deliverOne() {
     const { player, fx, scene } = this;
     const v = player.carrying.shift();
     if (!v) return;
     scene.attach(v.root);
     v.root.scale.set(1, 1, 1);
+    this.bubbles.release(v, CFG.SAFE.y + 0.02); // la burbuja se expande, destella y la suelta en el suelo
     v.root.rotation.set(0, 0, 0);
     const spot = this.safeSpots[this.delivered % this.safeSpots.length];
     v.walkTo = spot;
@@ -687,7 +673,6 @@ export class Game {
     ui.setRescued(this.delivered, this.total);
     ui.setScore(this.score);
     ui.setCarry(player.carrying, player.capacity);
-    this.reanchor();
     ui.banner('good', '❤️ ¡Rescate completado!', `${v.info.label} está a salvo${urgentBonus ? ' · ¡bonus por urgencia!' : ''}`);
     audio.success();
     const p = player.pos;
@@ -1238,6 +1223,7 @@ export class Game {
     if (this.state === 'playing') this.skills.update(dtg); // habilidades del héroe (mueven al héroe antes de su actualización)
     player.update(dtg, move, chase.yaw);
     this.weapons.update(dtg); // después de animar al héroe: el arma sigue al hueso de la mano
+    this.bubbles.update(dtg); // las burbujas de los rescatados siguen al héroe (después de que se mueva)
     this.handlePlayerEvents();
     player.events.length = 0;
     if (this.hazards && (this.state === 'playing' || this.state === 'ending')) this.hazards.update(envDt, this.t);
