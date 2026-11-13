@@ -373,6 +373,7 @@ html.touch .how-grid, html.touch .controls-hint, html.touch .click-hint, html.to
 #levelintro { align-items: center; justify-content: center; z-index: 45; overflow-y: auto; }
 .li-bg { position: absolute; inset: 0; background: radial-gradient(circle at 50% 30%, #23425c, #060a12); }
 .li-bg.flood { background: radial-gradient(circle at 50% 30%, #1d4a6e, #050a12); }
+.li-bg.campfire { background: radial-gradient(circle at 50% 30%, #c0601a, #1a0a06); }
 .li-bg.fire { background: radial-gradient(circle at 50% 30%, #7a3210, #120806); }
 .li-bg.quake { background: radial-gradient(circle at 50% 30%, #6a5a46, #0e0c0a); }
 .li-bg.volcano { background: radial-gradient(circle at 50% 30%, #8a2410, #100404); }
@@ -726,3 +727,9 @@ html.touch .bag.show { animation: none; }
 .aim-hint kbd { padding: 0 4px; border-radius: 4px; background: rgba(255, 255, 255, .15); }
 .aim-btn { position: absolute; right: 16px; bottom: 210px; width: 56px; height: 56px; border-radius: 50%; border: 2px solid #b050ff; background: rgba(30, 10, 50, .7); font-size: 26px; display: none; pointer-events: auto; }
 .aim-btn.show { display: block; } .aim-btn.on { background: #b050ff; box-shadow: 0 0 18px #b050ff; }
+
+/* CAMP FIRE: contador de piñas doradas y lugares secretos */
+.cf-hud { position: absolute; top: 78px; left: 50%; transform: translateX(-50%); display: flex; gap: 14px; padding: 5px 14px; font-size: 14px; font-weight: 700; color: #ffe6a8; pointer-events: none; z-index: 5; }
+.cf-hud b { color: #ffd040; }
+.mission-kinds { font-size: 12px; font-weight: 700; color: #e8f2ff; opacity: .9; white-space: nowrap; }
+@media (max-width: 700px) { .cf-hud { top: 110px; font-size: 12px; gap: 10px; padding: 3px 10px; } .mission-kinds { font-size: 10px; } }

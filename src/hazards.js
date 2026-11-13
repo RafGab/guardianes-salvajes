@@ -642,7 +642,7 @@ class ExtremeHazard {
 
 export function createHazards(scenario, ctx) {
   switch (scenario) {
-    case 'fire': return new FireHazard(ctx);
+    case 'fire': case 'campfire': return new FireHazard(ctx);
     case 'quake': return new QuakeHazard(ctx);
     case 'ice': return new IceHazard(ctx);
     case 'volcano': return new VolcanoHazard(ctx);

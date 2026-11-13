@@ -107,7 +107,7 @@ export const Save = {
   // atajo para pruebas: desbloquea todo
   unlockAll() {
     data.completed = LEVELS.length;
-    data.items = LEVELS.map((l) => l.reward);
+    data.items = LEVELS.map((l) => l.reward).filter(Boolean);
     persist();
   },
 };

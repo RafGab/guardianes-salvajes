@@ -28,6 +28,7 @@ import { AimSystem } from './aim.js';
 import { SEE, enableSeeThrough } from './seethrough.js';
 const HERO_SKILLS_CD = (id) => (HERO_SKILLS[id] && HERO_SKILLS[id].flight ? HERO_SKILLS[id].flight.cd : 4);
 import { IS_TOUCH } from './platform.js';
+import { CampFireRuntime } from './scenarios/campfire_rt.js';
 const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
 
 export const TIPS = {
@@ -53,8 +54,9 @@ export const TIPS = {
   tools: 'Las herramientas de rescate solo las usan profesionales entrenados. Tú, avisa siempre a los servicios de emergencia.',
 };
 const SIGN_TIPS = { sign_start: 'n112', sign_1: 'kit', sign_2: 'environment', sign_3: 'climate', sign_4: 'pets', sign_5: 'kit' };
-const AMBIENCE = { flood: [0.5, 0.4], fire: [0.03, 0.55], quake: [0.02, 0.3], volcano: [0.06, 0.6], hurricane: [0.95, 1.0], sandstorm: [0.04, 1.0], ice: [0.25, 1.0], drought: [0.02, 0.35], extreme: [0.7, 0.9] };
+const AMBIENCE = { flood: [0.5, 0.4], campfire: [0.03, 0.5], fire: [0.03, 0.55], quake: [0.02, 0.3], volcano: [0.06, 0.6], hurricane: [0.95, 1.0], sandstorm: [0.04, 1.0], ice: [0.25, 1.0], drought: [0.02, 0.35], extreme: [0.7, 0.9] };
 const SCHED = {
+  campfire: [[30, 'evac'], [90, 'smoke'], [170, 'wildlife'], [250, 'never'], [330, 'forest']],
   fire: [[35, 'smoke'], [130, 'never'], [180, 'wildlife'], [230, 'forest']],
   quake: [[45, 'elevator'], [120, 'gas'], [180, 'rubble'], [255, 'aftershock']],
   volcano: [[20, 'ash'], [75, 'lava'], [130, 'rocks'], [190, 'mask'], [250, 'gas']],
@@ -524,6 +526,8 @@ export class Game {
     world.scatterObstacles(level.obstacles, tools);
     this.spawnVictims(slots);
     this.total = this.victims.length;
+    this.kindTotal = { people: this.victims.filter((v) => !v.info.animal).length, animals: this.victims.filter((v) => v.info.animal).length };
+    ui.setRescueKinds(0, this.kindTotal.people, 0, this.kindTotal.animals);
     // vida del héroe (se conserva entre partidas) y objetos de recuperación del mapa
     this.life = { id: def.id, hp: Save.heroHp(def.id, HEALTH.max), max: HEALTH.max, ko: false };
     this.hpSaveT = 0; this.hpDirty = false; this.dotAcc = 0; this.blockT = 0; this.bossFxDone = false;
@@ -541,6 +545,10 @@ export class Game {
       addEco: (n) => this.addEco(n),
     });
     this.hazards.reset();
+    // elementos vivos propios del nivel (CAMP FIRE: coleccionables, secretos, troncos móviles, cascada, cuevas)
+    if (this.levelRt) this.levelRt.dispose();
+    this.levelRt = world.sc.campfire ? new CampFireRuntime(this, world.sc.campfire) : null;
+    if (!this.levelRt) { const el = document.getElementById('cf-hud'); if (el) el.style.display = 'none'; }
     this.buildAbilities();
     // portal de rescate único del nivel, con la variante del héroe elegido
     this.portal.mount(world.sc.safeObj, def.element);
@@ -743,6 +751,7 @@ export class Game {
     const urgentBonus = v.urgent ? 50 : 0;
     this.score += 100 + urgentBonus;
     ui.setRescued(this.delivered, this.total);
+    if (this.kindTotal) ui.setRescueKinds(this.stats.people, this.kindTotal.people, this.stats.animals, this.kindTotal.animals);
     ui.setScore(this.score);
     ui.setCarry(player.carrying, player.capacity);
     ui.banner('good', '❤️ ¡Rescate completado!', `${v.info.label} está a salvo${urgentBonus ? ' · ¡bonus por urgencia!' : ''}`);
@@ -1436,6 +1445,7 @@ export class Game {
     this.handlePlayerEvents();
     player.events.length = 0;
     if (this.hazards && (this.state === 'playing' || this.state === 'ending')) this.hazards.update(envDt, this.t);
+    if (this.levelRt) this.levelRt.update(envDt, this.state === 'playing' && !this.boss);
     if (this.playerHitT > 0) this.playerHitT = Math.max(0, this.playerHitT - real);
     if (this.boss && this.state === 'playing') {
       this.team.update(dtg);

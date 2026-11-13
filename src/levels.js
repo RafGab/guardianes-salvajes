@@ -1,8 +1,16 @@
-// Definición de los 9 niveles de la campaña: cada uno con su escenario 3D, catástrofe, dificultad y recompensa.
-// Orden y territorios según el prompt maestro de CATAC 7: Tierra, Fuego, Roca, Arena, Agua (2 niveles), Hielo, Aire, Apocalia.
+// Definición de los 10 niveles de la campaña: cada uno con su escenario 3D, catástrofe, dificultad y recompensa.
+// Nivel 1 oficial: CAMP FIRE (aventura y rescate). Después, los territorios de CATAC 7: Tierra, Fuego, Roca, Arena, Agua (2 niveles), Hielo, Aire, Apocalia.
 export const LEVELS = [
   {
-    n: 1, id: 'quake', scenario: 'quake', icon: '🏚️', kicker: 'NIVEL 1 · TIERRA', name: 'Terremoto en Sismara', place: 'Sismara: pueblo histórico dañado con canal y puente',
+    n: 1, id: 'campfire', scenario: 'campfire', icon: '🌲', kicker: 'NIVEL 1 · CAMP FIRE', name: 'CAMP FIRE', place: 'Paradise (California): pinos gigantes, el pueblo, el río y el campamento de rescate',
+    desc: 'El fuego avanza por los pinares que rodean Paradise. Explora el bosque, el río, la cascada, el pueblo y las laderas quemadas: encuentra a las personas y los animales en peligro y llévalos al campamento de rescate.',
+    time: 600, victims: 12, animalRatio: 0.45, minSep: 16, minStart: 22, hz: 0.9, obstacles: 0, best: ['agua', 'hielo', 'fuego'],
+    gauge: 'FUEGO', intro: '🌲 CAMP FIRE · PARADISE', introSub: 'Explora, rescata y lleva a todos al campamento · busca las piñas doradas y los lugares secretos',
+    failTitle: 'El fuego ha alcanzado Paradise', reward: null,
+    mechanic: 'El fuego se propaga por el bosque y el pueblo. Hay piñas doradas, plataformas, cuevas y 3 lugares secretos por descubrir.',
+  },
+  {
+    n: 2, id: 'quake', scenario: 'quake', icon: '🏚️', kicker: 'NIVEL 2 · TIERRA', name: 'Terremoto en Sismara', place: 'Sismara: pueblo histórico dañado con canal y puente',
     desc: 'La tierra tiembla. Edificios dañados, grietas, escombros y calles bloqueadas alrededor de una plaza con iglesia.',
     time: 360, victims: 8, animalRatio: 0.35, minSep: 12, minStart: 22, hz: 1.0, obstacles: 0, best: ['aire', 'tierra'],
     gauge: 'SISMO', intro: '🏚️ ¡TERREMOTO EN SISMARA!', introSub: 'Cuidado con los escombros y las réplicas',
@@ -11,7 +19,7 @@ export const LEVELS = [
     boss: 'minotauro', bossName: 'Minotauro', bossTitle: 'Guardián de la Tierra',
   },
   {
-    n: 2, id: 'fire', scenario: 'fire', icon: '🔥', kicker: 'NIVEL 2 · FUEGO', name: 'Incendio en Cenizara', place: 'Cenizara: bosque de montaña con refugios de animales',
+    n: 3, id: 'fire', scenario: 'fire', icon: '🔥', kicker: 'NIVEL 3 · FUEGO', name: 'Incendio en Cenizara', place: 'Cenizara: bosque de montaña con refugios de animales',
     desc: 'Un incendio forestal avanza por las laderas. Pinares, caminos de tierra, zonas quemadas y animales que huyen del fuego.',
     time: 340, victims: 9, animalRatio: 0.45, minSep: 14, minStart: 26, hz: 1.15, obstacles: 2, best: ['agua', 'hielo', 'fuego'],
     gauge: 'FUEGO', intro: '🔥 ¡INCENDIO FORESTAL EN CENIZARA!', introSub: 'Evita las llamas y saca a todos del bosque',
@@ -20,7 +28,7 @@ export const LEVELS = [
     boss: 'kerberos', bossName: 'Kerberos', bossTitle: 'Guardián del Inframundo',
   },
   {
-    n: 3, id: 'volcano', scenario: 'volcano', icon: '🌋', kicker: 'NIVEL 3 · ROCA', name: 'Erupción en Rocavara', place: 'Rocavara: volcán y pueblo al pie de la montaña',
+    n: 4, id: 'volcano', scenario: 'volcano', icon: '🌋', kicker: 'NIVEL 4 · ROCA', name: 'Erupción en Rocavara', place: 'Rocavara: volcán y pueblo al pie de la montaña',
     desc: 'El volcán despierta. Ceniza, humo, rocas incandescentes y ríos de lava que cortan los caminos del pueblo.',
     time: 330, victims: 10, animalRatio: 0.4, minSep: 15, minStart: 28, hz: 1.3, obstacles: 3, best: ['agua', 'hielo', 'fuego'],
     gauge: 'LAVA', intro: '🌋 ¡ERUPCIÓN VOLCÁNICA EN ROCAVARA!', introSub: 'La lava avanza: busca rutas seguras',
@@ -29,7 +37,7 @@ export const LEVELS = [
     boss: 'medusa', bossName: 'Medusa', bossTitle: 'Guardiana de la Roca',
   },
   {
-    n: 4, id: 'sandstorm', scenario: 'sandstorm', icon: '🏜️', kicker: 'NIVEL 4 · ARENA', name: 'Haboob en Haboura', place: 'Haboura: desierto con dunas, pueblo de adobe y oasis',
+    n: 5, id: 'sandstorm', scenario: 'sandstorm', icon: '🏜️', kicker: 'NIVEL 5 · ARENA', name: 'Haboob en Haboura', place: 'Haboura: desierto con dunas, pueblo de adobe y oasis',
     desc: 'Una gran tormenta de arena reduce la visibilidad a casi nada. Dunas que cambian las rutas y arena por todas partes.',
     time: 330, victims: 10, animalRatio: 0.45, minSep: 16, minStart: 32, hz: 1.45, obstacles: 4, best: ['aire', 'tierra'],
     gauge: 'ARENA', intro: '🏜️ ¡TORMENTA DE ARENA EN HABOURA!', introSub: 'Casi no se ve nada: guíate por las balizas',
@@ -38,7 +46,7 @@ export const LEVELS = [
     boss: 'basilisco', bossName: 'Basilisco', bossTitle: 'Señor de la Arena',
   },
   {
-    n: 5, id: 'flood', scenario: 'flood', icon: '🌊', kicker: 'NIVEL 5 · AGUA', name: 'Inundación en Náufora', place: 'Náufora: ciudad costera con río y puerto',
+    n: 6, id: 'flood', scenario: 'flood', icon: '🌊', kicker: 'NIVEL 6 · AGUA', name: 'Inundación en Náufora', place: 'Náufora: ciudad costera con río y puerto',
     desc: 'Llueve sin parar y el río se desborda. Calles inundadas, puentes, coches flotando y personas atrapadas en tejados.',
     time: 340, victims: 11, animalRatio: 0.4, minSep: 17, minStart: 34, hz: 1.6, obstacles: 4, best: ['agua', 'aire', 'hielo'],
     gauge: 'AGUA', intro: '🌧️ ¡ALERTA DE INUNDACIÓN EN NÁUFORA!', introSub: 'El río se ha desbordado: sube a lugares altos y rescata a todos',
@@ -46,7 +54,7 @@ export const LEVELS = [
     mechanic: 'El agua sube sin parar y crea corrientes en las calles.',
   },
   {
-    n: 6, id: 'drought', scenario: 'drought', icon: '🌱', kicker: 'NIVEL 6 · AGUA', name: 'Sequía extrema en Aridalia', place: 'Aridalia: zona rural con embalse casi vacío',
+    n: 7, id: 'drought', scenario: 'drought', icon: '🌱', kicker: 'NIVEL 7 · AGUA', name: 'Sequía extrema en Aridalia', place: 'Aridalia: zona rural con embalse casi vacío',
     desc: 'Campos secos, un embalse con muy poca agua y animales buscando agua. El calor aprieta y el suelo se agrieta. Tras rescatar a todos, el océano reclama lo suyo.',
     time: 340, victims: 11, animalRatio: 0.55, minSep: 18, minStart: 36, hz: 1.75, obstacles: 5, best: ['agua', 'hielo'],
     gauge: 'CALOR', intro: '🌱 ¡SEQUÍA EXTREMA EN ARIDALIA!', introSub: 'Busca sombra y agua, y ayuda a los animales sedientos',
@@ -55,7 +63,7 @@ export const LEVELS = [
     boss: 'kraken', bossName: 'Kraken', bossTitle: 'Fuerza del Océano',
   },
   {
-    n: 7, id: 'ice', scenario: 'ice', icon: '🧊', kicker: 'NIVEL 7 · HIELO', name: 'Avalancha en Nivoria', place: 'Nivoria: montañas nevadas, lago helado y refugio',
+    n: 8, id: 'ice', scenario: 'ice', icon: '🧊', kicker: 'NIVEL 8 · HIELO', name: 'Avalancha en Nivoria', place: 'Nivoria: montañas nevadas, lago helado y refugio',
     desc: 'Nieve, viento y frío extremo en una estación de montaña con lago helado, bosque nevado y carreteras congeladas.',
     time: 365, victims: 12, animalRatio: 0.45, minSep: 19, minStart: 38, hz: 1.9, obstacles: 5, best: ['fuego', 'hielo'],
     gauge: 'FRÍO', intro: '🧊 ¡TORMENTA DE HIELO EN NIVORIA!', introSub: 'Calienta junto a las hogueras y rescata a todos',
@@ -64,7 +72,7 @@ export const LEVELS = [
     boss: 'fenrir', bossName: 'Fenrir', bossTitle: 'Hielo Eterno',
   },
   {
-    n: 8, id: 'hurricane', scenario: 'hurricane', icon: '🌀', kicker: 'NIVEL 8 · AIRE', name: 'Huracán en Huravela', place: 'Huravela: ciudad costera tropical con muelle y faro',
+    n: 9, id: 'hurricane', scenario: 'hurricane', icon: '🌀', kicker: 'NIVEL 9 · AIRE', name: 'Huracán en Huravela', place: 'Huravela: ciudad costera tropical con muelle y faro',
     desc: 'Vientos brutales, olas enormes, palmeras que caen y objetos volando. La marejada inunda la costa.',
     time: 380, victims: 12, animalRatio: 0.4, minSep: 20, minStart: 40, hz: 2.0, obstacles: 6, best: ['aire', 'tierra', 'agua'],
     gauge: 'VIENTO', intro: '🌀 ¡HURACÁN EN HURAVELA!', introSub: 'El viento te empuja y la marejada sube',
@@ -73,7 +81,7 @@ export const LEVELS = [
     boss: 'long', bossName: 'Long', bossTitle: 'Dragón de la Mitología China',
   },
   {
-    n: 9, id: 'extreme', scenario: 'extreme', icon: '☄️', kicker: 'NIVEL 9 · APOCALIA', name: 'Apocalia: la Catástrofe Final', place: 'Valle Titán: río, volcán lejano y ciudad en ladera',
+    n: 10, id: 'extreme', scenario: 'extreme', icon: '☄️', kicker: 'NIVEL 10 · APOCALIA', name: 'Apocalia: la Catástrofe Final', place: 'Valle Titán: río, volcán lejano y ciudad en ladera',
     desc: 'Todos los elementos se desequilibran a la vez: terremotos, crecida del río, ceniza y viento. Al rescatar a todos, el propio Cataclismo se manifiesta — y Voya acude a protegeros.',
     time: 460, victims: 14, animalRatio: 0.45, minSep: 22, minStart: 44, hz: 2.3, obstacles: 7, best: ['aire', 'agua', 'tierra', 'fuego', 'hielo'],
     gauge: 'PELIGRO', intro: '☄️ ¡APOCALIA!', introSub: 'Terremoto, crecida, ceniza y viento: ¡todo a la vez!',
@@ -86,6 +94,16 @@ export const LEVELS = [
 export const MISSIONS = LEVELS;
 
 export const LEVEL_TIPS = {
+  campfire: {
+    start: 'Si las autoridades piden evacuar por un incendio, sal enseguida por la ruta indicada: no esperes a ver las llamas.',
+    evac: 'Ten preparada una mochila de emergencia con agua, linterna, mascarilla y una copia de los teléfonos de tu familia.',
+    smoke: 'El humo es peligroso: agáchate, cúbrete la nariz y la boca con un paño y aléjate en sentido contrario al viento.',
+    wildlife: 'Los animales huyen del fuego. Avisar a los bomberos y dejarles caminos libres les ayuda a sobrevivir.',
+    never: 'Nunca tires colillas ni vidrios, ni hagas fuego en el monte: casi todos los incendios los provocan las personas.',
+    forest: 'Después de un incendio el bosque tarda muchos años en recuperarse. Plantar árboles y cuidarlo ayuda a que vuelva.',
+    heat: 'No intentes cruzar las llamas: el calor y el humo son más peligrosos de lo que parece.',
+    wind: 'El viento hace que el fuego avance más rápido. Aléjate siempre en sentido contrario a él.',
+  },
   fire: {
     start: 'Si encuentras un incendio forestal, aléjate de la zona y avisa a los servicios de emergencia (112).',
     smoke: 'El humo es peligroso: agáchate, cúbrete la nariz y la boca con un paño y aléjate en sentido contrario al viento.',

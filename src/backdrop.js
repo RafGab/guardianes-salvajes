@@ -8,6 +8,7 @@ import { makeRng } from './utils.js';
 // Paleta por escenario: [capa cercana, media, lejana]. `shape` = forma de las colinas.
 const THEMES = {
   flood:     { shape: 'round', col: [0x4fb866, 0x78c9a2, 0xa8dcd2], cloud: 0xffffff },
+  campfire:  { shape: 'round', col: [0x4f9a52, 0x86b86a, 0xe6b48a], cloud: 0xffe2c4 },
   fire:      { shape: 'round', col: [0x8a8f3a, 0xd08a3c, 0xeab88a], cloud: 0xffe6cc },
   quake:     { shape: 'round', col: [0x6cbc68, 0xa4d49c, 0xd0e8d4], cloud: 0xffffff },
   volcano:   { shape: 'cone',  col: [0x7a5a7c, 0x9a6f92, 0xcfa0ae], cloud: 0xffd8d0, glow: true },

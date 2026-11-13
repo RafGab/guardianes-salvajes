@@ -699,6 +699,11 @@ export const ui = {
   setRescued(n, total) {
     $('hud-rescued').innerHTML = `${n}<span>/${total}</span>`;
   },
+  // contadores separados de personas y animales salvados
+  setRescueKinds(p, pt, a, at) {
+    const el = $('hud-kinds');
+    if (el) el.innerHTML = `👤 ${p}/${pt} · 🐾 ${a}/${at}`;
+  },
   setTime(sec) {
     const s = Math.max(0, Math.ceil(sec));
     const el = $('hud-time');
