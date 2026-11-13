@@ -17,6 +17,7 @@ import { Audio3D as audio } from './audio.js';
 import { clamp, damp } from './utils.js';
 import { LEVELS } from './levels.js';
 import { WorldSelect } from './worldselect.js';
+import { CinematicIntro } from './intro/intro.js';
 import { Save } from './save.js';
 import { ITEMS } from './items.js';
 import { IS_TOUCH } from './platform.js';
@@ -199,6 +200,12 @@ async function loadLevel(level, minMs = 2600) {
   ui.levelIntroProgress(1, '');
 }
 const worldSel = new WorldSelect();
+// Intro cinematográfica: se muestra al abrir el juego (mientras el juego carga detrás) y se puede repetir desde el título
+const intro = new CinematicIntro({
+  onDone: () => { try { audio.startMusic(); } catch (e) { /* sin audio */ } },
+});
+window.__intro = intro; // acceso para pruebas
+if (URLQ.get('intro') !== '0') intro.showGate();
 window.__ws = worldSel; // acceso para pruebas
 function enterMissions() {
   mode = 'worlds';
@@ -361,6 +368,7 @@ function frame(now) {
   clockT += dt;
   if (!resizeIfNeeded() || !world) return;
   input.poll();
+  if (intro.playing) return; // la intro cinematográfica ocupa la pantalla: el juego no se dibuja debajo
   if (mode === 'worlds') {
     // universo de selección de mundos: misma tubería de render (resplandor, color) con su propia escena y cámara
     try {
@@ -566,6 +574,7 @@ function toggleSound() {
 function armMusic() {
   const events = ['pointerdown', 'keydown', 'touchend', 'click'];
   const go = () => {
+    if (intro.active) return; // durante la intro suena su propia banda sonora
     audio.startMusic(); // idempotente; reintenta reanudar el audio en cada gesto hasta que suene
     if (audio.musicPlaying) events.forEach((e) => window.removeEventListener(e, go, true));
   };
@@ -575,6 +584,7 @@ function armMusic() {
 function bindUi() {
   armMusic();
   setQuality(quality);
+  $('btn-intro').onclick = () => { audio.stopMusic?.(); intro.play(); };
   $('btn-play').onclick = () => { audio.init(); audio.click(); goFullscreen(); enterMissions(); };
   $('btn-back-m').onclick = () => { audio.click(); enterTitle(); };
   $('btn-missions').onclick = () => enterMissions();

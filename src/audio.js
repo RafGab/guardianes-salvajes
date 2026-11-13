@@ -117,6 +117,14 @@ export const Audio3D = {
       .then((buf) => { musicBuf = buf; musicLoading = false; play(); })
       .catch((e) => { musicLoading = false; console.warn('[música]', e); });
   },
+  // Detiene la melodía (por ejemplo, para ver la intro cinematográfica); startMusic la vuelve a poner
+  stopMusic() {
+    if (!musicSrc) return;
+    try { musicSrc.stop(); } catch (e) { /* */ }
+    musicSrc.disconnect();
+    musicSrc = null;
+    if (musicGain) musicGain.gain.value = 0;
+  },
   init() {
     if (!ensureCtx()) return;
     if (started) return;

@@ -804,3 +804,23 @@ html.touch .bag.show { animation: none; }
   .ws-label .wl-name { font-size: 12px; }
 }
 @media (orientation: portrait) and (max-width: 720px) { #missions.has-sel .ws-top { opacity: .35; transition: opacity .3s; } }
+
+/* ======================================================================
+   INTRO CINEMATOGRÁFICA (src/intro)
+   ====================================================================== */
+#intro { position: fixed; inset: 0; z-index: 200; background: #000; display: none; opacity: 1; transition: opacity .9s ease; }
+#intro.show { display: block; }
+#intro.out { opacity: 0; pointer-events: none; }
+#intro-cv { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.intro-gate { position: absolute; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; gap: 14px; cursor: pointer; background: radial-gradient(circle at 50% 55%, #0a1426 0%, #000 60%); }
+.intro-gate.show { display: flex; }
+.ig-dot { width: 10px; height: 10px; border-radius: 50%; background: #8ac8ff; box-shadow: 0 0 18px 6px rgba(90,160,255,.6); animation: igPulse 1.8s ease-in-out infinite; }
+.ig-txt { font-family: 'Orbitron', 'Exo 2', sans-serif; font-size: 14px; letter-spacing: 8px; color: #cfe0ff; animation: igFade 2.4s ease-in-out infinite; }
+.ig-sub { font-family: 'Exo 2', sans-serif; font-size: 12px; letter-spacing: 2px; color: #6a84a8; }
+@keyframes igPulse { 50% { transform: scale(1.6); box-shadow: 0 0 30px 10px rgba(90,160,255,.8); } }
+@keyframes igFade { 50% { opacity: .45; } }
+.intro-skip { position: absolute; right: max(20px, env(safe-area-inset-right)); bottom: max(22px, env(safe-area-inset-bottom)); z-index: 2; display: none; font-family: 'Orbitron', sans-serif; font-size: 12px; letter-spacing: 3px; color: rgba(220,232,255,.75); background: rgba(10,14,30,.35); border: 1px solid rgba(160,190,255,.3); border-radius: 4px; padding: 9px 16px; cursor: pointer; }
+.intro-skip.show { display: block; animation: igIn .6s ease both; }
+.intro-skip.show.late { animation: igIn .6s ease 4s both; }
+.intro-skip:hover { color: #fff; border-color: rgba(200,220,255,.7); }
+@keyframes igIn { from { opacity: 0; } to { opacity: 1; } }
