@@ -24,6 +24,7 @@ import { WeaponSystem } from './weapons/system.js';
 import { RescuePortal } from './portal.js';
 import { RescueBubbles } from './rescue.js';
 import { Allies } from './allies.js';
+import { AimSystem } from './aim.js';
 const HERO_SKILLS_CD = (id) => (HERO_SKILLS[id] && HERO_SKILLS[id].flight ? HERO_SKILLS[id].flight.cd : 4);
 import { IS_TOUCH } from './platform.js';
 const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
@@ -102,6 +103,7 @@ export class Game {
     this.weapons = new WeaponSystem(this); // arma 3D de cada héroe (botón ARMA), unida al hueso de su mano
     this.portal = new RescuePortal(this);  // portal de rescate del refugio: su aspecto depende del héroe activo
     this.bubbles = new RescueBubbles(this); // rescate con burbujas de energía (una por víctima, siguen al héroe)
+    this.aimSys = new AimSystem(this);      // mira de Halley (T / botón 🎯)
     this.allies = new Allies(this);         // combate de jefe: los otros dos héroes del equipo luchan a la vez
     this.team = new Team();          // equipo del combate de jefe (vida por héroe, cambio en combate)
     this.bag = new Bag();            // mochila de recuperación (bebidas y botiquines)
@@ -326,6 +328,14 @@ export class Game {
     if (W) ui.banner('find', '⚔️', out ? `${W.name}: ¡lista!` : `${W.name} guardada`);
     return out;
   }
+  // T o botón 🎯: activa / quita la mira de Halley
+  toggleAim() {
+    if (this.state !== 'playing') return false;
+    if (!this.hero || this.hero.id !== 'halley') { ui.banner('find', '🎯', 'La mira es de Halley y su lanza'); return false; }
+    const on = this.aimSys.toggle();
+    ui.banner('find', '🎯', on ? 'Mira activada: apunta y dispara con el arma' : 'Mira desactivada');
+    return on;
+  }
   holsterWeapon() {
     if (this.state !== 'playing' || !this.weapons.isOut) return false;
     this.weapons.holster();
@@ -352,7 +362,7 @@ export class Game {
   // Un obstáculo de madera se vuelve objetivo destructible para los poderes (el hacha lo sigue rompiendo igual)
   registerObstacle(o) {
     if (!o.alive || o.breakBy !== 'axe' || o.prop) return;
-    o.prop = this.combat.addProp({ x: o.x, y: o.y, z: o.z, radius: Math.max(0.9, Math.min(o.w, o.d) * 0.6), hp: DESTRUCTIBLE.obstacle, height: o.h, label: 'Obstáculo', onBreak: () => this.world.breakObstacle(o) });
+    o.prop = this.combat.addProp({ x: o.x, y: o.y, z: o.z, radius: Math.max(0.9, Math.min(o.w, o.d) * 0.6), hp: DESTRUCTIBLE.obstacle, height: o.h, label: 'Obstáculo', mesh: o.g, onBreak: () => this.world.breakObstacle(o) });
   }
   onObstacleBroken(o) {
     if (o.prop) { o.prop.dead = true; this.combat.removeProp(o.prop); }
@@ -398,6 +408,7 @@ export class Game {
     world.duration = level.time;
     this.allies.clear();
     this.allyWin = false; this.victoryT = 0;
+    this.aimSys.reset();
     this.clearVictims();
     world.reset();
     ui.tips.reset();
@@ -730,8 +741,9 @@ export class Game {
     this.boss.title = this.mission.bossTitle || '';
     // SOLDADOS: el jefe entra con 2 (primeras zonas) o 3 (el tercero, un bruto); hay que derrotarlos a todos
     this.combat.spawnMinions(this.mission.n <= 2 ? 2 : 3, this.boss.pos);
-    this.allyWin = false; this.victoryT = 0; this.foesMsg = '';
-    this.team.allOnField = true;
+    this.allyWin = false; this.victoryT = 0; this.foesMsg = ''; this.victoryShown = false;
+    this.bossStats = { t0: performance.now() / 1000, soldiers: 0, staggers: 0 }; // para la pantalla de victoria
+    this.team.allOnField = false; // los compañeros esperan en reserva (no luchan solos): recuperan vida poco a poco
     this.pickups.placeArena(this.mission, arena);
     if (this.mission.ally) this.ally = createAlly(this.mission.ally, { scene, world, player, chase, camera, fx: this.fx, audio, ui, game: this });
     this.setBossCamera();
@@ -851,21 +863,34 @@ export class Game {
     if (t.members[i].ko) { ui.banner('find', '💔', `${HEROES.find((h) => h.id === t.members[i].id).name} está fuera de combate`); return false; }
     if (t.switchT > 0) return false;
     if (this.player.scripted) return false;
-    // el jugador pasa a controlar al compañero elegido, en su sitio; el héroe que deja sigue luchando donde estaba
+    // CAMBIO DE HÉROE: el elegido entra en el sitio del jugador (la cámara no salta) y el que sale
+    // ocupa el hueco que deja el compañero, como reserva disponible. El combate sigue igual.
     const ally = this.allies.list.find((a) => a.member === t.members[i]);
-    const oldPos = this.player.pos.clone(), oldFacing = this.player.facing;
+    const slot = ally ? { pos: ally.pos.clone(), side: ally.side, facing: ally.facing } : null;
+    const outName = this.hero.name;
     t.active = i;
     t.switchT = TEAM.switchCd;
     t.graceT = TEAM.switchGrace;
     this.swapHero(t.members[i].id);
-    if (ally) { this.player.pos.copy(ally.pos); this.player.facing = ally.facing; }
     const before = new Set(this.allies.list);
     this.allies.sync();
-    // el héroe que el jugador deja (si sigue en pie) se queda luchando donde estaba
-    for (const a of this.allies.list) if (!before.has(a)) { a.pos.copy(oldPos); a.facing = oldFacing; }
-    ui.battleLog(`🔁 Entra ${this.hero.name}`, 'hero');
+    for (const a of this.allies.list) if (!before.has(a) && slot) { a.pos.copy(slot.pos); a.side = slot.side; a.facing = slot.facing; }
+    this.switchFx(slot ? slot.pos : null);
+    ui.battleLog(`🔁 Entra ${this.hero.name} · ${outName} pasa a reserva`, 'hero');
+    ui.banner('good', `🔁 ¡Entra ${this.hero.name}!`, `${ELEMENTS[this.hero.element].icon} ${ELEMENTS[this.hero.element].name} · ${outName} queda de reserva`);
     ui.setTeamHud(t.members, t.active, (k) => this.switchTeamTo(k));
     return true;
+  }
+  // Transición del cambio de héroe: columna de luz del color del elemento en el héroe que entra,
+  // un haz desde el hueco de reserva y una onda en el suelo (se ve claramente quién está activo)
+  switchFx(from) {
+    const p = this.player.pos, H = this.player.H, col = ELEMENTS[this.hero.element].color || 0xffe070;
+    const top = new THREE.Vector3(p.x, p.y + H * 3, p.z), base = new THREE.Vector3(p.x, p.y, p.z);
+    this.vfx2.beam(base, top, { r: 0.7, color: col, opacity: 0.6, life: 0.7 });
+    if (from) this.vfx2.beam(new THREE.Vector3(from.x, from.y + 1, from.z), new THREE.Vector3(p.x, p.y + 1, p.z), { r: 0.18, color: 0xffe070, opacity: 0.7, life: 0.45 });
+    this.vfx.ring(p.x, null, p.z, { r0: 0.4, r1: 3.6, dur: 0.6, color: col });
+    for (let j = 0; j < 30; j++) this.fx.sparkle(p.x + (Math.random() - 0.5) * 1.2, p.y + Math.random() * H * 2, p.z + (Math.random() - 0.5) * 1.2, j % 2 ? col : 0xffffff, 2.8);
+    this.player.celebrateTimer = 0.5; this.player.celebrate = true; // pequeño gesto al entrar al campo
   }
   cycleTeam(dir = 1) {
     const n = this.team.nextIndex(dir);
@@ -887,7 +912,7 @@ export class Game {
   // Golpe al héroe. `dmg` en unidades de golpe (1 = golpe normal). En el combate de jefe resta vida al héroe en el campo.
   hitPlayer(dmg, fromPos) {
     if (this.playerHitT > 0) return;
-    if (this.player.shieldT > 0 || this.player.evadeT > 0) { this.shieldBlock(fromPos); return; } // el escudo anula el golpe
+    if (this.player.shieldT > 0 || this.player.evadeT > 0) { this.shieldBlock(fromPos); if (this.boss && this.boss.onBlocked) this.boss.onBlocked(this.player.pos); return; } // el escudo anula el golpe (y el jefe rebota)
     if (this.team.on && this.boss) {
       if (this.team.graceT > 0 || this.bossIntroT > 0 || this.state !== 'playing') return;
       const phase = this.boss.phase || 1;
@@ -972,6 +997,7 @@ export class Game {
     if (from) { const dx = from.x - p.x, dz = from.z - p.z, l = Math.hypot(dx, dz) || 1; x += (dx / l) * 0.8; z += (dz / l) * 0.8; }
     this.vfx.ring(p.x, null, p.z, { r0: 0.6, r1: 2.4, dur: 0.4, color: 0x8ad8ff });
     this.vfx.sparks(x, p.y + H * 0.55, z, 0xbfeaff, 16, 3.2);
+    this.vfx2.shell(new THREE.Vector3(p.x, p.y + H * 0.5, p.z), { r: Math.max(1.2, H * 0.85), color: 0x8ad8ff, rim: 0xffffff, opacity: 0.55, life: 0.35 }); // la cúpula del escudo destella al recibir el golpe
     this.floatAt(p, H + 0.4, '🛡️ BLOQUEADO', 'block');
     ui.hpBlock();
     audio.sfx('chime');
@@ -1039,6 +1065,7 @@ export class Game {
   }
   // NPC hostil derrotado: deja de combatir; a veces suelta una bebida o un botiquín amarillo
   onNpcDefeated(m) {
+    if (this.boss && this.bossStats) this.bossStats.soldiers++;
     ui.battleLog(`💥 ${m.cat.name} derrotado`, 'hero');
     const chance = m.kind === 'bruto' ? 0.6 : MINIONS.dropChance;
     if (Math.random() < chance) this.pickups.drop(m.kind === 'bruto' ? 'kit25' : 'drink', m.pos.x, m.pos.z);
@@ -1064,11 +1091,10 @@ export class Game {
     ui.setTeamHud(this.team.members, this.team.active, (i) => this.switchTeamTo(i));
     if (!this.team.anyAlive) this.teamDefeated();
   }
-  // Objetivos que pueden atacar el jefe y sus soldados: el héroe del jugador y los compañeros en pie
+  // Objetivo que pueden atacar el jefe y sus soldados: el héroe que controla el jugador (los compañeros esperan en reserva)
   heroTargets() {
     const p = this.player;
     const out = [{ pos: p.pos, R: p.R, H: p.H, isPlayer: true }];
-    if (this.boss && this.team.on) for (const a of this.allies.alive) out.push({ pos: a.pos, R: a.R, H: a.H, ally: a });
     return out;
   }
   hitHero(h, units, from) {
@@ -1081,19 +1107,35 @@ export class Game {
     if (!b || this.bossDone) return;
     const left = this.combat.aliveSoldiers().length;
     const bossDead = b.state === 'dead';
+    if (this.victoryShown) return; // pantalla de victoria abierta: espera a «Continuar»
     if (this.victoryT > 0) {
+      // SECUENCIA DE VICTORIA: cámara lenta al principio, la cámara gira alrededor del equipo que celebra
+      // y caen confeti y destellos; al terminar, la pantalla de victoria con las recompensas
       this.victoryT -= dt;
-      if (this.victoryT <= 0) this.finishBoss();
+      const ch = this.chase;
+      ch.yaw += dt * 0.5;
+      ch.pitch = damp(ch.pitch, 0.25, 2, dt);
+      if (Math.random() < dt * 3) { const p = this.player.pos; this.fx.confetti(p.x + (Math.random() - 0.5) * 6, p.y + 3, p.z + (Math.random() - 0.5) * 6); }
+      if (this.victoryT <= 0) this.showBossVictory();
       return;
     }
     if (bossDead && b.deathT > 1.1 && left === 0) {
       this.allyWin = true;
       this.player.celebrate = true;
+      this.player.celebrateTimer = 0;
       this.player.locked = true;
-      ui.alert('🏆 ¡JEFE DE ZONA DERROTADO!');
+      this.combat.clearLingering();
+      ui.alert('🏆 ¡JEFE DE ZONA DERROTADO!', 3200);
       ui.battleLog('🏆 ¡Jefe de Zona derrotado!', 'hero');
-      audio.found();
-      this.victoryT = 2.6;
+      audio.success();
+      this.slowT = Math.max(this.slowT, 1.0);
+      let fl = document.getElementById('bv-flash');
+      if (!fl) { fl = document.createElement('div'); fl.id = 'bv-flash'; document.body.appendChild(fl); }
+      fl.classList.remove('on'); void fl.offsetWidth; fl.classList.add('on');
+      const p = this.player.pos;
+      this.vfx.ring(p.x, null, p.z, { r0: 0.5, r1: 9, dur: 1, color: 0xffe070 });
+      for (let j = 0; j < 50; j++) this.fx.sparkle(p.x + (Math.random() - 0.5) * 4, p.y + Math.random() * 3, p.z + (Math.random() - 0.5) * 4, j % 2 ? 0xffe070 : 0xffffff, 3.2);
+      this.victoryT = 3.4;
       return;
     }
     const msg = bossDead && left ? 'boss' : !bossDead && left === 0 && this.foesMsg === '' ? 'soldiers' : this.foesMsg;
@@ -1102,6 +1144,25 @@ export class Game {
       if (msg === 'boss') ui.banner('find', `${b.icon} ¡${b.name} ha caído!`, `Quedan ${left} soldado${left === 1 ? '' : 's'}: derrótalos para ganar`);
       if (msg === 'soldiers') ui.banner('find', '⚔️ Soldados derrotados', `Solo queda ${b.name}`);
     }
+  }
+  // Pantalla de victoria: resumen del combate y recompensas; «Continuar» cierra el combate
+  showBossVictory() {
+    const b = this.boss, s = this.bossStats || {};
+    this.victoryShown = true;
+    const now = performance.now() / 1000, secs = Math.max(0, Math.round(now - (s.t0 || now)));
+    const reward = ITEMS[this.mission.reward];
+    const up = this.team.members.filter((m) => !m.ko).length;
+    const rewards = [
+      { icon: '🏆', text: `Trofeo: ${b.name}`, value: b.icon },
+      { icon: '⭐', text: 'Bonus de jefe de zona', value: '+300' },
+      { icon: '⚔️', text: `Soldados derrotados: ${s.soldiers || 0}`, value: `+${(s.soldiers || 0) * 10}` },
+      { icon: '💫', text: `Aturdimientos al jefe: ${s.staggers || 0}`, value: `+${(s.staggers || 0) * 20}` },
+      { icon: '❤️', text: `Héroes en pie: ${up} / ${this.team.members.length}`, value: `+${up * 50}` },
+      { icon: '⏱️', text: `Tiempo de combate: ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`, value: '' },
+    ];
+    if (reward) rewards.push({ icon: reward.icon, text: `Premio de la zona: ${reward.name}`, value: '🎁' });
+    this.bossBonus = (s.soldiers || 0) * 10 + (s.staggers || 0) * 20 + up * 50;
+    ui.bossVictory({ icon: b.icon, name: b.name, title: b.title, team: this.team.members, rewards }, () => { this.victoryShown = false; this.finishBoss(); });
   }
   teamDefeated() {
     if (this.boss) this.boss.victory = true;
@@ -1116,8 +1177,9 @@ export class Game {
     this.player.celebrate = false;
     Save.markBoss(this.mission.boss);
     this.saveHp(true);
-    this.addScore(300);
-    ui.banner('good', `🏆 ¡${this.boss.name} derrotado!`, '+300 puntos de bonus');
+    this.addScore(300 + (this.bossBonus || 0));
+    ui.banner('good', `🏆 ¡${this.boss.name} derrotado!`, `+${300 + (this.bossBonus || 0)} puntos de bonus`);
+    this.bossBonus = 0;
     if (this.boss) this.boss.dispose();
     this.boss = null;
     if (this.ally) this.ally.dispose();
@@ -1290,6 +1352,7 @@ export class Game {
 
     if (this.state === 'playing') this.skills.update(dtg); // habilidades del héroe (mueven al héroe antes de su actualización)
     player.update(dtg, move, chase.yaw);
+    this.aimSys.update(real); // con la mira, Halley mira hacia la retícula
     this.weapons.update(dtg); // después de animar al héroe: el arma sigue al hueso de la mano
     this.bubbles.update(dtg); // las burbujas de los rescatados siguen al héroe (después de que se mueva)
     this.handlePlayerEvents();

@@ -518,6 +518,35 @@ export const ui = {
   },
   fade(on) { $('fade').classList.toggle('on', on); },
 
+  // PANTALLA DE VICTORIA ante un jefe de zona: título, jefe derrotado, el equipo y las recompensas (una a una)
+  bossVictory(d, onContinue) {
+    let el = document.getElementById('bossvictory');
+    if (!el) { el = document.createElement('div'); el.id = 'bossvictory'; document.getElementById('app')?.appendChild(el) || document.body.appendChild(el); }
+    const team = d.team.map((m) => {
+      const h = HEROES.find((x) => x.id === m.id), pct = Math.max(0, Math.round((m.hp / (m.max || 100)) * 100));
+      return `<div class="bv-hero${m.ko ? ' ko' : ''}"><img src="${HERO_FACE(m.id)}" alt="${h.name}"/><b>${h.name}</b><span class="bv-hp"><i style="width:${pct}%"></i></span><small>${m.ko ? 'K.O.' : `${Math.round(m.hp)} / ${m.max || 100}`}</small></div>`;
+    }).join('');
+    const rw = d.rewards.map((r, i) => `<li style="animation-delay:${0.9 + i * 0.35}s"><span class="ic">${r.icon}</span><span class="tx">${r.text}</span><b>${r.value || ''}</b></li>`).join('');
+    el.innerHTML = `<div class="bv-card">
+      <div class="bv-rays"></div>
+      <div class="bv-kicker">🏆 ¡VICTORIA! 🏆</div>
+      <h2>JEFE DE ZONA DERROTADO</h2>
+      <div class="bv-boss"><span class="bv-bicon">${d.icon}</span><div><b>${d.name}</b><small>${d.title || ''}</small></div></div>
+      <div class="bv-team">${team}</div>
+      <div class="bv-rtitle">RECOMPENSAS</div>
+      <ul class="bv-rewards">${rw}</ul>
+      <button class="btn primary bv-go" style="animation-delay:${1.2 + d.rewards.length * 0.35}s">CONTINUAR ▶</button>
+    </div>`;
+    el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
+    const go = el.querySelector('.bv-go');
+    let done = false;
+    const finish = () => { if (done) return; done = true; el.classList.remove('show'); window.removeEventListener('keydown', onKey); onContinue && onContinue(); };
+    const onKey = (e) => { if ((e.code === 'Enter' || e.code === 'Space') && performance.now() - t0 > 1500) finish(); };
+    const t0 = performance.now();
+    go.addEventListener('click', finish);
+    window.addEventListener('keydown', onKey);
+  },
+
   /* ---------- misiones ---------- */
   buildMissions(onPick) {
     const box = $('mission-cards');
@@ -616,10 +645,35 @@ export const ui = {
     bar.style.display = list.length > 1 ? 'flex' : 'none';
   },
   // el botón ARMA se ilumina mientras el arma está fuera
-  setWeaponOut(on) {
+  setWeaponOut(on, name) {
     this._weaponOut = on;
+    if (name) this._weaponName = name;
     const b = $('skillbar') && $('skillbar').querySelector('.skill[data-role="arma"]');
     if (b) b.classList.toggle('armed', on);
+    // EQUIPAMIENTO: botón en pantalla y fila en la mochila para sacar o guardar el arma cuando se quiera
+    const nm = this._weaponName || 'Arma';
+    let chip = document.getElementById('weaponchip');
+    if (!chip && $('hud')) {
+      chip = document.createElement('button');
+      chip.id = 'weaponchip'; chip.type = 'button'; chip.className = 'weaponchip';
+      chip.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); if (this.onWeaponToggle) this.onWeaponToggle(); });
+      $('hud').appendChild(chip);
+    }
+    if (chip) {
+      chip.classList.toggle('out', on);
+      chip.innerHTML = `<span class="wi">${on ? '⚔️' : '🎒'}</span><span class="wt"><b>${nm}</b><small>${on ? 'En la mano' : 'Guardada en la espalda'}</small></span><span class="wa">${on ? 'Guardar' : 'Equipar'}${IS_TOUCH ? '' : ' <kbd>G</kbd>'}</span>`;
+    }
+    let row = document.getElementById('bag-weapon');
+    if (!row && $('bag-list')) {
+      row = document.createElement('div');
+      row.id = 'bag-weapon'; row.className = 'bag-weapon';
+      $('bag-list').parentNode.insertBefore(row, $('bag-list'));
+    }
+    if (row) {
+      row.innerHTML = `<span class="ico">⚔️</span><span class="nm">${nm}<small>${on ? 'Equipada' : 'Guardada · siempre en tu equipo'}</small></span><button type="button" class="btn small">${on ? 'Guardar' : 'Equipar'}</button>`;
+      row.querySelector('button').addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); if (this.onWeaponToggle) this.onWeaponToggle(); });
+      row.classList.toggle('out', on);
+    }
   },
   selectAbilityUI(i) {
     [...$('skillbar').querySelectorAll('.skill')].forEach((b, k) => b.classList.toggle('sel', k === i));

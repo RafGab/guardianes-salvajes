@@ -267,26 +267,31 @@ export class Vfx2 {
 
   /* ---------------- CADENA ELÁSTICA: lengua del Komodo y cola del Jaglion ---------------- */
   // Tubo deformable que pasa por una lista de puntos (se reescribe cada fotograma)
-  tube({ n = 28, radial = 10, r0 = 0.1, r1 = 0.06, color = 0xff6a8a, rough = 0.35, emissive = 0x000000, tipR = 0 } = {}) {
+  tube({ n = 28, radial = 10, r0 = 0.1, r1 = 0.06, color = 0xff6a8a, rough = 0.35, emissive = 0x000000, tipR = 0, map = null, tipColor = null, uvRepeat = 6 } = {}) {
     const verts = n * radial;
     const geo = new THREE.BufferGeometry();
     const pos = new Float32Array(verts * 3), nor = new Float32Array(verts * 3);
     geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
     geo.setAttribute('normal', new THREE.BufferAttribute(nor, 3));
+    if (map) { // coordenadas de textura: alrededor del tubo y a lo largo (manchas del pelaje)
+      const uv = new Float32Array(verts * 2);
+      for (let i = 0; i < n; i++) for (let j = 0; j < radial; j++) { const k = (i * radial + j) * 2; uv[k] = j / radial; uv[k + 1] = (i / (n - 1)) * uvRepeat; }
+      geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    }
     const idx = [];
     for (let i = 0; i < n - 1; i++) for (let j = 0; j < radial; j++) {
       const a = i * radial + j, b = i * radial + ((j + 1) % radial), c = a + radial, d = b + radial;
       idx.push(a, c, b, b, c, d);
     }
     geo.setIndex(idx);
-    const mat = new THREE.MeshStandardMaterial({ color, roughness: rough, metalness: 0.05, emissive, emissiveIntensity: 0.6 });
+    const mat = new THREE.MeshStandardMaterial({ color: map ? 0xffffff : color, map, roughness: rough, metalness: 0.05, emissive, emissiveIntensity: 0.6 });
     const mesh = new THREE.Mesh(geo, mat);
     mesh.frustumCulled = false;
     mesh.castShadow = true;
     const grp = new THREE.Group();
     grp.add(mesh);
     let tip = null;
-    if (tipR > 0) { tip = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), mat); grp.add(tip); }
+    if (tipR > 0) { tip = new THREE.Mesh(new THREE.SphereGeometry(1, 14, 10), tipColor != null ? new THREE.MeshStandardMaterial({ color: tipColor, roughness: 0.9 }) : mat); grp.add(tip); }
     own(grp);
     const T = new THREE.Vector3(), N = new THREE.Vector3(), B = new THREE.Vector3(), UP = new THREE.Vector3(0, 1, 0), tmp = new THREE.Vector3();
     const h = { group: grp, mesh, mat, n, visible: true, radius: (u) => r0 + (r1 - r0) * u };
@@ -386,18 +391,18 @@ export class Vfx2 {
     geo.setIndex(idx);
     const mat = new THREE.ShaderMaterial({
       transparent: true, depthWrite: false, fog: false, side: THREE.DoubleSide,
-      uniforms: { uT: { value: 0 }, uP: { value: 0 }, uA: { value: 1 }, uL: { value: len } },
+      uniforms: { uT: { value: 0 }, uP: { value: 0 }, uA: { value: 1 }, uL: { value: len }, uW: { value: width } },
       vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-      fragmentShader: NOISE + `uniform float uT; uniform float uP; uniform float uA; uniform float uL; varying vec2 vUv;
+      fragmentShader: NOISE + `uniform float uT; uniform float uP; uniform float uA; uniform float uL; uniform float uW; varying vec2 vUv;
         void main(){
           if (vUv.x > uP) discard;
-          vec2 q = vec2(vUv.x * uL * 0.7 - uT * 0.35, vUv.y * 3.0);
+          vec2 q = vec2(vUv.x * uL * 0.7 - uT * 0.35, vUv.y * uW * 0.85); // venas a escala real (no se estiran al ensanchar el río)
           float n = fbm(q * 1.4);
           float vein = 1.0 - smoothstep(0.02, 0.09, abs(fbm(q * 2.2 + 3.1) - 0.5));
           vec3 rock = mix(vec3(0.02, 0.015, 0.02), vec3(0.12, 0.09, 0.08), n);
           vec3 hot = mix(vec3(1.0, 0.3, 0.02), vec3(1.0, 0.75, 0.25), n);
           float front = smoothstep(uP - 0.08, uP, vUv.x);
-          float edge = 1.0 - smoothstep(0.0, 0.22, min(vUv.y, 1.0 - vUv.y));
+          float edge = 1.0 - smoothstep(0.0, 0.8, min(vUv.y, 1.0 - vUv.y) * uW);
           float glow = clamp(vein * (0.6 + 0.4 * sin(uT * 6.0 + vUv.x * 30.0)) + front * 0.9 + edge * 0.55, 0.0, 1.0);
           vec3 c = mix(rock, hot * 1.6, glow);
           float a = smoothstep(0.0, 0.08, vUv.y) * smoothstep(1.0, 0.92, vUv.y) * uA;

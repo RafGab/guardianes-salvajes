@@ -677,7 +677,14 @@ export class HammerSkill extends WeaponSkill {
 /*  HALLEY — LANZA MORADA · estocada con proyección → doble estocada → embestida */
 /* ---------------------------------------------------------------------- */
 export class SpearSkill extends WeaponSkill {
-  begin() { this.target = this.aim(this.def.range, this.def.coneDeg * 2); this.draw(); this.start(); return true; }
+  begin() {
+    // con la MIRA activa: dispara hacia la retícula (objetivo fijado o punto apuntado); sin ella, apuntado automático
+    const ai = this.g.aimSys && this.g.aimSys.on ? this.g.aimSys.info : null;
+    this.aimed = ai ? { point: ai.point.clone(), target: ai.target } : null;
+    if (this.aimed) { this.target = this.aimed.target; this.face(this.aimed.point.x, this.aimed.point.z); }
+    else this.target = this.aim(this.def.range, this.def.coneDeg * 2);
+    this.draw(); this.start(); return true;
+  }
   build() {
     const d = this.def, extra = this.drawn ? 0.1 : 0;
     const back1 = { x: -0.7, y: -0.3, f: -1.5, r: 0.3 }, out1 = { x: -1.55, y: 0.05, f: 0, r: 0.3 };
@@ -716,8 +723,9 @@ export class SpearSkill extends WeaponSkill {
   projectile(k) {
     const d = this.def, p = this.p, f = this.fwd;
     const m = this.tipPos().clone();
-    const t = this.target && !this.target.dead ? this.target : this.combat.aimTarget(p.pos.x, p.pos.z, p.facing, d.coneDeg * DEG, d.range);
-    const to = t ? V(t.pos.x, t.pos.y + (t.heavy ? t.S.height * 0.5 : 0.6), t.pos.z) : V(m.x + f.x * d.range, m.y, m.z + f.z * d.range);
+    const t = this.aimed ? (this.aimed.target && !this.aimed.target.dead ? this.aimed.target : null) : this.target && !this.target.dead ? this.target : this.combat.aimTarget(p.pos.x, p.pos.z, p.facing, d.coneDeg * DEG, d.range);
+    const to = t ? V(t.pos.x, t.pos.y + (t.heavy ? t.S.height * 0.5 : 0.6), t.pos.z) : this.aimed ? this.aimed.point.clone() : V(m.x + f.x * d.range, m.y, m.z + f.z * d.range);
+    if (this.aimed && !t && to.distanceTo(m) < 1) to.addScaledVector(V(f.x, 0, f.z), d.range); // punto demasiado cerca: sigue de frente
     const dir = to.clone().sub(m).normalize();
     const g = new THREE.Group();
     const core = new THREE.Mesh(new THREE.ConeGeometry(0.11 * k, 0.55 * k, 4), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xd0a0ff).multiplyScalar(2.6), toneMapped: false }));

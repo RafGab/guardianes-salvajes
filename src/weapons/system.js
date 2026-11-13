@@ -83,6 +83,7 @@ export class WeaponSystem {
     this.light = new THREE.PointLight(0xffffff, 0, 4.5, 1.8);
     game.scene.add(this.light);
     this.sparkT = 0;
+    this.outBy = {};           // cada héroe recuerda si llevaba el arma en la mano
     // capa del brazo (guardia, golpes, defensa): objetivo que fija la habilidad en curso
     this.armTarget = { x: 0, y: 0, f: 0, w: 0 };
     this.armT = 0;          // > 0 mientras una habilidad está mandando el brazo
@@ -178,6 +179,7 @@ export class WeaponSystem {
       hb.hand.add(holder);
       parts.push({ w, holder, side: sx, S: side, bones: hb, scale: w.group.scale.x, home: true });
     }
+    this.attachBack(model, W, frame, parts);
     model.root.rotation.copy(savedRot); model.root.scale.copy(savedScale); frame.rotation.copy(savedLean);
     restore();
     model.root.updateMatrixWorld(true);
@@ -220,6 +222,61 @@ export class WeaponSystem {
     w3.add(holder);
     parts.push({ w, holder, side: sx, S: side, bones: { hand: w3, wing: [w1, w2, w3, w4] }, scale: w.group.scale.x, home: true, wing: true });
     return true;
+  }
+  // FUNDA EN LA ESPALDA: soporte unido al pecho donde descansa el arma guardada (sigue a la animación).
+  // Armas largas en diagonal; armas dobles (discos, cuchillas) una a cada lado de la espalda.
+  attachBack(model, W, frame, parts) {
+    const B = model.bones || {};
+    const bone = B.chest || B.spine || null;
+    if (!bone) return;
+    const H = model.height || 1.6;
+    bone.getWorldPosition(_a); frame.worldToLocal(_c.copy(_a));
+    parts.forEach((pt, i) => {
+      const sx = pt.side || 1, multi = parts.length > 1;
+      const p = _c.clone();
+      p.z -= H * (W.backOut ?? 0.12);                  // detrás de la espalda
+      p.y += H * (W.backUp ?? 0.0);
+      p.x += multi ? sx * H * 0.09 : 0;
+      frame.localToWorld(_a.copy(p));
+      const dir = multi ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(0.55, 1, 0).normalize(); // larga: en diagonal
+      const fc = new THREE.Vector3(0, 0, -1);
+      const xx = new THREE.Vector3().crossVectors(dir, fc).normalize();
+      _m.makeBasis(xx, dir, fc);
+      frame.getWorldQuaternion(_q);
+      _q.multiply(new THREE.Quaternion().setFromRotationMatrix(_m));
+      bone.getWorldQuaternion(_q2);
+      const back = new THREE.Group();
+      back.name = `funda_${W.id}_${i}`;
+      back.quaternion.copy(_q2.invert().multiply(_q));
+      back.position.copy(bone.worldToLocal(_a.clone()));
+      back.scale.setScalar(1 / this.boneScale(bone));
+      back.visible = false;
+      bone.add(back);
+      pt.back = back;
+      pt.mount = 'hand';
+    });
+  }
+  // Mueve el arma entre la mano y la funda de la espalda (con un destello en cada punto)
+  mountTo(pt, where) {
+    if (!pt.back || pt.mount === where) return;
+    const from = (pt.mount === 'back' ? pt.back : pt.holder).getWorldPosition(new THREE.Vector3());
+    (where === 'back' ? pt.back : pt.holder).add(pt.w.group);
+    pt.mount = where;
+    const to = (where === 'back' ? pt.back : pt.holder).getWorldPosition(new THREE.Vector3());
+    if (this.g.fx && pt.holder.parent && this.g.player.model && this.g.player.model.root.visible) {
+      const col = this.cur ? this.cur.W.color : 0xffffff;
+      for (let j = 0; j < 6; j++) { const k = j / 5; this.g.fx.sparkle(from.x + (to.x - from.x) * k, from.y + (to.y - from.y) * k, from.z + (to.z - from.z) * k, col, 1.2); }
+    }
+  }
+  // Guarda el arma en la espalda al instante (cambio de héroe, inicio de misión)
+  stow(inst) {
+    inst.k = 0; inst.kb = 1;
+    for (const pt of inst.parts) {
+      if (!pt.home) continue;
+      if (pt.back) { this.mountTo(pt, 'back'); pt.back.visible = true; pt.w.group.scale.setScalar(pt.scale * (inst.W.backScale ?? 0.85)); for (const s of pt.w.glows) s.visible = false; }
+      pt.holder.visible = false;
+    }
+    for (const tr of inst.trails) { tr.pts.length = 0; tr.update(0, false); }
   }
   boneScale(b) { b.updateWorldMatrix(true, false); b.getWorldScale(_s); const r = this.g.player && this.g.player.model && this.g.player.model.root; void r; return _s.x || 1; }
 
@@ -306,17 +363,17 @@ export class WeaponSystem {
     for (const pt of this.cur.parts) { pt.holder.visible = true; pt.home = true; }
     this.boost = 1.4;
     this.flashAll(1.2);
-    ui.setWeaponOut(true);
+    ui.setWeaponOut(true, this.def && this.def.name);
     return true;
   }
   holster(instant = false) {
     if (!this.out && !instant) return false;
     this.out = false;
     if (this.cur) {
-      if (instant) { this.cur.k = 0; for (const pt of this.cur.parts) pt.holder.visible = false; }
+      if (instant) this.stow(this.cur);
       else this.flashAll(0.6);
     }
-    ui.setWeaponOut(false);
+    ui.setWeaponOut(false, this.def && this.def.name);
     return true;
   }
   toggle() { return this.out ? (this.holster(), false) : this.equip(); }
@@ -427,19 +484,33 @@ export class WeaponSystem {
     const model = p && p.model;
     // cambio de héroe: el arma del anterior desaparece al instante
     if (model !== this.model) {
-      if (this.model) { const old = this.inst.get(this.model); if (old) { old.k = 0; for (const pt of old.parts) pt.holder.visible = false; } }
+      // el héroe que sale guarda su arma en la espalda (cada héroe recuerda si la llevaba en la mano)
+      if (this.model) { const old = this.inst.get(this.model); if (old) this.stow(old); if (this.heroId) this.outBy[this.heroId] = this.out; }
       this.model = model;
-      if (this.out) { this.out = false; ui.setWeaponOut(false); }
+      this.heroId = this.g.hero ? this.g.hero.id : null;
+      if (this.out) this.out = false;
+      ui.setWeaponOut(false, this.def && this.def.name);
       this.cur = null;
+      if (model && this.heroId && this.outBy[this.heroId]) this.equip();
     }
+    // el arma va SIEMPRE con su héroe: en la mano o guardada en la funda de la espalda
+    if (!this.cur && model && this.g.hero && WEAPONS[this.g.hero.id]) { this.cur = this.get(model, this.g.hero.id); if (this.cur && !this.out) this.stow(this.cur); }
     const inst = this.cur;
     this.armT = Math.max(0, this.armT - dt);
     this.defT = Math.max(0, this.defT - dt);
     if (!inst) { this.light.intensity = 0; return; }
     if (this.out) { this.idleT += dt; if (this.idleT > AUTO_HOLSTER && this.swingT <= 0) this.holster(); }
-    // aparecer (rebote) / desaparecer (encoger)
+    // TRANSICIÓN FUNDA ⇄ MANO: al sacarla, se desvanece de la espalda y se materializa en la mano (rebote);
+    // al guardarla, se encoge en la mano y aparece en la funda de la espalda
+    if (inst.kb == null) inst.kb = 0;
+    if (this.out) {
+      if (inst.kb > 0) { inst.kb = Math.max(0, inst.kb - dt * 7); inst.k = 0; }
+      else inst.k = Math.min(1, inst.k + dt * 3.2);
+    } else {
+      inst.k = Math.max(0, inst.k - dt * 4.5);
+      if (inst.k <= 0) inst.kb = Math.min(1, inst.kb + dt * 4);
+    }
     const target = this.out ? 1 : 0;
-    inst.k = target > inst.k ? Math.min(1, inst.k + dt * 3.2) : Math.max(0, inst.k - dt * 4.5);
     const swim = !!p.swimming;
     const show = inst.k > 0.001 && !swim;
     const sk = target ? easeBack(inst.k) : inst.k * inst.k;
@@ -447,8 +518,22 @@ export class WeaponSystem {
     this.boost = Math.max(0, this.boost - dt * 1.6);
     const pulse = 1 + 0.16 * Math.sin(this.t * 3.1) + 0.06 * Math.sin(this.t * 11.7) + this.boost * 0.9;
     let n = 0;
+    const onBack = inst.kb > 0.001 || (!this.out && inst.k <= 0.001);
     for (let i = 0; i < inst.parts.length; i++) {
       const pt = inst.parts[i], w = pt.w;
+      if (pt.back) {
+        if (onBack && pt.home) {
+          this.mountTo(pt, 'back');
+          pt.holder.visible = false;
+          pt.back.visible = !swim;
+          w.group.scale.setScalar(pt.scale * (inst.W.backScale ?? 0.85) * Math.max(0.001, easeBack(inst.kb)));
+          for (const s of w.glows) s.visible = false; // guardada: sin resplandor
+          inst.trails[i].update(dt, false);
+          continue;
+        }
+        this.mountTo(pt, 'hand');
+        pt.back.visible = false;
+      }
       pt.holder.visible = show && pt.home;
       w.group.scale.setScalar(pt.scale * Math.max(0.001, sk));
       if (!pt.holder.visible) { inst.trails[i].update(dt, false); continue; }

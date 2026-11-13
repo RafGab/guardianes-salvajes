@@ -599,6 +599,8 @@ function bindUi() {
   };
   ui.buildBag(null, (type) => game.useItem(type), () => bagToggle(false)); // el inventario real lo conecta game.start
   ui.onBagToggle = () => bagToggle();
+  input.on('aim', () => mode === 'playing' && game.state === 'playing' && game.toggleAim()); // T: mira de Halley
+  ui.onWeaponToggle = () => mode === 'playing' && game.state === 'playing' && game.toggleWeapon(); // botón / mochila: equipar o guardar el arma
   input.on('bag', () => bagToggle());
   input.on('pause', () => { if (ui.bagIsOpen) { bagToggle(false); return; } pauseGame(); });
   input.on('unlocked', () => { if (!ui.bagIsOpen) pauseGame(); });

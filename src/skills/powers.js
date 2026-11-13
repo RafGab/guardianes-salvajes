@@ -3,6 +3,7 @@ import { rnd, TAU } from './attack.js';
 import { Skill, DEG, ease, lerp, clamp, V } from './base.js';
 import { terrainH } from '../terrain.js';
 import { ui } from '../ui.js';
+import { douseFires, propsNear, captureProp, dropFlung, wetGround } from './envreact.js';
 
 // PODERES ESPECIALES NUEVOS (3 por héroe; la Zorra Ártica tiene 4).
 // Cada poder es una lista de etapas PREPARACIÓN → EJECUCIÓN → RECUPERACIÓN (como skills/hero.js).
@@ -141,27 +142,48 @@ export class BlackLavaSkill extends Skill {
       { name: 'recuperacion', dur: d.recover, enter: () => { this.lock(false); this.leaveZone(); }, tick: (dt, k) => { pose.rx = lerp(0.35, 0, k); pose.sy = lerp(1.05, 1, k); } },
     ];
   }
+  // LA LAVA NEGRA CUBRE MUCHO TERRENO: un río principal ancho y largo y, desde su mitad, dos brazos que
+  // se abren a los lados. Todo avanza de forma progresiva (primero el río, luego los brazos), con un charco
+  // en el origen, grietas incandescentes en las orillas y suelo quemado que queda después.
   enterFlow() {
     const d = this.def;
-    const y0 = this.p.pos.y + 0.6;
-    this.flow = this.v2.lavaFlow(this.origin, this.dir, { len: d.length, width: d.width, life: d.spreadT + d.zoneT + d.recover, hf: (x, z) => this.p.floorY(x, z, y0) });
+    const y0 = this.p.pos.y + 0.6, hf = (x, z) => this.p.floorY(x, z, y0), life = d.spreadT + d.zoneT + d.recover;
+    const rot = (v, a) => ({ x: v.x * Math.cos(a) - v.z * Math.sin(a), z: v.x * Math.sin(a) + v.z * Math.cos(a) });
+    const mid = V(this.origin.x + this.dir.x * d.length * 0.38, 0, this.origin.z + this.dir.z * d.length * 0.38);
+    this.flows = [{ o: this.origin, dir: this.dir, len: d.length, w: d.width, t0: 0, t1: 0.8 }];
+    for (const a of [-0.65, 0.65]) this.flows.push({ o: mid, dir: rot(this.dir, a), len: d.length * 0.55, w: d.width * 0.6, t0: 0.35, t1: 1 });
+    this.flows.push({ o: V(this.origin.x - this.dir.x * 2.5, 0, this.origin.z - this.dir.z * 2.5), dir: this.dir, len: 6, w: d.width * 1.15, t0: 0, t1: 0.3 }); // charco a los pies de Kairo
+    for (const f of this.flows) { f.flow = this.v2.lavaFlow(f.o, f.dir, { len: f.len, width: f.w, life, hf }); f.k = 0; f.cracked = 0; }
+    this.flow = this.flows[0].flow;
     this.hitSet = new Set();
-    this.shake(0.2);
+    this.shake(0.35);
     this.sfx('lava');
+    this.vfx.ring(this.origin.x, null, this.origin.z, { r0: 0.5, r1: d.width * 1.2, dur: 0.6, color: 0xff5a10 });
   }
   tickFlow(dt, k) {
-    const d = this.def, pose = this.pose, e = back(k);
+    const d = this.def, pose = this.pose;
     pose.rx = 0.35; pose.sy = 1.05; // escupe / empuja la lava hacia delante
-    this.flow.setProgress(e);
-    const front = d.length * e, fx = this.origin.x + this.dir.x * front, fz = this.origin.z + this.dir.z * front, fy = terrainH(fx, fz);
-    // frente de la corriente: partículas negras y destellos naranjas
-    for (let i = 0; i < 3; i++) {
-      const s = rnd(-0.5, 0.5) * d.width;
-      this.g.fx.smokePuff(fx - this.dir.z * s, fy + 0.3, fz + this.dir.x * s, 0.9, 0x0c0908);
-      this.g.fx.ember(fx - this.dir.z * s, fy + 0.2, fz + this.dir.x * s, 1.2);
+    this.shake(0.05 + 0.05 * Math.sin(this.t * 20)); // el suelo retumba mientras se extiende
+    for (const f of this.flows) {
+      const kk = clamp((k - f.t0) / (f.t1 - f.t0), 0, 1), e = back(kk);
+      f.k = e;
+      f.flow.setProgress(e);
+      if (kk <= 0 || kk >= 1) continue;
+      const front = f.len * e, fx = f.o.x + f.dir.x * front, fz = f.o.z + f.dir.z * front, fy = terrainH(fx, fz);
+      // frente de la corriente: humo negro denso, brasas y chispas naranjas a todo lo ancho
+      for (let i = 0; i < 4; i++) {
+        const s = rnd(-0.5, 0.5) * f.w;
+        this.g.fx.smokePuff(fx - f.dir.z * s, fy + 0.4, fz + f.dir.x * s, 1.3, 0x0c0908);
+        this.g.fx.ember(fx - f.dir.z * s, fy + 0.2, fz + f.dir.x * s, 1.4);
+      }
+      if (Math.random() < 0.6) this.vfx.sparks(fx, fy + 0.3, fz, 0xff8a2a, 4, 3.4);
+      // grietas incandescentes que se abren en las orillas según avanza
+      if (front - f.cracked > 2.2) {
+        f.cracked = front;
+        for (const sd of [-1, 1]) { const x = fx - f.dir.z * sd * f.w * 0.55, z = fz + f.dir.x * sd * f.w * 0.55; this.v2.crack(x, z, rnd(1.5, 3), Math.atan2(f.dir.x, f.dir.z) + sd * rnd(0.6, 1.3), { life: d.zoneT, width: 0.25, color: 0xff4a10 }); }
+      }
     }
-    if (Math.random() < 0.5) this.vfx.sparks(fx, fy + 0.3, fz, 0xff8a2a, 3, 3);
-    for (const t of this.inFlow(front)) {
+    for (const t of this.inFlow()) {
       if (this.hitSet.has(t)) continue;
       this.hitSet.add(t);
       this.hit(t, d.damage);
@@ -170,33 +192,53 @@ export class BlackLavaSkill extends Skill {
       this.vfx.fire(t.pos.x, t.pos.y + 0.3, t.pos.z, 6, 1.2);
     }
   }
-  // enemigos sobre la franja de lava (hasta `upTo` metros)
-  inFlow(upTo) {
-    const d = this.def, o = this.origin, ux = this.dir.x, uz = this.dir.z;
-    return this.combat.targets().filter((t) => {
-      const px = t.pos.x - o.x, pz = t.pos.z - o.z, along = px * ux + pz * uz;
-      if (along < 0 || along > upTo) return false;
-      return Math.abs(px * -uz + pz * ux) < d.width * 0.5 + t.radius;
-    });
+  // enemigos sobre la lava (por donde ya ha llegado cada corriente)
+  inFlow() {
+    return this.combat.targets().filter((t) => this.flows.some((f) => {
+      const px = t.pos.x - f.o.x, pz = t.pos.z - f.o.z, along = px * f.dir.x + pz * f.dir.z;
+      if (along < 0 || along > f.len * f.k) return false;
+      return Math.abs(px * -f.dir.z + pz * f.dir.x) < f.w * 0.5 + t.radius;
+    }));
+  }
+  // punto al azar sobre la lava
+  randomOnLava() {
+    const f = this.flows[Math.floor(Math.random() * this.flows.length)], r = Math.random() * f.len * f.k, s = rnd(-0.42, 0.42) * f.w;
+    return { x: f.o.x + f.dir.x * r - f.dir.z * s, z: f.o.z + f.dir.z * r + f.dir.x * s };
   }
   // la lava se queda ardiendo un tiempo: ralentiza y quema a quien la pisa
   leaveZone() {
-    const d = this.def, fx = this.g.fx, o = this.origin, dir = this.dir;
-    let drop = 0;
+    const d = this.def, fx = this.g.fx;
+    let drop = 0, bubble = 0;
     this.linger({
       life: d.zoneT,
       update: (dt) => {
-        for (const t of this.inFlow(d.length)) { this.combat.slow(t, d.slowF, 0.6); this.combat.damage(t, (t.heavy ? d.dps : d.dps * 0.5) * dt, { quiet: true }); }
-        drop -= dt;
-        if (drop <= 0) {
-          drop = 0.08;
-          const r = Math.random() * d.length, s = rnd(-0.4, 0.4) * d.width;
-          const x = o.x + dir.x * r - dir.z * s, z = o.z + dir.z * r + dir.x * s;
-          if (Math.random() < 0.5) fx.ember(x, terrainH(x, z) + 0.1, z, 1); else fx.smokePuff(x, terrainH(x, z) + 0.2, z, 0.6, 0x120d0b);
+        for (const t of this.inFlow()) { this.combat.slow(t, d.slowF, 0.6); this.combat.damage(t, (t.heavy ? d.dps : d.dps * 0.5) * dt, { quiet: true }); }
+        drop -= dt; bubble -= dt;
+        while (drop <= 0) { // brasas y humo por toda la superficie (más cuanto más grande)
+          drop += 0.025;
+          const q = this.randomOnLava(), y = terrainH(q.x, q.z);
+          if (Math.random() < 0.5) fx.ember(q.x, y + 0.1, q.z, 1.2); else fx.smokePuff(q.x, y + 0.3, q.z, 0.9, 0x120d0b);
+        }
+        if (bubble <= 0) { // burbujas que revientan con un destello
+          bubble = rnd(0.12, 0.3);
+          const q = this.randomOnLava(), y = terrainH(q.x, q.z);
+          this.vfx.ring(q.x, y + 0.15, q.z, { r0: 0.1, r1: rnd(0.6, 1.2), dur: 0.35, color: 0xff7a2a });
+          for (let i = 0; i < 4; i++) fx.ember(q.x, y + 0.2, q.z, 1.6);
         }
       },
-      end: () => {},
+      end: () => this.scorch(),
     });
+  }
+  // suelo quemado: manchas oscuras que se quedan un rato después de que la lava se enfríe
+  scorch() {
+    const geo = new THREE.CircleGeometry(1, 20); geo.rotateX(-Math.PI / 2);
+    for (let i = 0; i < 16; i++) {
+      const q = this.randomOnLava(), r = rnd(1.2, 2.6);
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0x0e0a08, transparent: true, opacity: 0.55, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2 }));
+      m.userData.own = true;
+      m.position.set(q.x, terrainH(q.x, q.z) + 0.05, q.z); m.scale.set(r, 1, r * rnd(0.6, 1)); m.rotation.y = rnd(0, 6);
+      this.vfx.add(m, 12, (it) => { const k = it.t / 12; m.material.opacity = 0.55 * (k > 0.7 ? (1 - k) / 0.3 : 1); if (Math.random() < 0.02) this.g.fx.smokePuff(m.position.x, m.position.y + 0.3, m.position.z, 0.5, 0x2a2624); });
+    }
   }
 }
 
@@ -925,7 +967,11 @@ export class TsunamiSkill extends Skill {
     this.hitSet = new Set();
   }
   liftCam(dt) { const ch = this.g.chase; if (ch.pitch < 0.75) ch.pitch = lerp(ch.pitch, 0.75, Math.min(1, dt * 3)); }
-  dispose() { if (this.cam0) { this.g.chase.distTarget = this.cam0.dist; this.g.chase.pitch = this.cam0.pitch; this.cam0 = null; } super.dispose(); }
+  dispose() {
+    if (this.cam0) { this.g.chase.distTarget = this.cam0.dist; this.g.chase.pitch = this.cam0.pitch; this.cam0 = null; }
+    if (this.carried && this.carried.length) { dropFlung(this.g, this.carried, 6); this.carried = []; } // si se interrumpe, lo arrastrado cae donde esté
+    super.dispose();
+  }
   tickGather(dt, k) {
     const d = this.def, pose = this.pose;
     this.liftCam(dt);
@@ -942,7 +988,10 @@ export class TsunamiSkill extends Skill {
     this.wave.shape(d.height * lerp(0.35, 1, back(k)), 0.4 * k, 0);
     this.crest(0.6);
   }
-  enterTravel() { this.shake(0.2); this.pose.spin = 0; }
+  enterTravel() {
+    this.shake(0.2); this.pose.spin = 0;
+    this.carried = []; this.doused = 0; this.lastWet = 0; this.ringT = 0;
+  }
   tickTravel(dt, k) {
     const d = this.def, pose = this.pose;
     pose.rx = 0.25; pose.dy = 0.5;
@@ -961,6 +1010,32 @@ export class TsunamiSkill extends Skill {
       }
     }
     this.shake(0.06);
+    this.worldTick(dt, dist);
+  }
+  // LA OLA EN EL ESCENARIO: apaga los incendios que cruza, arrastra escombros y troncos, y deja el suelo mojado
+  worldTick(dt, dist) {
+    const d = this.def, f = this.wave.front, ux = this.dir.x, uz = this.dir.z, g = this.g;
+    this.doused += douseFires(g, f.x, f.z, d.width * 0.55);
+    for (const pr of propsNear(g, f.x, f.z, d.width * 0.5)) {
+      const it = captureProp(g, pr);
+      if (!it) continue;
+      it.side = clamp((-(pr.pos.x - f.x) * uz + (pr.pos.z - f.z) * ux), -d.width * 0.45, d.width * 0.45);
+      it.h = rnd(0.4, 0.8);
+      this.carried.push(it);
+      this.vfx.splash(pr.pos.x, pr.pos.y + 0.8, pr.pos.z, 14, 1.4);
+      this.sfx('stick');
+    }
+    for (const it of this.carried) { // los objetos ruedan dentro de la ola, a su misma velocidad
+      const m = it.mesh, x = f.x - uz * it.side - ux * 0.8, z = f.z + ux * it.side - uz * 0.8;
+      m.position.set(x, terrainH(x, z) + d.height * it.h + Math.sin(this.t * 5 + it.side) * 0.3, z);
+      m.rotation.x += it.spin.x * dt; m.rotation.z += it.spin.z * dt;
+    }
+    if (dist - this.lastWet > 3.5) { // estela mojada que se seca poco a poco
+      this.lastWet = dist;
+      for (const s of [-0.22, 0.22]) { const x = f.x - uz * (s + rnd(-0.08, 0.08)) * d.width - ux * 2, z = f.z + ux * (s + rnd(-0.08, 0.08)) * d.width - uz * 2; wetGround(g, x, z, d.width * rnd(0.32, 0.4), rnd(8, 11)); }
+    }
+    this.ringT -= dt;
+    if (this.ringT <= 0) { this.ringT = 0.22; this.vfx.ring(f.x, null, f.z, { r0: 0.6, r1: d.width * 0.45, dur: 0.45, color: 0xa8e4ff }); } // onda expansiva a ras de suelo
   }
   crest(k) { // espuma, salpicaduras y burbujas en la cresta
     const d = this.def, f = this.wave.front, ux = this.dir.x, uz = this.dir.z;
@@ -971,7 +1046,20 @@ export class TsunamiSkill extends Skill {
       if (Math.random() < 0.3) this.g.fx.sparkle(x - ux * 2, y - d.height * 0.5, z - uz * 2, 0xbfeaff, 0.6); // burbujas
     }
   }
-  enterCrash() { this.sfx('boom'); this.shake(0.35); }
+  enterCrash() {
+    this.sfx('boom'); this.shake(0.35);
+    const f = this.wave.front, ux = this.dir.x, uz = this.dir.z, g = this.g, d = this.def;
+    // lo arrastrado sale despedido hacia delante y se queda en el suelo
+    for (const it of this.carried || []) it.vel = new THREE.Vector3(ux * rnd(5, 9), rnd(3, 6), uz * rnd(5, 9));
+    if (this.carried && this.carried.length) dropFlung(g, this.carried, 8);
+    this.carried = [];
+    this.doused += douseFires(g, f.x + ux * 3, f.z + uz * 3, d.width * 0.7);
+    wetGround(g, f.x, f.z, d.width * 0.45, 10);
+    if (this.doused) {
+      ui.banner('good', `💧 ¡El tsunami apaga ${this.doused} ${this.doused > 1 ? 'focos' : 'foco'}!`, `+${30 * this.doused} puntos`);
+      this.sfx('chime');
+    }
+  }
   tickCrash(dt, k) { // la ola cae y se deshace en espuma
     const d = this.def;
     this.wave.shape(d.height * (1 - ease(k)) + 0.01, 0.9 + 0.3 * k, d.length);
@@ -1018,6 +1106,7 @@ export class MaelstromSkill extends Skill {
   }
   tickPull(dt) {
     const d = this.def, at = this.at, c = this.combat;
+    this.absorbWorld(dt);
     c.deflect(this.p.pos.x, this.p.pos.z, 3.5); // ESCUDO: los proyectiles que llegan a la nutria se desvían
     this.p.evadeT = Math.max(this.p.evadeT, 0.15); // ESCUDO: mientras gira el remolino la nutria queda protegida
     for (const t of c.targets()) {
@@ -1046,8 +1135,49 @@ export class MaelstromSkill extends Skill {
     if (Math.random() < 0.3) this.g.fx.mist(at.x + rnd(-2, 2), at.y + 0.6, at.z + rnd(-2, 2), 0x9ac8e8, 1.2);
     this.shake(0.03);
   }
+  dispose() {
+    if (this.orbit && this.orbit.length) { dropFlung(this.g, this.orbit, 6); this.orbit = []; }
+    super.dispose();
+  }
+  // EL REMOLINO EN EL ESCENARIO: absorbe escombros, rocas y troncos cercanos, que giran en espiral y suben
+  // por el embudo; también apaga los fuegos que alcanza
+  absorbWorld(dt) {
+    const d = this.def, at = this.at, g = this.g;
+    if (!this.orbit) { this.orbit = []; this.doused = 0; }
+    this.doused += douseFires(g, at.x, at.z, d.radius);
+    for (const pr of propsNear(g, at.x, at.z, d.radius * 1.35)) {
+      const it = captureProp(g, pr);
+      if (!it) continue;
+      it.a = Math.atan2(pr.pos.z - at.z, pr.pos.x - at.x);
+      it.r = Math.hypot(pr.pos.x - at.x, pr.pos.z - at.z);
+      it.h = 0.2;
+      this.orbit.push(it);
+      this.vfx.splash(pr.pos.x, pr.pos.y + 0.5, pr.pos.z, 12, 1.2);
+    }
+    for (const it of this.orbit) {
+      const R = d.radius, k = 1 - Math.min(1, it.r / R);
+      it.a += dt * (2.2 + 5 * k);                 // gira más rápido cerca del centro
+      it.r = Math.max(0.9, it.r - dt * (1.2 + 1.5 * k));
+      it.h = Math.min(4, it.h + dt * (0.4 + 1.6 * k)); // y sube por el embudo
+      const m = it.mesh;
+      m.position.set(at.x + Math.cos(it.a) * it.r, at.y + it.h, at.z + Math.sin(it.a) * it.r);
+      m.rotation.x += it.spin.x * dt; m.rotation.y += it.spin.y * dt * 2; m.rotation.z += it.spin.z * dt;
+      m.scale.copy(it.s0).multiplyScalar(1 - 0.35 * k);
+      if (Math.random() < dt * 6) g.fx.spray(m.position.x, m.position.y, m.position.z, rnd(-1, 1), 1, rnd(-1, 1), 0.8);
+    }
+    // columna de agua en espiral que sube del centro
+    for (let i = 0; i < 2; i++) { const a = this.t * 7 + i * Math.PI, r = 0.6 + Math.random() * 0.6; g.fx.spray(at.x + Math.cos(a) * r, at.y + 0.3, at.z + Math.sin(a) * r, -Math.sin(a) * 2, rnd(4, 7), Math.cos(a) * 2, 1.1); }
+  }
   enterCollapse() {
-    const d = this.def, at = this.at;
+    const d = this.def, at = this.at, g = this.g;
+    // al colapsar, lo absorbido sale despedido en todas direcciones y cae alrededor
+    for (const it of this.orbit || []) { const a = it.a + 0.6; it.vel = new THREE.Vector3(Math.cos(a) * rnd(6, 10), rnd(5, 9), Math.sin(a) * rnd(6, 10)); }
+    if (this.orbit && this.orbit.length) dropFlung(g, this.orbit, 8);
+    this.orbit = [];
+    wetGround(g, at.x, at.z, d.radius * 0.8, 10);
+    for (let i = 0; i < 6; i++) { const a = i / 6 * TAU; wetGround(g, at.x + Math.cos(a) * d.radius * 0.9, at.z + Math.sin(a) * d.radius * 0.9, rnd(1.4, 2.2), rnd(7, 10)); }
+    this.vfx.ring(at.x, null, at.z, { r0: d.radius * 0.6, r1: d.radius * 1.8, dur: 0.9, color: 0x5ac8ff });
+    if (this.doused) ui.banner('good', `💧 ¡El remolino apaga ${this.doused} ${this.doused > 1 ? 'focos' : 'foco'}!`, `+${30 * this.doused} puntos`);
     this.shake(0.35); this.sfx('boom');
     this.vfx.splash(at.x, at.y + 0.4, at.z, 30, 2);
     this.vfx.ring(at.x, null, at.z, { r0: 0.5, r1: d.radius * 1.1, dur: 0.6, color: 0xbfeaff });

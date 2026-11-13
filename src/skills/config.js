@@ -153,8 +153,8 @@ export const HERO_SKILLS = {
     // LAVA NEGRA: corriente de lava oscura que se extiende por el suelo y deja una zona ardiente
     lava: {
       id: 'blacklava', name: 'Lava Negra', icon: '🌑', cd: 12,
-      prep: 0.5, spreadT: 0.9, recover: 0.4,
-      length: 13, width: 3.6, zoneT: 5,   // recorrido, anchura y vida de la zona
+      prep: 0.5, spreadT: 1.7, recover: 0.4,
+      length: 24, width: 8, zoneT: 8,     // recorrido, anchura y vida de la zona (río principal; salen dos brazos a los lados)
       damage: 10, dps: 4, slowF: 0.5, force: 5,
     },
     skill: {

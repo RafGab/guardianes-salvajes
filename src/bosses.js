@@ -5,6 +5,7 @@ import { bossScale, ALLY_SCALE, modelUrl } from './scale.js';
 import { newStatus, tickStatus } from './combat.js';
 import { BOSS_ATTACKS } from './skills/config.js';
 import { SIGS } from './skills/bossatk.js';
+import { ELEMENTS } from './heroes.js';
 import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 /* ------------------------------------------------------------------ */
@@ -419,6 +420,8 @@ export class BossBase {
     this.clipName = ''; this.action = null; this.hitAnimT = 0;
     this.target = null; this.retargetT = 0; this.strafeDir = Math.random() < 0.5 ? -1 : 1; this.strafeT = 0;
     this.victory = false; this.moving = 0;
+    this.poise = 0; this.guardCd = 4; this.blockFxT = 0; this.phaseGlow = 0; // defensa, aturdimiento y aura de fase
+    this.glowCol = new THREE.Color(this.color);
 
     const ringGeo = new THREE.RingGeometry(0.1, 1, 40);
     this.ringMesh = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color: this.color, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false }));
@@ -492,6 +495,8 @@ export class BossBase {
     else if (s === 'tg_slam') this.playClip('attack', { once: true, speed: 0.5, fade: 0.15 }); // carga el golpe (alza brazos / patas)
     else if (s === 'slam') this.playClip('attack', { once: true, speed: 1.4, fade: 0.05 });
     else if (s === 'sig') this.playClip('attack', { speed: 0.8 });
+    else if (s === 'stagger') this.playClip(this.model.clips.stagger ? 'stagger' : 'hit', { once: true, fade: 0.06 }); // golpe poderoso: se tambalea
+    else if (s === 'guard') this.playClip(this.model.clips.guard ? 'guard' : 'idle', { fade: 0.12 });            // se cubre
     else if (this.hitAnimT > 0) this.playClip('hit', { once: true, fade: 0.08 });
     else if (this.moving > 0.4) this.playClip(this.moving > 3 ? 'run' : 'walk', { speed: clamp(0.7 + this.moving * 0.18, 0.7, 1.5) });
     else this.playClip('idle', { fade: 0.35 });
@@ -512,6 +517,8 @@ export class BossBase {
       case 'tg_slam': case 'slam': return this.slamName;
       case 'sig': return this.sig && this.sig.cfg ? this.sig.cfg.name || '' : '';
       case 'enrage': return '¡Se enfurece!';
+      case 'guard': return 'Se defiende';
+      case 'stagger': return '¡Aturdido!';
       default: return '';
     }
   }
@@ -536,10 +543,53 @@ export class BossBase {
     return true;
   }
 
+  // Su golpe choca contra el escudo de un héroe: rebota, retrocede y se le corta la embestida
+  onBlocked(from) {
+    if (this.state === 'dead' || this.blockedT > this.t) return;
+    this.blockedT = this.t + 0.6;
+    this.hitAnimT = 0.5;
+    if (this.state === 'charge') { this.state = 'recover'; this.stateT = 0; }
+    if (from) { const dx = this.pos.x - from.x, dz = this.pos.z - from.z, l = Math.hypot(dx, dz) || 1; this.kbx = (this.kbx || 0) + (dx / l) * 1.6; this.kbz = (this.kbz || 0) + (dz / l) * 1.6; }
+    for (let i = 0; i < 12; i++) this.ctx.fx.sparkle(this.pos.x + rnd(-0.6, 0.6), this.pos.y + this.S.height * rnd(0.3, 0.8), this.pos.z + rnd(-0.6, 0.6), 0xbfeaff, 2.4);
+    this.ctx.game.floatAt(this.pos, this.S.height * 1.05, '↩ ¡Rebota en el escudo!', 'block');
+  }
+
   // quiet: daño continuo (zonas, estados): sin sacudida, sonido, puntos ni invulnerabilidad
   takeDamage(n, quiet = false) {
     if (this.state === 'dead') return;
+    // DEFENSA: cubierto, el jefe solo recibe un 30 % del daño y el golpe rebota con chispas
+    if (this.state === 'guard') {
+      n *= 0.3;
+      if (!quiet && this.blockFxT <= 0) {
+        this.blockFxT = 0.3;
+        const fx = this.ctx.fx, y = this.pos.y + this.S.height * 0.55;
+        const x = this.pos.x + Math.sin(this.facing) * this.S.radius, z = this.pos.z + Math.cos(this.facing) * this.S.radius;
+        for (let i = 0; i < 14; i++) fx.sparkle(x + rnd(-0.4, 0.4), y + rnd(-0.4, 0.4), z + rnd(-0.4, 0.4), i % 2 ? 0xffffff : 0x9ad8ff, 2.2);
+        this.ctx.game.vfx.ring(x, y, z, { r0: 0.3, r1: 2, dur: 0.3, color: 0xcfeaff });
+        this.ctx.game.floatAt(this.pos, this.S.height * 1.05, '🛡️ ¡BLOQUEA!', 'block');
+        this.ctx.audio.sfx('chime');
+      }
+    }
     this.hp = Math.max(0, this.hp - n);
+    // ATURDIMIENTO: un golpe poderoso (o varios seguidos) lo hace tambalearse y le corta el ataque que preparaba
+    if (!quiet && this.hp > 0) {
+      this.poise += n;
+      const staggerable = ['idle', 'recover', 'tg_charge', 'tg_slam', 'guard', 'charge'].includes(this.state);
+      if (staggerable && (n >= 14 || this.poise >= 30) && !(this.introHold > 0)) {
+        this.poise = 0;
+        this.state = 'stagger'; this.stateT = 0;
+        this.ringMesh.visible = false; this.arrowMesh.visible = false;
+        const pp = this.ctx.player.pos, dx = this.pos.x - pp.x, dz = this.pos.z - pp.z, l = Math.hypot(dx, dz) || 1;
+        this.kbx = (this.kbx || 0) + (dx / l) * 2.2; this.kbz = (this.kbz || 0) + (dz / l) * 2.2;
+        this.ctx.game.vfx.ring(this.pos.x, null, this.pos.z, { r0: this.S.radius, r1: this.S.radius * 3, dur: 0.5, color: 0xffe070 });
+        for (let i = 0; i < 20; i++) this.ctx.fx.sparkle(this.pos.x + rnd(-1, 1), this.pos.y + rnd(0.5, this.S.height), this.pos.z + rnd(-1, 1), 0xffe070, 2.6);
+        this.ctx.game.floatAt(this.pos, this.S.height * 1.15, '💫 ¡ATURDIDO!', 'big');
+        this.ctx.chase.shake(0.4);
+        this.ctx.game.slowT = Math.max(this.ctx.game.slowT || 0, 0.35); // instante de cámara lenta: se nota el golpe
+        this.ctx.ui.battleLog(`💫 ${this.name} queda aturdido`, 'hero');
+        if (this.ctx.game.bossStats) this.ctx.game.bossStats.staggers++;
+      }
+    }
     this.hitFlash = quiet ? Math.max(this.hitFlash, 0.1) : 0.25;
     if (!quiet) {
       this.invuln = 0.35;
@@ -547,6 +597,11 @@ export class BossBase {
       this.ctx.chase.shake(0.18);
       this.ctx.audio.noiseBurst(0.2, 260, 0.35, 'lowpass');
       for (let i = 0; i < 10; i++) this.ctx.fx.sparkle(this.pos.x + rnd(-0.6, 0.6), this.pos.y + 1.2, this.pos.z + rnd(-0.6, 0.6), this.color, 1.6);
+      // impacto con el color del elemento del héroe que golpea: se ve qué poder le ha alcanzado
+      const hero = this.ctx.game.hero, ec = hero && ELEMENTS[hero.element] ? ELEMENTS[hero.element].color : 0xffffff, iy = this.pos.y + this.S.height * 0.55;
+      this.ctx.game.vfx.ring(this.pos.x, iy, this.pos.z, { r0: this.S.radius * 0.5, r1: this.S.radius * 1.6, dur: 0.3, color: ec });
+      for (let i = 0; i < 8; i++) this.ctx.fx.sparkle(this.pos.x + rnd(-0.8, 0.8), iy + rnd(-0.5, 0.5), this.pos.z + rnd(-0.8, 0.8), ec, 2.6);
+      if (this.state === 'idle' || this.state === 'recover') this.hitAnimT = 0.45;
       this.ctx.game.addScore(15);
     }
     const newPhase = this.hp <= this.hpMax * 0.33 ? 3 : this.hp <= this.hpMax * 0.66 ? 2 : 1;
@@ -559,6 +614,10 @@ export class BossBase {
       // (sin refuerzos: el jefe lucha con sus 2-3 soldados de la presentación; la victoria exige derrotarlos a todos)
       this.ctx.ui.alert(newPhase === 3 ? `${this.icon} ¡${this.name} desata su furia final!` : `${this.icon} ¡${this.name} se enfurece!`, 2600);
       this.ctx.audio.alert();
+      // cambio de fase visible: onda de energía, el cuerpo se ilumina con su color y aparece un aura
+      this.ctx.game.vfx.ring(this.pos.x, null, this.pos.z, { r0: 0.5, r1: this.S.radius * 4, dur: 0.8, color: this.color });
+      for (let i = 0; i < 40; i++) this.ctx.fx.sparkle(this.pos.x + rnd(-1.5, 1.5), this.pos.y + rnd(0, this.S.height * 1.2), this.pos.z + rnd(-1.5, 1.5), this.color, 3.2);
+      this.ctx.chase.shake(0.35);
     }
     if (this.hp <= 0) {
       this.cancelSig();
@@ -601,6 +660,13 @@ export class BossBase {
     this.stateT += dt;
     this.invuln = Math.max(0, this.invuln - dt);
     this.hitFlash = Math.max(0, this.hitFlash - dt * 3);
+    this.poise = Math.max(0, this.poise - dt * 8);
+    this.guardCd -= dt; this.blockFxT -= dt;
+    this.phaseGlow = damp(this.phaseGlow, this.phase === 3 ? 0.5 : this.phase === 2 ? 0.25 : 0, 2, dt);
+    if (this.state !== 'dead' && this.phase >= 2 && Math.random() < dt * (this.phase === 3 ? 14 : 5)) { // aura de furia
+      const a = Math.random() * TAU, r = this.S.radius * rnd(0.6, 1.1);
+      this.ctx.fx.sparkle(this.pos.x + Math.cos(a) * r, this.pos.y + rnd(0.2, this.S.height), this.pos.z + Math.sin(a) * r, this.color, this.phase === 3 ? 2.2 : 1.4);
+    }
     const speedMul = 0.85 + (this.phase - 1) * 0.22;
     const faceTo = (x, z) => { this.facing = damp(this.facing, Math.atan2(x - this.pos.x, z - this.pos.z), 6, dt); };
 
@@ -635,9 +701,27 @@ export class BossBase {
       this.syncTransform();
       return;
     }
+    if (this.state === 'stagger') { // tambaleo tras un golpe poderoso: no ataca durante un momento
+      if (this.stateT > 1.25) { this.state = 'recover'; this.stateT = 0.3; }
+      if (Math.random() < dt * 10) this.ctx.fx.sparkle(this.pos.x + rnd(-0.5, 0.5), this.pos.y + this.S.height * 1.05, this.pos.z + rnd(-0.5, 0.5), 0xffe070, 1.4); // estrellitas
+      this.syncTransform();
+      return;
+    }
+    if (this.state === 'guard') { // se cubre de frente al héroe del jugador
+      faceTo(this.ctx.player.pos.x, this.ctx.player.pos.z);
+      if (this.stateT > this.guardDur) { this.state = 'idle'; this.stateT = 0; this.cd = Math.min(this.cd, 0.5); this.guardCd = rnd(5, 8); } // contraataca enseguida
+      this.syncTransform();
+      return;
+    }
     if (this.state === 'idle') {
       faceTo(player.pos.x, player.pos.z);
       const d = Math.hypot(player.pos.x - this.pos.x, player.pos.z - this.pos.z);
+      // DEFENSA: si el héroe del jugador se le echa encima, a veces se cubre
+      const pp = this.ctx.player.pos, dp = Math.hypot(pp.x - this.pos.x, pp.z - this.pos.z);
+      if (this.guardCd <= 0 && dp < this.reach + 3) {
+        this.guardCd = 1.2;
+        if (Math.random() < 0.3 + 0.1 * (this.phase - 1)) { this.state = 'guard'; this.stateT = 0; this.guardDur = rnd(0.9, 1.4); this.syncTransform(); return; }
+      }
       if (!rooted && d > 0.01) {
         // nunca estático: se acerca si está lejos, retrocede si está encima y, a media distancia, rodea al héroe
         const nx = (player.pos.x - this.pos.x) / d, nz = (player.pos.z - this.pos.z) / d;
@@ -776,7 +860,10 @@ export class BossBase {
     }
     for (const mesh of this.model.mats || []) {
       mesh.emissive = mesh.emissive || new THREE.Color(0);
-      mesh.emissive.setRGB(this.hitFlash, this.hitFlash * 0.3, 0);
+      // destello rojo al recibir daño + brillo de su color según la fase + blanco al aturdirse / azul al cubrirse
+      const g = this.phaseGlow * (0.75 + 0.25 * Math.sin(this.t * 5)), c = this.glowCol;
+      const st = this.state === 'stagger' ? Math.max(0, 0.6 - this.stateT) : 0, gd = this.state === 'guard' ? 0.12 : 0;
+      mesh.emissive.setRGB(this.hitFlash + c.r * g + st, this.hitFlash * 0.3 + c.g * g + st + gd * 0.6, c.b * g + st + gd);
       mesh.emissiveIntensity = 1;
     }
     if (this.model.shards) {

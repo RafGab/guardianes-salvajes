@@ -54,6 +54,7 @@ export class Input {
         case 'KeyX': this.emit('teamNext'); break;
         case 'KeyB': this.emit('bag'); break;
         case 'KeyG': this.emit('weapon'); break;
+        case 'KeyT': this.emit('aim'); break;
         case 'KeyP': this.emit('pause'); break;
         default:
           if (/^Digit[0-9]$/.test(e.code)) this.emit('ability', (Number(e.code.slice(5)) + 9) % 10); // 1-9 → huecos 1-9, 0 → hueco 10

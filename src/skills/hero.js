@@ -20,6 +20,30 @@ const damp1 = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 /*  La cola real se recoge y sale una cola elástica de muchas articulaciones */
 /*  desde el propio hueso de la cola.                                      */
 /* ====================================================================== */
+// Textura del pelaje de Jaglion para la cola elástica: naranja tostado con rosetas oscuras
+let JAG_TEX = null;
+function jaguarFurTex() {
+  if (JAG_TEX) return JAG_TEX;
+  const c = document.createElement('canvas'); c.width = 128; c.height = 256;
+  const x = c.getContext('2d');
+  const g = x.createLinearGradient(0, 0, 128, 0);
+  g.addColorStop(0, '#b4561a'); g.addColorStop(0.5, '#d4742a'); g.addColorStop(1, '#b4561a');
+  x.fillStyle = g; x.fillRect(0, 0, 128, 256);
+  for (let i = 0; i < 900; i++) { x.fillStyle = `rgba(${90 + Math.random() * 80},${40 + Math.random() * 30},10,0.25)`; x.fillRect(Math.random() * 128, Math.random() * 256, 1.5, 4); } // pelo
+  const ros = (cx, cy, r) => { // roseta: anillo roto oscuro con el centro algo más oscuro que el pelaje
+    for (const ox of [-128, 0, 128]) {
+      x.fillStyle = 'rgba(150,64,18,0.8)'; x.beginPath(); x.ellipse(cx + ox, cy, r * 0.7, r * 0.6, 0, 0, Math.PI * 2); x.fill();
+      x.strokeStyle = '#2a140a'; x.lineWidth = r * 0.42;
+      for (let k = 0; k < 3; k++) { const a0 = k * 2.1 + Math.random() * 0.6; x.beginPath(); x.ellipse(cx + ox, cy, r, r * 0.8, Math.random(), a0, a0 + 1.5); x.stroke(); }
+    }
+  };
+  for (let i = 0; i < 16; i++) ros(Math.random() * 128, Math.random() * 256, 11 + Math.random() * 7);
+  for (let i = 0; i < 40; i++) { x.fillStyle = '#2a140a'; x.beginPath(); x.arc(Math.random() * 128, Math.random() * 256, 1.5 + Math.random() * 2, 0, Math.PI * 2); x.fill(); } // motas
+  JAG_TEX = new THREE.CanvasTexture(c);
+  JAG_TEX.colorSpace = THREE.SRGBColorSpace;
+  JAG_TEX.wrapS = JAG_TEX.wrapT = THREE.RepeatWrapping;
+  return JAG_TEX;
+}
 class TailSkill extends Skill {
   begin() {
     const d = this.def, p = this.p;
@@ -30,7 +54,11 @@ class TailSkill extends Skill {
       this.mode = this.anchor ? 'swing' : 'whiff';
     }
     if (this.mode === 'whiff') { this.cdFactor = d.whiffCdFactor; ui.banner('find', '🪢', 'No hay nada al alcance de la cola'); }
-    this.rope = makeElastic(this, { n: d.segments || 30, r0: 0.13, r1: 0.05, color: 0xc8913e, rough: 0.85, tipR: 0.09 });
+    // cola con el pelaje de Jaglion (naranja con rosetas oscuras) y su borla al final; sale de la grupa y
+    // forma un arco natural (hacia atrás, por encima del lomo y hacia el objetivo)
+    this.rope = makeElastic(this, { n: d.segments || 30, r0: 0.11, r1: 0.075, rough: 0.9, tipR: 0.15, map: jaguarFurTex(), tipColor: 0x7a3410, uvRepeat: 4 });
+    const rope = this.rope;
+    rope.set = (a, b, o = {}) => this.whip(a, b, o);
     const tb = this.chain('tail_');
     if (tb.length > 1) this.setBones((bones, dt, t, fx) => fx.scale(tb[1], 0.04)); // la cola real se recoge dentro de la elástica
     this.start();
@@ -54,12 +82,24 @@ class TailSkill extends Skill {
     }
     return best;
   }
-  // la cola sale del hueso de la cola (o de detrás del cuerpo en el modelo de reserva)
+  // la cola sale de la GRUPA: del segundo hueso de la cola, que está en la superficie del cuerpo
+  // (tail_1 queda dentro de la cadera); en el modelo de reserva, de detrás del cuerpo
   origin() {
-    const b = boneWorld(this, 'tail_1');
+    const b = boneWorld(this, 'tail_2') || boneWorld(this, 'tail_1');
     if (b) return b;
     const f = this.fwd;
     return V(this.p.pos.x - f.x * this.p.R, this.p.pos.y + this.p.H * 0.45, this.p.pos.z - f.z * this.p.R);
+  }
+  // trayectoria de la cola: arranca en la dirección de la cola real, sube en arco y llega a la punta
+  whip(a, b, { wobble = 0, phase = 0, waves = 2 } = {}) {
+    const t3 = boneWorld(this, 'tail_3'), f = this.fwd;
+    const td = t3 ? t3.clone().sub(a) : V(-f.x, -0.3, -f.z);
+    if (td.lengthSq() < 1e-6) td.set(-f.x, -0.3, -f.z);
+    td.normalize();
+    const L = a.distanceTo(b);
+    const c1 = a.clone().addScaledVector(td, 0.35 + L * 0.12); c1.y += 0.25 + L * 0.1;
+    const c2 = b.clone().lerp(a, 0.35); c2.y += 0.3 + L * 0.22;
+    this.rope.curve(a, c1, c2, b, { wobble, phase, waves });
   }
   hookPoint() {
     const p = this.p, d = this.def;
@@ -623,7 +663,8 @@ class TongueSkill extends Skill {
       if (s) { this.dest = s; this.mode = 'propel'; } else this.mode = 'whiff';
     }
     if (this.mode === 'whiff') { this.cdFactor = 0.45; ui.banner('find', '👅', 'No hay nada al alcance de la lengua'); }
-    this.tongue = makeElastic(this, { n: d.segments || 32, r0: 0.1, r1: 0.065, color: 0xff5a7c, rough: 0.22, emissive: 0x3a0010, tipR: 0.15 });
+    this.tongue = makeElastic(this, { n: d.segments || 32, r0: 0.07, r1: 0.05, color: 0xff5a7c, rough: 0.22, emissive: 0x3a0010, tipR: 0.11 });
+    this.mouthOff = this.measureMouth();
     this.start();
     return true;
   }
@@ -653,9 +694,22 @@ class TongueSkill extends Skill {
     if (this.mode === 'propel') return this.target ? V(this.target.pos.x, this.target.pos.y + this.target.S.height * 0.45, this.target.pos.z) : V(this.dest.x, this.dest.y + 0.4, this.dest.z);
     return V(p.pos.x + f.x * d.range * 0.6, p.pos.y + p.H * 0.45, p.pos.z + f.z * d.range * 0.6);
   }
-  // boca: punta del hueso de la cabeza (o delante del cuerpo en el modelo de reserva)
+  // BOCA DEL DRAGÓN: el hueso de la cabeza apunta hacia arriba (head_end es la coronilla), así que la boca
+  // se mide una vez delante de la cabeza, en el morro, y se guarda en el espacio del hueso: así sigue a la
+  // cabeza en todas las animaciones y se ve bien desde cualquier ángulo de cámara
+  measureMouth() {
+    const m = this.p.model, hb = m && m.bones && m.bones.head;
+    if (!hb) return null;
+    m.root.updateMatrixWorld(true);
+    const s = (m.height || 1.9) / 1.9;
+    const h = m.root.worldToLocal(hb.getWorldPosition(V(0, 0, 0)));
+    const w = m.root.localToWorld(V(h.x, h.y - 0.03 * s, h.z + 0.25 * s)); // morro, un poco por debajo de la nariz
+    return hb.worldToLocal(w);
+  }
   mouth() {
-    const f = this.fwd, b = boneWorld(this, 'head_end');
+    const f = this.fwd, hb = this.p.model && this.p.model.bones && this.p.model.bones.head;
+    if (hb && this.mouthOff) { this.p.model.root.updateMatrixWorld(true); return hb.localToWorld(this.mouthOff.clone()); }
+    const b = boneWorld(this, 'head_end');
     if (b) return b.add(V(f.x * 0.12, -0.05, f.z * 0.12));
     return V(this.p.pos.x + f.x * this.p.R * 0.9, this.p.pos.y + this.p.H * 0.55, this.p.pos.z + f.z * this.p.R * 0.9);
   }

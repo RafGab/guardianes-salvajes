@@ -27,8 +27,9 @@ export function tickStatus(st, dt) {
 /*  de los poderes como un objetivo inmóvil y se rompe al llegar a 0.   */
 /* ------------------------------------------------------------------ */
 class Prop {
-  constructor(combat, { x, y, z, radius = 1.2, hp = 10, height = 1.5, label = 'Escombro', onBreak }) {
+  constructor(combat, { x, y, z, radius = 1.2, hp = 10, height = 1.5, label = 'Escombro', onBreak, mesh = null }) {
     this.combat = combat;
+    this.mesh = mesh; // objeto 3D del escenario (lo pueden arrastrar el agua o el remolino)
     this.prop = true;
     this.heavy = true; // inmóvil: no se empuja ni se atrae
     this.pos = new THREE.Vector3(x, y, z);

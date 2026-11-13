@@ -243,6 +243,104 @@ function katana(L) {
 }
 
 /* ======================================================================
+   1b · JAGLION — HOJA DE LAVA Y TRUENO (imagen de referencia del usuario):
+   machete ancho y pesado de piedra oscura agrietada; la mitad del filo arde
+   con grietas de lava naranjas y la mitad del lomo crepita con relámpagos y
+   llamas azules; lomo recto con muescas, punta cortada en diagonal (la punta
+   está en el lado del filo), guarda dorada hexagonal con grabados, mango de
+   cuero marrón trenzado y pomo dorado hexagonal.
+   Mismo sistema que la katana: filo en −x, lomo en +x, caras en ±z.
+   ====================================================================== */
+function cleaver(L) {
+  const w = base('katana', L, 0xff7a1a, 0x3aa0ff);
+  const R = rig(['grip', 'guard', 'blade', 'mid', 'tip'], [0, 0.14, 0.2, 0.6, 0.98]);
+  w.group.add(R.root); w.skeleton = R.skeleton; w.bones = R.bones;
+  // perfil: lomo (spine, +x) casi recto; filo (edge, −x) que se ensancha hacia la punta con un vientre suave
+  const Y0 = 0.19, Y1 = 1.0, SPINE_END = 0.86;
+  const spineX = (y) => 0.042 + 0.012 * ((y - Y0) / (SPINE_END - Y0));
+  const edgeX = (y) => { const t = (y - Y0) / (Y1 - Y0); return -(0.07 + 0.035 * Math.sin(t * Math.PI * 0.85)); };
+  const sh = new THREE.Shape();
+  sh.moveTo(edgeX(Y0), Y0);
+  const N = 28;
+  for (let i = 1; i <= N; i++) { const y = Y0 + (Y1 - 0.02 - Y0) * (i / N); sh.lineTo(edgeX(y), y); }
+  sh.lineTo(edgeX(Y1) + 0.004, Y1);                     // punta, en el lado del filo
+  sh.lineTo(spineX(SPINE_END), SPINE_END);              // corte diagonal hasta el lomo
+  // lomo con tres muescas en diente de sierra (como en la referencia)
+  const notches = [0.66, 0.56, 0.46];
+  for (const ny of notches) { sh.lineTo(spineX(ny + 0.035), ny + 0.035); sh.lineTo(spineX(ny) - 0.018, ny + 0.012); sh.lineTo(spineX(ny), ny); }
+  sh.lineTo(spineX(0.3), 0.3);
+  sh.lineTo(spineX(0.3) + 0.006, 0.28); sh.lineTo(spineX(Y0) + 0.006, Y0); // talón algo más grueso junto a la guarda
+  sh.closePath();
+  const X0 = -0.12, X1 = 0.07;
+  // textura de piedra oscura con placas agrietadas
+  const cracks = [];
+  for (let k = 0; k < 70; k++) { const pts = []; let x = Math.random() * 256, y = Math.random() * 1024; pts.push([x, y]); for (let s = 0; s < 5; s++) { x += (Math.random() - 0.5) * 50; y += (Math.random() - 0.5) * 70; pts.push([x, y]); } cracks.push(pts); }
+  const stroke = (g, pts) => { g.beginPath(); g.moveTo(pts[0][0], pts[0][1]); for (const p of pts.slice(1)) g.lineTo(p[0], p[1]); g.stroke(); };
+  const bladeMap = fitTex(canvasTex(256, 1024, (g, cw, ch) => {
+    g.fillStyle = '#3a3440'; g.fillRect(0, 0, cw, ch);
+    for (let i = 0; i < 2600; i++) { const v = 40 + Math.random() * 40; g.fillStyle = `rgba(${v},${v - 6},${v + 8},0.35)`; g.fillRect(Math.random() * cw, Math.random() * ch, 3, 3); }
+    g.strokeStyle = '#151218'; g.lineWidth = 3; for (const c of cracks) stroke(g, c);
+    // grabado en forma de Y junto a la guarda (lado del lomo)
+    g.strokeStyle = '#6a6470'; g.lineWidth = 10;
+    g.beginPath(); g.moveTo(cw * 0.78, 40); g.lineTo(cw * 0.7, 120); g.moveTo(cw * 0.62, 40); g.lineTo(cw * 0.7, 120); g.lineTo(cw * 0.7, 190); g.stroke();
+  }), X0, X1, Y0, Y1);
+  const bladeEm = fitTex(canvasTex(256, 1024, (g, cw, ch) => {
+    g.fillStyle = '#000'; g.fillRect(0, 0, cw, ch);
+    // brillo de lava en el filo (izquierda) y de rayo en el lomo (derecha)
+    let gr = g.createLinearGradient(0, 0, cw * 0.62, 0);
+    gr.addColorStop(0, '#ffe080'); gr.addColorStop(0.08, '#ff8a20'); gr.addColorStop(0.45, 'rgba(220,70,0,0.6)'); gr.addColorStop(0.8, 'rgba(140,30,0,0.25)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, cw, ch);
+    gr = g.createLinearGradient(cw, 0, cw * 0.5, 0);
+    gr.addColorStop(0, '#bfe6ff'); gr.addColorStop(0.08, '#3a8cff'); gr.addColorStop(0.5, 'rgba(20,40,160,0.25)'); gr.addColorStop(1, 'rgba(0,0,0,0)');
+    g.fillStyle = gr; g.fillRect(0, 0, cw, ch);
+    // las mismas grietas se iluminan: naranja en la mitad del filo, azul en la del lomo
+    g.lineWidth = 3;
+    for (const c of cracks) { const u = c[0][0] / cw; g.strokeStyle = u < 0.55 ? '#ffa040' : '#4aa8ff'; g.lineWidth = u < 0.55 ? 5 : 2.5; stroke(g, c); }
+    // relámpagos que recorren el lomo
+    g.strokeStyle = '#8ad0ff'; g.lineWidth = 2.5;
+    for (let k = 0; k < 14; k++) { let x = cw * (0.66 + Math.random() * 0.3), y = Math.random() * ch; g.beginPath(); g.moveTo(x, y); for (let s = 0; s < 6; s++) { x += (Math.random() - 0.5) * 34; y += 10 + Math.random() * 20; g.lineTo(x, y); } g.stroke(); }
+  }), X0, X1, Y0, Y1);
+  const bladeMat = glowStd({ color: 0xffffff, map: bladeMap, emissive: 0xffffff, emissiveMap: bladeEm, emissiveIntensity: 1.5, metalness: 0.35, roughness: 0.7 }, 1.5);
+  at(R.bones.blade, mesh(extrude(sh, 0.024, 0.006, 2), bladeMat, new THREE.Group()));
+  // filo de lava y lomo de rayo (neón), relámpagos animados y llamas azules
+  const edgePts = [], spinePts = [];
+  for (let i = 0; i <= 24; i++) { const y = Y0 + 0.01 + (Y1 - 0.04 - Y0) * (i / 24); edgePts.push(new THREE.Vector3(edgeX(y) - 0.004, y, 0)); }
+  for (let i = 0; i <= 16; i++) { const y = 0.24 + (SPINE_END - 0.26) * (i / 16); spinePts.push(new THREE.Vector3(spineX(y) + 0.003, y, 0)); }
+  at(R.bones.blade, mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(edgePts), 48, 0.005, 6), neonSolid(0xff8a2a, 2.8), new THREE.Group()));
+  at(R.bones.blade, mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(edgePts), 48, 0.016, 6), neonAdd(0xff5a10, 1.4, 0.35), new THREE.Group()));
+  at(R.bones.blade, mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(spinePts), 40, 0.004, 5), neonSolid(0x4aa8ff, 2.6), new THREE.Group()));
+  at(R.bones.blade, mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(spinePts), 40, 0.014, 6), neonAdd(0x2a7aff, 1.3, 0.35), new THREE.Group()));
+  for (let i = 0; i < 5; i++) { const y0 = 0.26 + i * 0.12; w.arcs.push(new Arc(R.bones.blade, new THREE.Vector3(spineX(y0) - 0.01, y0 - 0.2, 0.014), new THREE.Vector3(spineX(y0 + 0.1) - 0.03, y0 + 0.1 - 0.2, 0.014), 0x6ac8ff, 8, 0.014)); }
+  for (let i = 0; i < 3; i++) { const y0 = 0.3 + i * 0.2; w.arcs.push(new Arc(R.bones.blade, new THREE.Vector3(spineX(y0) - 0.02, y0 - 0.2, -0.014), new THREE.Vector3(edgeX(y0 + 0.05) * 0.4, y0 - 0.15, -0.014), 0x6ac8ff, 8, 0.016)); }
+  for (let i = 0; i < 6; i++) { const y = 0.3 + i * 0.1; sprite(0x3a8cff, 0.07 + Math.random() * 0.03, R.bones.blade, new THREE.Vector3(spineX(y) + 0.015, y - 0.2 + 0.02, 0), 0.65); } // llamas azules
+  for (let i = 0; i < 4; i++) { const y = 0.35 + i * 0.16; sprite(0xff6a10, 0.06, R.bones.blade, new THREE.Vector3(edgeX(y) - 0.01, y - 0.2, 0), 0.55); } // ascuas del filo
+  // guarda dorada hexagonal con grabados
+  const gold = metal(0xc8962a, 0.32, 1), darkGold = metal(0x7a521a, 0.45, 1);
+  const collar = mesh(new THREE.CylinderGeometry(0.07, 0.074, 0.07, 6), gold, R.bones.guard, { y: 0.02, s: [1.25, 1, 0.62] });
+  collar.rotation.y = Math.PI / 6;
+  for (const sz of [1, -1]) mesh(new THREE.BoxGeometry(0.1, 0.03, 0.006), darkGold, R.bones.guard, { y: 0.02, z: sz * 0.047 }); // grabado en cada cara
+  for (const sz of [1, -1]) for (const sx of [-1, 1]) mesh(new THREE.BoxGeometry(0.012, 0.05, 0.006), darkGold, R.bones.guard, { x: sx * 0.035, y: 0.02, z: sz * 0.047, rz: sx * 0.5 });
+  mesh(new THREE.CylinderGeometry(0.045, 0.05, 0.03, 6), gold, R.bones.guard, { y: 0.07, s: [1.4, 1, 0.65] }); // escalón hacia la hoja
+  // mango de cuero marrón con vueltas en relieve y virola dorada
+  const leather = canvasTex(128, 512, (g, cw, ch) => {
+    g.fillStyle = '#4a2a16'; g.fillRect(0, 0, cw, ch);
+    for (let y = 0; y < ch; y += 32) { const gr = g.createLinearGradient(0, y, 0, y + 32); gr.addColorStop(0, '#2a160a'); gr.addColorStop(0.35, '#7a4a26'); gr.addColorStop(0.7, '#5a3218'); gr.addColorStop(1, '#2a160a'); g.fillStyle = gr; g.fillRect(0, y, cw, 32); }
+    for (let i = 0; i < 400; i++) { g.fillStyle = 'rgba(0,0,0,0.2)'; g.fillRect(Math.random() * cw, Math.random() * ch, 2, 1); }
+  });
+  mesh(new THREE.CylinderGeometry(0.024, 0.026, 0.3, 14, 1), new THREE.MeshStandardMaterial({ map: leather, roughness: 0.85, metalness: 0.05 }), R.bones.grip, { y: -0.01 });
+  for (let i = 0; i < 9; i++) mesh(new THREE.TorusGeometry(0.026, 0.0035, 5, 14), metal(0x5a3218, 0.8, 0.05), R.bones.grip, { y: -0.14 + i * 0.033, rx: Math.PI / 2, rz: 0.2 });
+  mesh(new THREE.CylinderGeometry(0.031, 0.031, 0.035, 6), gold, R.bones.grip, { y: 0.13 });
+  // pomo dorado hexagonal
+  mesh(new THREE.CylinderGeometry(0.034, 0.03, 0.05, 6), gold, R.bones.grip, { y: -0.18 });
+  mesh(new THREE.CylinderGeometry(0.026, 0.034, 0.015, 6), darkGold, R.bones.grip, { y: -0.212 });
+  sprite(0xff7a1a, 0.16, R.bones.tip, new THREE.Vector3(edgeX(Y1), 0.02, 0), 0.6);
+  w.trail = { base: marker(R.bones.blade, -0.02, 0.0, 0), tip: marker(R.bones.tip, edgeX(Y1) * 0.5, 0.0, 0), color: 0xff7a1a, color2: 0x4aa8ff, width: 1.3 };
+  collect(w);
+  w.group.scale.setScalar(L);
+  return finish(w);
+}
+
+/* ======================================================================
    2 · KYRA — HACHA DE CRISTAL: doble hoja de cristal facetado azul/violeta
    con borde de luces, núcleo hexagonal con copo de nieve, gemas moradas,
    púas de hielo y mango de cristal.
@@ -692,7 +790,7 @@ function spear(L) {
    · dir / face: solo para el modelo de reserva sin huesos de mano.
    ====================================================================== */
 export const WEAPONS = {
-  jago:   { id: 'katana',    name: 'Katana',        build: () => katana(1.05),   hand: 'R', axisX: -1, guard: { x: -0.35, y: 0.15, f: -0.85, w: 0.25, r: 1.0 }, defense: { x: -1.1, y: 0.75, f: -1.2, w: 0.5 }, dir: [0, 0.35, 1], face: [-1, 0, 0], color: 0xff7a1a, color2: 0x4aa8ff },
+  jago:   { id: 'katana',    name: 'Hoja de Lava y Trueno', build: () => cleaver(1.05),   hand: 'R', axisX: -1, guard: { x: -0.35, y: 0.15, f: -0.85, w: 0.25, r: 1.0 }, defense: { x: -1.1, y: 0.75, f: -1.2, w: 0.5 }, dir: [0, 0.35, 1], face: [-1, 0, 0], color: 0xff7a1a, color2: 0x4aa8ff },
   kyra:   { id: 'axe',       name: 'Hacha',         build: () => axe(0.9),       hand: 'L', axisX: 1, guard: { x: -0.25, y: 0.1, f: -1.05, w: 0, r: 1.4 }, defense: { x: -1.0, y: 0.7, f: -1.3, w: 0.3 }, dir: [0, 1, 0.35], face: [0, 0, 1], color: 0x6ab0ff, color2: 0xc06aff },
   kairo:  { id: 'hammer',    name: 'Martillo',      build: () => hammer(1.15),   hand: 'R', axisX: 1, guard: { x: -0.2, y: 0.1, f: -1.0, w: 0 }, defense: { x: -0.9, y: 0.7, f: -1.25, w: 0.3 }, dir: [0, 1, 0.45], face: [1, 0, 0], color: 0x3aff6a, color2: 0xffc040 },
   ambar:  { id: 'disc',      name: 'Dos discos',    build: () => disc(0.36),     hand: 'R', dual: true, lightOnThrow: true, holdBy: 'wing', wingAt: 0.3, wingOffset: [0.025, 0, 0.04], axisX: 1, upperScale: 0.2, gripOffset: [0.1, 0, 0], guard: { x: 0.25, y: 0.3, f: 0.15, w: 0 }, defense: { x: 0.7, y: 1.1, f: 0.7, w: 0.2 }, dir: [0, 1, 0], face: [1, 0, 0], color: 0xff3a1a, color2: 0xffc020 },

@@ -142,6 +142,28 @@ makeClip('hit', 0.5, (t) => {
     tail(t, 0.2 * k, 2),
   ) };
 });
+// DEFENSA (bucle): se cubre — brazos cruzados delante de la cara y flexiona; los cuadrúpedos bajan la cabeza y se afianzan
+makeClip('guard', 1.2, (t) => {
+  const a = t * TAU, b = S(a) * 0.03;
+  const o = QUAD
+    ? { root: [0.12, 0, 0], spine: [0.08, 0, 0], neck: [0.35 + b, 0, 0], head: [0.3, 0, 0], upper_arm_L: [-0.35, 0, -0.15], upper_arm_R: [-0.35, 0, 0.15], forearm_L: [0.3, 0, 0], forearm_R: [0.3, 0, 0], thigh_L: [0.3, 0, 0], thigh_R: [0.3, 0, 0], shin_L: [0.35, 0, 0], shin_R: [0.35, 0, 0] }
+    : SNAKE ? { root: [0.1, 0, 0], spine: [0.25 + b, 0.2, 0], chest: [-0.35, -0.25, 0], neck: [-0.3, 0, 0], head: [0.4, 0, 0] }
+    : { spine: [0.22 + b, 0, 0], chest: [0.12, 0, 0], neck: [0.15, 0, 0], head: [0.25, 0, 0],
+      upper_arm_L: [-1.35, 0, 0.55], upper_arm_R: [-1.35, 0, -0.55], forearm_L: [-1.7, 0, 0], forearm_R: [-1.7, 0, 0],
+      ...(LEGS ? { thigh_L: [-0.45, 0, 0.12], thigh_R: [-0.45, 0, -0.12], shin_L: [0.8, 0, 0], shin_R: [0.8, 0, 0], foot_L: [-0.35, 0, 0], foot_R: [-0.35, 0, 0] } : {}) };
+  return { dy: LEGS && !QUAD ? -0.06 * H : 0, bones: merge(o, tail(t, 0.12, 1, TENT ? 0.4 : 0.1)) };
+});
+// TAMBALEO (una vez): golpe poderoso — sale despedido hacia atrás, se tambalea y recupera el equilibrio
+makeClip('stagger', 1.3, (t) => {
+  const k = sm(0, 0.12, t) * (1 - sm(0.55, 1, t)), w = S(t * TAU * 2.2) * (1 - sm(0.2, 0.9, t));
+  const o = QUAD
+    ? { root: [-0.3 * k, 0, 0.18 * w], neck: [-0.5 * k, 0.3 * w, 0], head: [-0.4 * k, 0.3 * w, 0], upper_arm_L: [-0.8 * k, 0, 0], upper_arm_R: [-0.6 * k, 0, 0], thigh_L: [0.3 * k, 0, 0], thigh_R: [0.4 * k, 0, 0], shin_L: [0.4 * k, 0, 0], shin_R: [0.5 * k, 0, 0] }
+    : SNAKE ? { root: [-0.2 * k, 0.15 * w, 0], spine: [-0.35 * k, 0.25 * w, 0], chest: [-0.4 * k, -0.2 * w, 0], neck: [-0.5 * k, 0, 0], head: [-0.45 * k, 0.2 * w, 0] }
+    : { spine: [-0.4 * k, 0.15 * w, 0.12 * w], chest: [-0.25 * k, 0, 0], neck: [-0.3 * k, 0, 0], head: [-0.5 * k, 0.25 * w, 0],
+      upper_arm_L: [-0.3 * k, 0, -1.1 * k], upper_arm_R: [-0.3 * k, 0, 1.1 * k], forearm_L: [-0.5 * k, 0, 0], forearm_R: [-0.5 * k, 0, 0],
+      ...(LEGS ? { thigh_L: [0.35 * k, 0, 0.1 * w], thigh_R: [-0.4 * k, 0, 0], shin_L: [0.25 * k, 0, 0], shin_R: [0.7 * k, 0, 0] } : {}) };
+  return { dz: -0.04 * k, dy: -0.03 * k * H, bones: merge(o, tail(t, 0.35 * k, 2)) };
+});
 // DERROTA (una vez, se queda en el último fotograma): se tambalea y se desploma
 makeClip('death', 1.8, (t) => {
   const s = sm(0, 0.35, t) * (1 - sm(0.35, 0.5, t)), f = sm(0.3, 0.85, t);

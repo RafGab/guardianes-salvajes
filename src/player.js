@@ -567,6 +567,10 @@ export class ChaseCam {
     this.override = null;
     this.tmpV = new THREE.Vector3();
     this.tmpD = new THREE.Vector3();
+    this.side = 0;   // desplazamiento lateral (cámara al hombro al apuntar)
+    this.sideTarget = 0;
+    this.zoomFov = 0; // grados que se cierra el campo de visión (mira)
+    this.zoomTarget = 0;
   }
 
   shake(a) {
@@ -594,6 +598,8 @@ export class ChaseCam {
     const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
     const off = this.tmpV.set(Math.sin(this.yaw) * cp, sp, Math.cos(this.yaw) * cp).multiplyScalar(this.dist);
     const tgt = this.tmpD.set(target.x, target.y + this.aim, target.z);
+    this.side = damp(this.side, this.sideTarget, 8, dt);
+    if (Math.abs(this.side) > 0.001) { tgt.x += Math.cos(this.yaw) * this.side; tgt.z -= Math.sin(this.yaw) * this.side; } // al hombro
     const desired = new THREE.Vector3().copy(tgt).add(off);
     // colisión de la cámara: rayo del objetivo a la posición deseada
     let tHit = 1;
@@ -638,7 +644,8 @@ export class ChaseCam {
     }
     cam.lookAt(this.look);
     this.fovKick = damp(this.fovKick, 0, 4, dt);
-    const fov = this.fovBase + this.fovKick;
+    this.zoomFov = damp(this.zoomFov, this.zoomTarget, 8, dt);
+    const fov = this.fovBase + this.fovKick - this.zoomFov;
     if (Math.abs(cam.fov - fov) > 0.01) {
       cam.fov = fov;
       cam.updateProjectionMatrix();

@@ -85,8 +85,8 @@ export class Skill extends Staged {
 /*  rebota. set(a, b, { wobble, phase, sag, waves }) cada fotograma.       */
 /* ---------------------------------------------------------------------- */
 const UPV = new THREE.Vector3(0, 1, 0);
-export function makeElastic(skill, { n = 28, r0 = 0.1, r1 = 0.06, color = 0xff6a8a, rough = 0.3, emissive = 0x000000, tipR = 0 } = {}) {
-  const tube = skill.v2.tube({ n, r0, r1, color, rough, emissive, tipR });
+export function makeElastic(skill, { n = 28, r0 = 0.1, r1 = 0.06, color = 0xff6a8a, rough = 0.3, emissive = 0x000000, tipR = 0, map = null, tipColor = null, uvRepeat = 6 } = {}) {
+  const tube = skill.v2.tube({ n, r0, r1, color, rough, emissive, tipR, map, tipColor, uvRepeat });
   const pts = Array.from({ length: n }, () => new THREE.Vector3());
   const dir = new THREE.Vector3(), side = new THREE.Vector3(), up = new THREE.Vector3();
   let dead = false;
@@ -106,6 +106,21 @@ export function makeElastic(skill, { n = 28, r0 = 0.1, r1 = 0.06, color = 0xff6a
         const w = wobble * env * Math.sin(u * Math.PI * waves * 2 - phase);
         const w2 = wobble * 0.5 * env * Math.cos(u * Math.PI * waves * 1.3 - phase * 1.2);
         pts[i].copy(a).addScaledVector(dir, len * u).addScaledVector(side, w).addScaledVector(up, w2 - sag * env * len * 0.12);
+      }
+      tube.set(pts);
+      tube.show(true);
+    },
+    // curva de Bézier cúbica a → c1 → c2 → b (sale en la dirección de c1 y llega desde c2), con ondulación
+    curve(a, c1, c2, b, { wobble = 0, phase = 0, waves = 2 } = {}) {
+      if (dead) return;
+      for (let i = 0; i < n; i++) {
+        const u = i / (n - 1), v = 1 - u, w0 = v * v * v, w1 = 3 * v * v * u, w2 = 3 * v * u * u, w3 = u * u * u;
+        pts[i].set(a.x * w0 + c1.x * w1 + c2.x * w2 + b.x * w3, a.y * w0 + c1.y * w1 + c2.y * w2 + b.y * w3, a.z * w0 + c1.z * w1 + c2.z * w2 + b.z * w3);
+      }
+      if (wobble) {
+        dir.subVectors(b, a); if (dir.lengthSq() < 1e-6) dir.set(0, 0, 1); dir.normalize();
+        side.crossVectors(dir, UPV); if (side.lengthSq() < 1e-4) side.set(1, 0, 0); side.normalize();
+        for (let i = 1; i < n; i++) { const u = i / (n - 1), env = Math.sin(u * Math.PI); pts[i].addScaledVector(side, wobble * env * Math.sin(u * Math.PI * waves * 2 - phase)); }
       }
       tube.set(pts);
       tube.show(true);

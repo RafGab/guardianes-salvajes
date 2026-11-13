@@ -99,6 +99,18 @@ class FireHazard {
     }
   }
 
+  // El agua apaga los focos que toca (Tsunami de la Nutria): quedan humeantes y mojados un rato
+  douse(x, z, r) {
+    let n = 0;
+    for (const zn of this.zones) {
+      if (zn.state !== 'burn' || Math.hypot(x - zn.x, z - zn.z) > r + zn.r * 0.6) continue;
+      zn.state = 'out'; zn.out = 0; zn.wet = true; n++;
+      for (let i = 0; i < 10; i++) this.ctx.fx.mist(zn.x + rnd(-1, 1) * zn.r * 0.6, zn.y + 0.6, zn.z + rnd(-1, 1) * zn.r * 0.6, 0xffffff, 2.4); // vapor
+    }
+    if (n) { this.extinguished += n; this.ctx.addScore(30 * n); }
+    return n;
+  }
+
   update(dt, t) {
     const { ctx } = this;
     const { player, fx, camera, world } = ctx;
@@ -176,7 +188,8 @@ class FireHazard {
         z.out += dt;
         z.decal.material = z.decal.material;
         if (dCam < 90 && Math.random() < dt * 8) fx.smokePuff(z.x + rnd(-1, 1) * z.r * 0.6, z.y + 0.8, z.z + rnd(-1, 1) * z.r * 0.6, 1.6, 0x9a9a9a);
-        if (z.out > 3.2) {
+        if (z.wet && dCam < 90 && Math.random() < dt * 6) fx.mist(z.x + rnd(-1, 1) * z.r * 0.6, z.y + 0.5, z.z + rnd(-1, 1) * z.r * 0.6, 0xf2f6f8, 1.8); // vapor del agua sobre las brasas
+        if (z.out > (z.wet ? 9 : 3.2)) {
           this.group.remove(z.decal);
           this.zones.splice(i, 1);
         }
@@ -339,7 +352,7 @@ class QuakeHazard {
       world.dynSolids.push(solid);
       const o = { mesh: m, solid, x, z };
       // bloque de escombros destructible con los poderes
-      o.prop = this.ctx.game.combat.addProp({ x, y: gy, z, radius: Math.min(w, d) * 0.6, hp: DESTRUCTIBLE.rubble, height: h, label: 'Escombros', onBreak: () => this.breakStatic(o) });
+      o.prop = this.ctx.game.combat.addProp({ x, y: gy, z, radius: Math.min(w, d) * 0.6, hp: DESTRUCTIBLE.rubble, height: h, label: 'Escombros', mesh: m, onBreak: () => this.breakStatic(o) });
       this.static.push(o);
       for (let q = 0; q < 6; q++) fx.dustPuff(x, gy + 0.5, z, 1.8);
     }
@@ -447,7 +460,7 @@ class QuakeHazard {
             d.solid = { x0: d.x - d.size * 0.6, x1: d.x + d.size * 0.6, y0: gy - 1, y1: gy + d.size * 0.7, z0: d.z - d.size * 0.6, z1: d.z + d.size * 0.6, tag: 'rubble', dyn: true, dx: 0, dy: 0, dz: 0, _q: 0 };
             ctx.world.dynSolids.push(d.solid);
             // escombro destructible con los poderes
-            d.prop = ctx.game.combat.addProp({ x: d.x, y: gy, z: d.z, radius: d.size * 0.8, hp: DESTRUCTIBLE.debris, height: d.size, label: 'Escombro', onBreak: () => this.breakDebris(d) });
+            d.prop = ctx.game.combat.addProp({ x: d.x, y: gy, z: d.z, radius: d.size * 0.8, hp: DESTRUCTIBLE.debris, height: d.size, label: 'Escombro', mesh: d.mesh, onBreak: () => this.breakDebris(d) });
           }
         }
       } else if (d.age > 20 && !d.solid) {
@@ -612,6 +625,7 @@ class ExtremeHazard {
   reset() { this.parts.forEach((p) => p.reset()); }
   urgentAt(pos) { return this.parts.some((p) => p.urgentAt(pos)); }
   onPower(a, b, c) { this.parts.forEach((p) => p.onPower(a, b, c)); }
+  douse(x, z, r) { return this.parts[1].douse(x, z, r); }
   gust(...a) { this.parts[2].gust(...a); }
   cool(f) { this.parts[1].heat = Math.max(0, this.parts[1].heat - f); }
   gauge() {
