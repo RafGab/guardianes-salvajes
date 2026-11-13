@@ -268,6 +268,20 @@ export class WeaponSystem {
       for (let j = 0; j < 6; j++) { const k = j / 5; this.g.fx.sparkle(from.x + (to.x - from.x) * k, from.y + (to.y - from.y) * k, from.z + (to.z - from.z) * k, col, 1.2); }
     }
   }
+  // Arma de un COMPAÑERO (héroe del equipo que no controla el jugador): en la mano mientras combate
+  holdFor(model, heroId) {
+    const inst = this.get(model, heroId);
+    if (!inst || inst === this.cur) return inst;
+    inst.k = 1; inst.kb = 0;
+    for (const pt of inst.parts) {
+      if (!pt.home) continue;
+      if (pt.back) { this.mountTo(pt, 'hand'); pt.back.visible = false; }
+      pt.holder.visible = true;
+      pt.w.group.scale.setScalar(pt.scale);
+      for (const s of pt.w.glows) s.visible = true;
+    }
+    return inst;
+  }
   // Guarda el arma en la espalda al instante (cambio de héroe, inicio de misión)
   stow(inst) {
     inst.k = 0; inst.kb = 1;

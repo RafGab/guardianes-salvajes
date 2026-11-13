@@ -725,13 +725,15 @@ export class BossBase {
       if (!rooted && d > 0.01) {
         // nunca estático: se acerca si está lejos, retrocede si está encima y, a media distancia, rodea al héroe
         const nx = (player.pos.x - this.pos.x) / d, nz = (player.pos.z - this.pos.z) / d;
-        const want = Math.max(6, this.reach + 1.5);
+        // se acerca a distancia de cuerpo a cuerpo (los golpes de los héroes le llegan) y solo se aparta si está encima
+        const want = this.S.radius + 2.4;
         let ax = 0, az = 0;
-        if (d > want + 1.5) { ax = nx * 2.6; az = nz * 2.6; }
-        else if (d < want - 2) { ax = -nx * 1.4; az = -nz * 1.4; }
+        if (d > want + 0.8) { ax = nx * (d > want + 6 ? 3.4 : 2.4); az = nz * (d > want + 6 ? 3.4 : 2.4); }
+        else if (d < this.S.radius + 0.9) { ax = -nx * 1.6; az = -nz * 1.6; }
         this.strafeT -= dt;
         if (this.strafeT <= 0) { this.strafeT = rnd(2, 4); if (Math.random() < 0.45) this.strafeDir *= -1; }
-        ax += -nz * this.strafeDir * 1.6; az += nx * this.strafeDir * 1.6;
+        const sf = d < want + 2 ? 1.0 : 1.6; // de cerca rodea más despacio (amenaza sin huir)
+        ax += -nz * this.strafeDir * sf; az += nx * this.strafeDir * sf;
         this.pos.x += ax * speedMul * dt;
         this.pos.z += az * speedMul * dt;
         const d0 = Math.hypot(this.pos.x - this.arena.x, this.pos.z - this.arena.z), lim = this.arena.r * 0.92;

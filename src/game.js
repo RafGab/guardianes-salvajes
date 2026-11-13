@@ -25,6 +25,7 @@ import { RescuePortal } from './portal.js';
 import { RescueBubbles } from './rescue.js';
 import { Allies } from './allies.js';
 import { AimSystem } from './aim.js';
+import { SEE, enableSeeThrough } from './seethrough.js';
 const HERO_SKILLS_CD = (id) => (HERO_SKILLS[id] && HERO_SKILLS[id].flight ? HERO_SKILLS[id].flight.cd : 4);
 import { IS_TOUCH } from './platform.js';
 const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
@@ -327,6 +328,62 @@ export class Game {
     const W = this.weapons.def;
     if (W) ui.banner('find', '⚔️', out ? `${W.name}: ¡lista!` : `${W.name} guardada`);
     return out;
+  }
+  // ATAQUE PRINCIPAL (Q / clic): en el combate de jefe es el ataque con el arma del héroe (combo de 3 golpes);
+  // si el enemigo más cercano está a pocos metros, el héroe se lanza hacia él antes de golpear.
+  // Fuera del combate de jefe hace lo de siempre (el poder seleccionado).
+  primaryAttack() {
+    if (!this.boss || this.state !== 'playing' || this.bossIntroT > 0) return this.useAbility();
+    const p = this.player;
+    if (p.locked || p.scripted || this.closeIn) return false;
+    const ai = this.abilities.findIndex((a) => a.role === 'arma');
+    if (ai < 0) return this.useAbility();
+    if (this.aimSys.on) return this.triggerAbility(ai); // con la mira: dispara a la retícula
+    const t = this.nearestEnemy(10);
+    if (t) {
+      const dx = t.pos.x - p.pos.x, dz = t.pos.z - p.pos.z, d = Math.hypot(dx, dz), gap = d - (t.radius || 0.5) - 1.6;
+      p.facing = Math.atan2(dx, dz);
+      if (gap > 0.6) { // se lanza hacia el enemigo y golpea al llegar
+        this.closeIn = { t, ai, time: Math.min(0.45, gap / 18) };
+        for (let j = 0; j < 10; j++) this.fx.dustPuff(p.pos.x, p.pos.y + 0.1, p.pos.z, 1);
+        audio.whoosh && audio.whoosh();
+        return true;
+      }
+    }
+    return this.triggerAbility(ai);
+  }
+  nearestEnemy(range) {
+    const p = this.player;
+    let best = null, bd = range;
+    for (const t of this.combat.enemies()) {
+      if (t.dead || t.state === 'dead') continue;
+      const d = Math.hypot(t.pos.x - p.pos.x, t.pos.z - p.pos.z) - (t.radius || 0.5);
+      if (d < bd) { bd = d; best = t; }
+    }
+    return best;
+  }
+  updateCloseIn(dt) {
+    const c = this.closeIn;
+    if (!c) return;
+    const p = this.player, t = c.t;
+    c.time -= dt;
+    if (!t || t.dead || t.state === 'dead' || this.state !== 'playing') { this.closeIn = null; return; }
+    const dx = t.pos.x - p.pos.x, dz = t.pos.z - p.pos.z, d = Math.hypot(dx, dz), stop = (t.radius || 0.5) + 1.5;
+    p.facing = Math.atan2(dx, dz);
+    if (d > stop) { const s = Math.min(d - stop, 20 * dt); p.pos.x += (dx / d) * s; p.pos.z += (dz / d) * s; }
+    if (Math.random() < 0.7) this.fx.sparkle(p.pos.x, p.pos.y + p.H * 0.5, p.pos.z, ELEMENTS[this.hero.element].color, 1.2);
+    if (d <= stop + 0.05 || c.time <= 0) { this.closeIn = null; this.triggerAbility(c.ai); }
+  }
+  // los cuerpos chocan: el héroe no atraviesa al jefe ni a los soldados
+  bodyBlock() {
+    if (!this.boss) return;
+    const p = this.player;
+    for (const t of this.combat.enemies()) {
+      if (t.dead || t.state === 'dead') continue;
+      const R = (t.heavy ? (t.S ? t.S.radius : 1.2) * 0.85 : t.radius || 0.5) + (p.R || 0.4);
+      const dx = p.pos.x - t.pos.x, dz = p.pos.z - t.pos.z, d = Math.hypot(dx, dz);
+      if (d < R && d > 1e-4) { p.pos.x = t.pos.x + (dx / d) * R; p.pos.z = t.pos.z + (dz / d) * R; }
+    }
   }
   // T o botón 🎯: activa / quita la mira de Halley
   toggleAim() {
@@ -741,9 +798,10 @@ export class Game {
     this.boss.title = this.mission.bossTitle || '';
     // SOLDADOS: el jefe entra con 2 (primeras zonas) o 3 (el tercero, un bruto); hay que derrotarlos a todos
     this.combat.spawnMinions(this.mission.n <= 2 ? 2 : 3, this.boss.pos);
+    enableSeeThrough(this.world.mats); // el escenario que tape el combate se vuelve transparente
     this.allyWin = false; this.victoryT = 0; this.foesMsg = ''; this.victoryShown = false;
     this.bossStats = { t0: performance.now() / 1000, soldiers: 0, staggers: 0 }; // para la pantalla de victoria
-    this.team.allOnField = false; // los compañeros esperan en reserva (no luchan solos): recuperan vida poco a poco
+    this.team.allOnField = true; // los tres héroes están en el campo combatiendo (nadie descansa en reserva)
     this.pickups.placeArena(this.mission, arena);
     if (this.mission.ally) this.ally = createAlly(this.mission.ally, { scene, world, player, chase, camera, fx: this.fx, audio, ui, game: this });
     this.setBossCamera();
@@ -804,7 +862,7 @@ export class Game {
     if ((this.bench || []).length && this.bossIntroT < TEAM.introT - 3.0) { this.bench = []; this.allies.sync(); }
     if (this.bossIntroT <= 0) {
       this.player.locked = false;
-      ui.banner('find', '⚔ ¡A combatir!', IS_TOUCH ? 'Toca los retratos para cambiar de héroe' : 'Z / X cambian de héroe · Q ataca');
+      ui.banner('find', '⚔ ¡A combatir!', IS_TOUCH ? 'Toca los retratos para cambiar de héroe' : 'Q / clic: golpe con el arma · 2 poder · 3 escudo · Z / X cambian de héroe');
     }
   }
   // Barra del jefe, equipo, estados y acción actual (se refresca varias veces por segundo)
@@ -876,10 +934,28 @@ export class Game {
     this.allies.sync();
     for (const a of this.allies.list) if (!before.has(a) && slot) { a.pos.copy(slot.pos); a.side = slot.side; a.facing = slot.facing; }
     this.switchFx(slot ? slot.pos : null);
-    ui.battleLog(`🔁 Entra ${this.hero.name} · ${outName} pasa a reserva`, 'hero');
-    ui.banner('good', `🔁 ¡Entra ${this.hero.name}!`, `${ELEMENTS[this.hero.element].icon} ${ELEMENTS[this.hero.element].name} · ${outName} queda de reserva`);
+    ui.battleLog(`🔁 Entra ${this.hero.name} · ${outName} sigue como compañero`, 'hero');
+    ui.banner('good', `🔁 ¡Entra ${this.hero.name}!`, `${ELEMENTS[this.hero.element].icon} ${ELEMENTS[this.hero.element].name} · ${outName} sigue luchando a tu lado`);
     ui.setTeamHud(t.members, t.active, (k) => this.switchTeamTo(k));
     return true;
+  }
+  // CÁMARA DEL COMBATE DE JEFE: si el jugador no mueve la cámara, esta se coloca poco a poco detrás del
+  // héroe mirando al jefe (el combate queda siempre a la vista); lo que tape la escena se vuelve transparente
+  bossCamera(dt, look) {
+    const b = this.boss, on = !!b && this.state === 'playing' && !this.ended;
+    SEE.uSeeOn.value = on ? 1 : 0;
+    if (!on) return;
+    const p = this.player, ch = this.chase;
+    SEE.uSeeCam.value.copy(this.camera.position);
+    SEE.uSeeA.value.set(p.pos.x, p.pos.y + p.H * 0.6, p.pos.z);
+    SEE.uSeeB.value.set(b.pos.x, b.pos.y + (b.S ? b.S.height * 0.55 : 1.5), b.pos.z);
+    const moved = look && (Math.abs(look.dx) > 0.0005 || Math.abs(look.dy) > 0.0005);
+    this.lookIdle = moved ? 0 : (this.lookIdle || 0) + dt;
+    if (this.lookIdle < 1.2 || this.aimSys.on || this.victoryT > 0 || this.victoryShown || b.state === 'dead') return;
+    const want = Math.atan2(p.pos.x - b.pos.x, p.pos.z - b.pos.z);
+    let d = want - ch.yaw; while (d > Math.PI) d -= Math.PI * 2; while (d < -Math.PI) d += Math.PI * 2;
+    ch.yaw += d * (1 - Math.exp(-1.6 * dt));
+    ch.pitch = damp(ch.pitch, Math.max(ch.pitch, 0.42), 1.5, dt); // algo más alta: se ven el héroe y el jefe a la vez
   }
   // Transición del cambio de héroe: columna de luz del color del elemento en el héroe que entra,
   // un haz desde el hueco de reserva y una onda en el suelo (se ve claramente quién está activo)
@@ -1091,10 +1167,11 @@ export class Game {
     ui.setTeamHud(this.team.members, this.team.active, (i) => this.switchTeamTo(i));
     if (!this.team.anyAlive) this.teamDefeated();
   }
-  // Objetivo que pueden atacar el jefe y sus soldados: el héroe que controla el jugador (los compañeros esperan en reserva)
+  // Objetivos que pueden atacar el jefe y sus soldados: el héroe del jugador y los compañeros que combaten
   heroTargets() {
     const p = this.player;
     const out = [{ pos: p.pos, R: p.R, H: p.H, isPlayer: true }];
+    if (this.boss && this.team.on) for (const a of this.allies.alive) out.push({ pos: a.pos, R: a.R, H: a.H, ally: a }); // los compañeros también reciben golpes
     return out;
   }
   hitHero(h, units, from) {
@@ -1353,6 +1430,7 @@ export class Game {
     if (this.state === 'playing') this.skills.update(dtg); // habilidades del héroe (mueven al héroe antes de su actualización)
     player.update(dtg, move, chase.yaw);
     this.aimSys.update(real); // con la mira, Halley mira hacia la retícula
+    this.updateCloseIn(dtg); this.bodyBlock(); // embestida hacia el enemigo y choque de cuerpos (no se atraviesan)
     this.weapons.update(dtg); // después de animar al héroe: el arma sigue al hueso de la mano
     this.bubbles.update(dtg); // las burbujas de los rescatados siguen al héroe (después de que se mueva)
     this.handlePlayerEvents();
@@ -1481,6 +1559,7 @@ export class Game {
       chase.distTarget = player.cam.dist * 0.7;
       chase.update(real, p, null);
     } else {
+      this.bossCamera(real, look);
       chase.update(real, p, introLocked ? null : look);
     }
     if (introLocked) this.introCamera();

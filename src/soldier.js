@@ -139,6 +139,8 @@ export class Soldier {
       }
     }
     if (this.state === 'strike' && this.stateT > 0.18) this.setState('recover');
+    if (this.state === 'down' && this.stateT > 1.15) this.setState('getup');   // derribado: se levanta
+    if (this.state === 'getup' && this.stateT > 0.45) { this.setState('move'); this.atkCd = rnd(0.6, 1.2); }
     if (this.state === 'recover' && this.stateT > 0.35) { this.setState('move'); this.atkCd = rnd(1.3, 2.0); }
     // empuje residual
     this.pos.x += this.vel.x * dt; this.pos.z += this.vel.z * dt;
@@ -180,6 +182,8 @@ export class Soldier {
     else if (this.state === 'strike') { const e = Math.min(1, this.stateT / 0.18); armR = -2.5 + 2.3 * e; foreR = -1.6 + 1.4 * e; chestX = -0.25 + 0.55 * e; spineY = -0.35 + 0.7 * e; lean += 0.25 * e; }
     else if (this.state === 'recover') { const e = Math.min(1, this.stateT / 0.35); armR = -0.2 - 0.3 * e; foreR = -0.2 - 0.4 * e; chestX = 0.3 * (1 - e); spineY = 0.35 * (1 - e); }
     else if (this.state === 'spawn') { const e = Math.min(1, this.stateT / 0.6); hipY = 0.2 + 0.42 * e; lean = 0.6 * (1 - e); }
+    else if (this.state === 'down') { const e = Math.min(1, this.stateT / 0.25); hipY = 0.62 - 0.45 * e; lean = -1.35 * e; armL = -1.4 * e; armR = -1.8 * e; foreL = foreR = -0.4; headX = 0.4 * e; B.th[0].rotation.x = B.th[1].rotation.x = -1.1 * e; B.shin[0].rotation.x = B.shin[1].rotation.x = 0.5 * e; } // de espaldas en el suelo
+    else if (this.state === 'getup') { const e = Math.min(1, this.stateT / 0.45); hipY = 0.17 + 0.45 * e; lean = -1.35 + 1.5 * e; B.th[0].rotation.x = B.th[1].rotation.x = -1.1 * (1 - e); B.shin[0].rotation.x = B.shin[1].rotation.x = 0.5 * (1 - e) + 0.6 * Math.sin(e * Math.PI); }
     // impacto: se encoge hacia atrás
     if (this.hurtT > 0) { const h = Math.sin((this.hurtT / 0.28) * Math.PI); chestX -= 0.45 * h; headX -= 0.4 * h; lean -= 0.2 * h; }
     B.hips.position.y = hipY;
@@ -196,7 +200,14 @@ export class Soldier {
     if (this.dead) return;
     this.hp = Math.max(0, this.hp - n);
     this.flash = 0.12; this.hurtT = 0.28;
-    if (this.state === 'windup' && Math.random() < 0.5) this.setState('recover'); // a veces el golpe le interrumpe
+    // REACCIÓN SEGÚN EL GOLPE: uno flojo le hace encogerse; uno fuerte lo derriba y sale despedido hacia atrás
+    const g = this.combat.game, from = g.player ? g.player.pos : null;
+    if (from) { const dx = this.pos.x - from.x, dz = this.pos.z - from.z, l = Math.hypot(dx, dz) || 1, f = n >= 9 ? 7 : 2.5; this.vel.x += (dx / l) * f; this.vel.z += (dz / l) * f; }
+    if (n >= 9 && this.hp > 0 && this.state !== 'down' && this.state !== 'getup') {
+      this.setState('down');
+      this.combat.vfx.dust && this.combat.vfx.dust(this.pos.x, this.pos.y + 0.2, this.pos.z, 5, 1.2);
+      if (g.floatAt) g.floatAt(this.pos, this.barH + 0.5, '¡DERRIBADO!', 'big');
+    } else if (this.state === 'windup' && Math.random() < 0.5) this.setState('recover'); // a veces el golpe le interrumpe
     if (this.hp <= 0) this.kill();
   }
 

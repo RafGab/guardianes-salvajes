@@ -573,7 +573,7 @@ function bindUi() {
   input.on('selectNext', () => mode === 'select' && showHero(selected + 1));
   input.on('confirm', () => mode === 'select' && beginMission());
   input.on('mute', toggleSound);
-  input.on('power', () => mode === 'playing' && game.state === 'playing' && game.useAbility());
+  input.on('power', () => mode === 'playing' && game.state === 'playing' && game.primaryAttack()); // Q / clic: atacar (en el jefe, golpe con el arma)
   input.on('ability', (i) => mode === 'playing' && game.state === 'playing' && game.triggerAbility(i)); // cada poder, su tecla
   input.on('weapon', () => mode === 'playing' && game.state === 'playing' && game.toggleWeapon()); // G: sacar / guardar el arma
   input.on('abilityNext', () => mode === 'playing' && game.cycleAbility(1));
