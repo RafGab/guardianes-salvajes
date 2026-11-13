@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#0b1018" />
   <title>CATAC 7</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Orbitron:wght@500;700;900&family=Exo+2:wght@400;500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
@@ -41,21 +41,28 @@
           </div>
         </div>
       </div>
-      <div class="title-foot">Prototipo 3D · Campaña de 9 niveles · 7 guardianes elementales</div>
+      <div class="title-foot">Prototipo 3D · Campaña de 10 niveles · 7 guardianes elementales</div>
     </section>
 
-    <!-- Selección de nivel -->
-    <section id="missions" class="screen scroll">
-      <div class="missions-wrap">
-        <div class="sel-kicker">CAMPAÑA</div>
-        <h2>Elige un nivel</h2>
-        <div id="progress-line" class="progress-line"></div>
-        <div id="mission-cards" class="mission-cards"></div>
-        <div class="row">
-          <button id="btn-back-m" class="btn">← Volver</button>
-          <button id="btn-inv-m" class="btn">🎒 Inventario</button>
-        </div>
+    <!-- Selección de mundos: universo espacial con un portal 3D por nivel (worldselect.js) -->
+    <section id="missions" class="screen ws">
+      <div class="ws-top">
+        <div class="ws-kicker">CATAC 7 · CAMPAÑA</div>
+        <h2 class="ws-title">SELECCIONA TU DESTINO</h2>
+        <div id="progress-line" class="progress-line ws-progress"></div>
       </div>
+      <div id="ws-labels" class="ws-labels"></div>
+      <div id="ws-info" class="ws-info"></div>
+      <button id="ws-prev" class="ws-arrow prev" type="button" aria-label="Mundo anterior">‹</button>
+      <button id="ws-next" class="ws-arrow next" type="button" aria-label="Mundo siguiente">›</button>
+      <div class="ws-bottom">
+        <button id="btn-back-m" class="ws-btn ghost" type="button">VOLVER AL MENÚ</button>
+        <button id="ws-enter" class="ws-btn main" type="button" disabled>ENTRAR AL MUNDO</button>
+      </div>
+      <button id="btn-inv-m" class="ws-inv" type="button">🎒 Inventario</button>
+      <div class="ws-hint">Pasa el cursor por los portales · haz clic para elegir · ← → para recorrerlos</div>
+      <div id="mission-cards" class="mission-cards" hidden></div>
+      <div id="ws-flash" class="ws-flash"></div>
     </section>
 
     <!-- Selección de héroe -->

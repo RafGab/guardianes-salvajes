@@ -16,6 +16,7 @@ import { ui } from './ui.js';
 import { Audio3D as audio } from './audio.js';
 import { clamp, damp } from './utils.js';
 import { LEVELS } from './levels.js';
+import { WorldSelect } from './worldselect.js';
 import { Save } from './save.js';
 import { ITEMS } from './items.js';
 import { IS_TOUCH } from './platform.js';
@@ -157,6 +158,8 @@ function showHero(i, burst = true) {
 /* ---------- modos ---------- */
 function enterTitle() {
   mode = 'title';
+  worldSel.close();
+  document.body.style.cursor = '';
   input.enabled = false;
   if (showcase) scene.remove(showcase.root);
   scene.remove(pedestal);
@@ -195,8 +198,10 @@ async function loadLevel(level, minMs = 2600) {
   }
   ui.levelIntroProgress(1, '');
 }
+const worldSel = new WorldSelect();
+window.__ws = worldSel; // acceso para pruebas
 function enterMissions() {
-  mode = 'title';
+  mode = 'worlds';
   input.enabled = false;
   ui.hud(false);
   ui.showOverlay('inventory', false);
@@ -206,8 +211,20 @@ function enterMissions() {
   game.clearVictims();
   game.state = 'idle';
   world.reset();
-  ui.buildMissions(pickMission);
+  ui.buildMissions(pickMission); // línea de progreso (y tarjetas de respaldo, ocultas)
   ui.showScreen('missions');
+  document.getElementById('missions').classList.remove('entering', 'has-sel');
+  worldSel.setSize(curW || window.innerWidth, curH || window.innerHeight);
+  worldSel.open({
+    levels: LEVELS,
+    isUnlocked: (n) => Save.isUnlocked(n),
+    stars: (id) => Save.stars(id),
+    rewardOf: (l) => ITEMS[l.reward] || null,
+    bestOf: (l) => l.best.map((e) => ELEMENTS[e].icon).join(' '),
+    startIndex: Math.min(Save.completed, LEVELS.length - 1),
+    // el portal abre el mundo real con el sistema de carga de siempre
+    onEnter: (i) => { worldSel.close(); document.body.style.cursor = ''; pickMission(i); },
+  });
 }
 async function pickMission(i) {
   audio.init();
@@ -344,6 +361,20 @@ function frame(now) {
   clockT += dt;
   if (!resizeIfNeeded() || !world) return;
   input.poll();
+  if (mode === 'worlds') {
+    // universo de selección de mundos: misma tubería de render (resplandor, color) con su propia escena y cámara
+    try {
+      worldSel.setSize(curW, curH);
+      worldSel.update(dt);
+      renderer.toneMappingExposure = 1.05;
+      const sc0 = renderPass.scene, cam0 = renderPass.camera;
+      renderPass.scene = worldSel.scene; renderPass.camera = worldSel.camera;
+      if (bloomPass) bloomPass.strength = TOON.bloom.strength * 0.9;
+      composer.render();
+      renderPass.scene = sc0; renderPass.camera = cam0;
+    } catch (e) { console.error(e); }
+    return;
+  }
   try {
     if (mode === 'title' || mode === 'select') updateMenu(dt);
     else if (mode === 'team') {
