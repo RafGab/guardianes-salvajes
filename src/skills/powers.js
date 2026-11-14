@@ -4,7 +4,7 @@ import { Skill, DEG, ease, lerp, clamp, V } from './base.js';
 import { terrainH } from '../terrain.js';
 import { ui } from '../ui.js';
 import { douseFires, propsNear, captureProp, dropFlung, wetGround } from './envreact.js';
-import { MirageWard, TsunamiWave, WaterVortex, FoamPool } from './fx4.js';
+import { MirageWard, TsunamiWave, WaterVortex, FoamPool, WaterShield } from './fx4.js';
 
 // PODERES ESPECIALES NUEVOS (3 por héroe; la Zorra Ártica tiene 4).
 // Cada poder es una lista de etapas PREPARACIÓN → EJECUCIÓN → RECUPERACIÓN (como skills/hero.js).
@@ -1146,121 +1146,92 @@ export class TsunamiSkill extends Skill {
 }
 
 /* ====================================================================== */
-/*  NUTRIA — MAELSTROM (agujero negro de agua)                             */
+/*  NUTRIA — MAELSTROM (escudo de agua en remolino)                        */
 /* ====================================================================== */
 export class MaelstromSkill extends Skill {
+  static background = true; // escudo: la Nutria puede moverse y atacar dentro de él
   begin() {
-    const p = this.p, d = this.def;
-    const tgt = this.combat.aimTarget(p.pos.x, p.pos.z, p.facing, 40 * DEG, d.dist + d.radius);
-    const f = this.fwd, dist = tgt ? Math.min(d.dist + 4, Math.hypot(tgt.pos.x - p.pos.x, tgt.pos.z - p.pos.z)) : d.dist;
-    if (tgt) this.face(tgt.pos.x, tgt.pos.z);
-    const ff = this.fwd;
-    this.at = V(p.pos.x + ff.x * dist, 0, p.pos.z + ff.z * dist);
-    this.at.y = terrainH(this.at.x, this.at.z);
-    void f;
     this.start();
     return true;
   }
   build() {
     const d = this.def, pose = this.pose;
     return [
-      { name: 'aparicion', dur: d.prep, enter: this.enterSpawn, tick: (dt, k) => { pose.spin = k * TAU; pose.rx = -0.2 * k; } },
-      { name: 'absorcion', dur: d.exec, enter: () => { this.lock(false); this.pose.spin = 0; }, tick: this.tickPull },
-      { name: 'colapso', dur: d.recover, enter: this.enterCollapse, tick: (dt, k) => { pose.rx = lerp(-0.1, 0, k); } },
+      // ACTIVACIÓN: la Nutria gira sobre sí misma y el agua sube del suelo en espiral hasta cerrar la cúpula
+      { name: 'formar', dur: d.prep, enter: this.enterForm, tick: (dt, k) => {
+        pose.spin = back(k) * TAU; pose.rx = -0.15 * Math.sin(k * Math.PI);
+        if (this.shield) this.shield.update(dt, { grow: back(k) });
+        this.p.evadeT = Math.max(this.p.evadeT, 0.15);
+      }, exit: this.closeDome },
+      // PROTECCIÓN: la cúpula la sigue, bloquea los golpes, desvía proyectiles y empuja a quien se acerca
+      { name: 'escudo', dur: d.exec, enter: () => { this.pose.spin = 0; this.pose.rx = 0; }, tick: this.tickShield },
+      // RUPTURA: el agua cae desde arriba y sale en una ola que empuja a los enemigos
+      { name: 'romper', dur: d.recover, enter: this.enterBreak, tick: (dt, k) => { if (this.shield) this.shield.update(dt, { fall: back(k) }); } },
     ];
   }
-  enterSpawn() {
-    const d = this.def;
-    this.lock(true);
-    this.at.y = this.p.floorY(this.at.x, this.at.z, this.p.pos.y + 1);
-    this.wp = this.v2.whirlpool(this.at.x, this.at.z, { r: d.radius, life: d.prep + d.exec + d.recover, y: this.at.y });
-    this.track({ kill: () => this.vfx.kill(this.wp.it) });
+  enterForm() {
+    const p = this.p, q = p.pos, d = this.def;
+    this.shield = new WaterShield(this.g, p, { radius: d.shieldR, height: Math.max(2.3, p.H * d.shieldH) });
+    this.track({ kill: () => { if (this.shield) { this.shield.dispose(); this.shield = null; } } });
+    p.waterGuard = this;
     this.sfx('vortex');
-    this.vfx.splash(this.at.x, this.at.y + 0.3, this.at.z, 20, 1.4);
-    this.vfx.ring(this.at.x, null, this.at.z, { r0: 0.5, r1: d.radius, dur: 0.6, color: 0x5ac8ff });
+    this.vfx.ring(q.x, null, q.z, { r0: d.shieldR * 2.2, r1: d.shieldR * 0.9, dur: d.prep, color: 0x5ac8ff, opacity: 0.6 });
+    this.vfx.splash(q.x, q.y + 0.2, q.z, 16, 1.1);
   }
-  tickPull(dt) {
-    const d = this.def, at = this.at, c = this.combat;
-    this.absorbWorld(dt);
-    c.deflect(this.p.pos.x, this.p.pos.z, 3.5); // ESCUDO: los proyectiles que llegan a la nutria se desvían
-    this.p.evadeT = Math.max(this.p.evadeT, 0.15); // ESCUDO: mientras gira el remolino la nutria queda protegida
+  closeDome() {
+    const p = this.p, q = p.pos, d = this.def;
+    this.sfx('chime');
+    this.vfx.ring(q.x, null, q.z, { r0: d.shieldR * 0.8, r1: d.shieldR * 2.4, dur: 0.45, color: 0xbfeaff });
+    if (this.v2) this.v2.shell(new THREE.Vector3(q.x, q.y + p.H * 0.6, q.z), { r: d.shieldR * 1.05, color: 0x8ad8ff, rim: 0xffffff, opacity: 0.5, life: 0.3 });
+    ui.banner('find', '🌀', 'Escudo de agua: bloquea los golpes y aparta a los enemigos');
+  }
+  tickShield(dt) {
+    const d = this.def, p = this.p, q = p.pos, c = this.combat, sh = this.shield;
+    if (!sh) { this.endStage(); return; }
+    const left = d.exec - this.t;
+    sh.update(dt, { grow: 1, warn: left < 1 ? 1 - left : 0 });
+    p.evadeT = Math.max(p.evadeT, 0.15);           // ESCUDO: los golpes no le hacen daño
+    c.deflect(q.x, q.z, d.shieldR + 0.4);          // los proyectiles rebotan en la cúpula
+    // el agua aparta a los enemigos que tocan la cúpula (los esbirros salen despedidos)
+    if (!this.touch) this.touch = new Map();
     for (const t of c.targets()) {
-      const dx = at.x - t.pos.x, dz = at.z - t.pos.z, dist = Math.hypot(dx, dz);
-      if (dist > d.radius + t.radius) continue;
-      const k = 1 - dist / (d.radius + t.radius);
-      // succión en espiral: hacia el centro y alrededor
-      const tx = dx - dz * 0.9, tz = dz + dx * 0.9;
-      if (t.heavy) c.push(t, tx, tz, d.pull * (0.5 + k) * dt * 2);
-      else this.shove(t, tx, tz, d.pull * (0.6 + 1.6 * k), dt);
+      const dx = t.pos.x - q.x, dz = t.pos.z - q.z, dist = Math.hypot(dx, dz);
+      if (dist > d.shieldR + t.radius + 0.2) continue;
+      if (t.heavy) c.push(t, dx || 0.1, dz, d.repel * dt * 1.5);
+      else this.shove(t, dx || 0.1, dz, d.repel, dt);
       this.dot(t, d.dps, dt);
       c.slow(t, 0.6, 0.4);
-      if (dist < d.coreRadius + t.radius) { // el núcleo oscuro
-        if (!t.heavy) { this.vfx.splash(t.pos.x, t.pos.y + 0.5, t.pos.z, 10, 1); c.damage(t, 99); } // los esbirros desaparecen en el núcleo
-      }
+      const last = this.touch.get(t) || 0;
+      if (this.t - last > 0.5) { this.touch.set(t, this.t); sh.impact(t.pos); }
     }
-    // los proyectiles enemigos también caen al remolino
-    for (const pr of c.projectiles) if (!pr.dead && pr.owner === 'boss' && Math.hypot(pr.pos.x - at.x, pr.pos.z - at.z) < d.radius) { pr.vel.x += (at.x - pr.pos.x) * dt * 3; pr.vel.z += (at.z - pr.pos.z) * dt * 3; }
-    // corrientes circulares: espuma y burbujas que giran hacia el centro
-    for (let i = 0; i < 3; i++) {
-      const a = this.t * 4 + rnd(0, TAU), r = rnd(1, d.radius);
-      const x = at.x + Math.cos(a) * r, z = at.z + Math.sin(a) * r;
-      this.g.fx.spray(x, at.y + 0.2, z, -Math.sin(a) * 5 - Math.cos(a) * 2, 0.4, Math.cos(a) * 5 - Math.sin(a) * 2, 1);
-    }
-    if (Math.random() < 0.4) this.g.fx.sparkle(at.x + rnd(-1, 1), at.y + rnd(0.2, 2), at.z + rnd(-1, 1), 0x9ad8ff, 0.8);
-    if (Math.random() < 0.3) this.g.fx.mist(at.x + rnd(-2, 2), at.y + 0.6, at.z + rnd(-2, 2), 0x9ac8e8, 1.2);
-    this.shake(0.03);
+    // el escudo apaga los fuegos que toca
+    this.doused = (this.doused || 0) + douseFires(this.g, q.x, q.z, d.shieldR + 0.6);
   }
-  dispose() {
-    if (this.orbit && this.orbit.length) { dropFlung(this.g, this.orbit, 6); this.orbit = []; }
-    super.dispose();
+  // El juego avisa de un golpe bloqueado: la onda recorre la cúpula desde el impacto
+  absorb(from) {
+    if (!this.shield || this.stageName === 'romper') return false;
+    this.shield.impact(from);
+    this.sfx('slurp');
+    return true;
   }
-  // EL REMOLINO EN EL ESCENARIO: absorbe escombros, rocas y troncos cercanos, que giran en espiral y suben
-  // por el embudo; también apaga los fuegos que alcanza
-  absorbWorld(dt) {
-    const d = this.def, at = this.at, g = this.g;
-    if (!this.orbit) { this.orbit = []; this.doused = 0; }
-    this.doused += douseFires(g, at.x, at.z, d.radius);
-    for (const pr of propsNear(g, at.x, at.z, d.radius * 1.35)) {
-      const it = captureProp(g, pr);
-      if (!it) continue;
-      it.a = Math.atan2(pr.pos.z - at.z, pr.pos.x - at.x);
-      it.r = Math.hypot(pr.pos.x - at.x, pr.pos.z - at.z);
-      it.h = 0.2;
-      this.orbit.push(it);
-      this.vfx.splash(pr.pos.x, pr.pos.y + 0.5, pr.pos.z, 12, 1.2);
-    }
-    for (const it of this.orbit) {
-      const R = d.radius, k = 1 - Math.min(1, it.r / R);
-      it.a += dt * (2.2 + 5 * k);                 // gira más rápido cerca del centro
-      it.r = Math.max(0.9, it.r - dt * (1.2 + 1.5 * k));
-      it.h = Math.min(4, it.h + dt * (0.4 + 1.6 * k)); // y sube por el embudo
-      const m = it.mesh;
-      m.position.set(at.x + Math.cos(it.a) * it.r, at.y + it.h, at.z + Math.sin(it.a) * it.r);
-      m.rotation.x += it.spin.x * dt; m.rotation.y += it.spin.y * dt * 2; m.rotation.z += it.spin.z * dt;
-      m.scale.copy(it.s0).multiplyScalar(1 - 0.35 * k);
-      if (Math.random() < dt * 6) g.fx.spray(m.position.x, m.position.y, m.position.z, rnd(-1, 1), 1, rnd(-1, 1), 0.8);
-    }
-    // columna de agua en espiral que sube del centro
-    for (let i = 0; i < 2; i++) { const a = this.t * 7 + i * Math.PI, r = 0.6 + Math.random() * 0.6; g.fx.spray(at.x + Math.cos(a) * r, at.y + 0.3, at.z + Math.sin(a) * r, -Math.sin(a) * 2, rnd(4, 7), Math.cos(a) * 2, 1.1); }
-  }
-  enterCollapse() {
-    const d = this.def, at = this.at, g = this.g;
-    // al colapsar, lo absorbido sale despedido en todas direcciones y cae alrededor
-    for (const it of this.orbit || []) { const a = it.a + 0.6; it.vel = new THREE.Vector3(Math.cos(a) * rnd(6, 10), rnd(5, 9), Math.sin(a) * rnd(6, 10)); }
-    if (this.orbit && this.orbit.length) dropFlung(g, this.orbit, 8);
-    this.orbit = [];
-    wetGround(g, at.x, at.z, d.radius * 0.8, 10);
-    for (let i = 0; i < 6; i++) { const a = i / 6 * TAU; wetGround(g, at.x + Math.cos(a) * d.radius * 0.9, at.z + Math.sin(a) * d.radius * 0.9, rnd(1.4, 2.2), rnd(7, 10)); }
-    this.vfx.ring(at.x, null, at.z, { r0: d.radius * 0.6, r1: d.radius * 1.8, dur: 0.9, color: 0x5ac8ff });
-    if (this.doused) ui.banner('good', `💧 ¡El remolino apaga ${this.doused} ${this.doused > 1 ? 'focos' : 'foco'}!`, `+${30 * this.doused} puntos`);
-    this.shake(0.35); this.sfx('boom');
-    this.vfx.splash(at.x, at.y + 0.4, at.z, 30, 2);
-    this.vfx.ring(at.x, null, at.z, { r0: 0.5, r1: d.radius * 1.1, dur: 0.6, color: 0xbfeaff });
-    for (const t of this.combat.inCircle(at.x, at.z, d.radius)) {
+  enterBreak() {
+    const d = this.def, p = this.p, q = p.pos, g = this.g;
+    if (p.waterGuard === this) p.waterGuard = null;
+    this.sfx('boom'); this.shake(0.25);
+    this.vfx.splash(q.x, q.y + 0.5, q.z, 30, 1.8);
+    this.vfx.ring(q.x, null, q.z, { r0: d.shieldR, r1: d.collapseRadius * 1.4, dur: 0.7, color: 0x5ac8ff });
+    this.vfx.ring(q.x, null, q.z, { r0: d.shieldR * 0.6, r1: d.collapseRadius, dur: 0.5, color: 0xbfeaff });
+    for (let i = 0; i < 24; i++) { const a = i / 24 * TAU; g.fx.spray(q.x + Math.cos(a) * d.shieldR, q.y + rnd(0.3, 2), q.z + Math.sin(a) * d.shieldR, Math.cos(a) * rnd(4, 7), rnd(1, 4), Math.sin(a) * rnd(4, 7), 1.2); }
+    wetGround(g, q.x, q.z, d.shieldR * 1.3, 8);
+    for (const t of this.combat.inCircle(q.x, q.z, d.collapseRadius)) {
       this.hit(t, d.collapseDamage);
-      const { dx, dz } = this.awayFrom(t, at.x, at.z);
+      const { dx, dz } = this.awayFrom(t, q.x, q.z);
       this.combat.push(t, dx || 0.1, dz, d.collapseForce);
     }
+    if (this.doused) ui.banner('good', `💧 ¡El escudo apaga ${this.doused} ${this.doused > 1 ? 'focos' : 'foco'}!`, `+${30 * this.doused} puntos`);
+  }
+  cleanup() {
+    if (this.p.waterGuard === this) this.p.waterGuard = null;
   }
 }
 

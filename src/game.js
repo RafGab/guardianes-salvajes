@@ -1081,6 +1081,9 @@ export class Game {
     // ESPEJISMOS de Halley: un espejismo se interpone y absorbe el golpe
     const mg = this.player.mirageGuard;
     if (mg && mg.absorb(from)) { this.floatAt(p, H + 0.4, '🪞 ¡ABSORBIDO!', 'block'); ui.hpBlock(); audio.sfx('chime'); return; }
+    // MAELSTROM de Nilo: la cúpula de agua recibe el golpe y una onda la recorre desde el impacto
+    const wg = this.player.waterGuard;
+    if (wg && wg.absorb(from)) { this.floatAt(p, H + 0.4, '🌀 ¡BLOQUEADO!', 'block'); ui.hpBlock(); return; }
     let x = p.x, z = p.z;
     if (from) { const dx = from.x - p.x, dz = from.z - p.z, l = Math.hypot(dx, dz) || 1; x += (dx / l) * 0.8; z += (dz / l) * 0.8; }
     this.vfx.ring(p.x, null, p.z, { r0: 0.6, r1: 2.4, dur: 0.4, color: 0x8ad8ff });

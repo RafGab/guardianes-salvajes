@@ -14,6 +14,7 @@ import { cloudMat } from './fx3.js';
    · WaterVortex — columna de agua que gira alrededor de la Nutria mientras
                    acumula energía
    · FoamPool    — charco de espuma que queda en el suelo tras la rompiente
+   · WaterShield — MAELSTROM de la Nutria: cúpula de agua en remolino que la protege
    Todo usa geometrías y materiales propios que se liberan en dispose().
    ====================================================================== */
 
@@ -561,4 +562,199 @@ export class FoamPool {
   }
   update(dt, k) { this.t += dt; this.mat.uniforms.uT.value = this.t * 0.6; this.mat.uniforms.uOp.value = 0.85 * (1 - k); }
   dispose() { this.geo.dispose(); this.mat.dispose(); }
+}
+
+/* ================================================================== */
+/*  NUTRIA — MAELSTROM: ESCUDO DE AGUA                                 */
+/* ================================================================== */
+// Cúpula de agua en remolino que envuelve a la Nutria y la sigue:
+//  · se forma desde el suelo en espiral (el agua sube con un frente de espuma)
+//  · superficie de agua con corrientes en espiral, cáusticas y brillo de borde
+//  · tres corrientes helicoidales que giran a su alrededor y un anillo de espuma en el suelo
+//  · cada golpe bloqueado lanza una onda que recorre la cúpula desde el punto de impacto
+//  · al final parpadea, y al romperse el agua cae desde arriba y sale en una ola
+export class WaterShield {
+  constructor(g, p, { radius = 1.9, height = 2.6 } = {}) {
+    this.g = g; this.p = p; this.R = radius; this.Hh = height;
+    this.t = 0; this.grow = 0; this.fall = 0; this.hitIdx = 0;
+    this.group = new THREE.Group();
+    g.vfx.group.add(this.group);
+    this.geos = []; this.mats = [];
+    this.buildDome(); this.buildCurrents(); this.buildFoam();
+  }
+
+  buildDome() {
+    const R = this.R, Hh = this.Hh;
+    const geo = new THREE.SphereGeometry(1, 72, 48);
+    this.geos.push(geo);
+    const hits = [0, 1, 2, 3].map(() => new THREE.Vector4(0, 0, 1, 9));
+    this.domeU = {
+      uT: { value: 0 }, uOp: { value: 0 }, uGrow: { value: 0 }, uFall: { value: 0 }, uWarn: { value: 0 },
+      uScale: { value: new THREE.Vector3(R, Hh / 2, R) }, uHits: { value: hits },
+      uDeep: { value: new THREE.Color(0x0a4f96) }, uLight: { value: new THREE.Color(0x6fe2ff) }, uFoam: { value: new THREE.Color(0xeafcff) },
+    };
+    const vs = `uniform float uT; uniform vec3 uScale; uniform vec4 uHits[4];
+      varying vec3 vP; varying vec3 vN; varying vec3 vV; varying float vRip;
+      void main(){
+        vec3 n = normalize(position);
+        float th = atan(n.x, n.z);
+        float rip = 0.0;
+        for (int i = 0; i < 4; i++) { float d = acos(clamp(dot(n, normalize(uHits[i].xyz)), -1.0, 1.0)); float a = uHits[i].w;
+          rip += exp(-pow((d - a * 3.2) * 7.0, 2.0)) * max(0.0, 1.0 - a * 1.1); }
+        vRip = rip;
+        float wave = sin(th * 5.0 + n.y * 6.0 - uT * 4.0) * 0.025 + sin(th * 9.0 - n.y * 4.0 + uT * 3.0) * 0.012;
+        vec3 p = n * (1.0 + wave + rip * 0.07);
+        vP = n;
+        vec4 mv = modelViewMatrix * vec4(p * uScale, 1.0);
+        vN = normalize(normalMatrix * (n / uScale));
+        vV = normalize(-mv.xyz);
+        gl_Position = projectionMatrix * mv;
+      }`;
+    const fs = NOISE + `uniform float uT; uniform float uOp; uniform float uGrow; uniform float uFall; uniform float uWarn;
+      uniform vec3 uDeep; uniform vec3 uLight; uniform vec3 uFoam; uniform float uBack;
+      varying vec3 vP; varying vec3 vN; varying vec3 vV; varying float vRip;
+      void main(){
+        float h = vP.y * 0.5 + 0.5;
+        float th = atan(vP.x, vP.z) / 6.2831853 + 0.5;
+        vec2 sp = vec2(th * 3.0 + h * 1.4 - uT * 0.35, h * 2.2 - uT * 0.25);
+        float flow = fbm(sp * vec2(4.0, 3.0));
+        float streak = sin((th * 6.0 + h * 3.2 - uT * 1.1) * 6.2831853 + flow * 5.0) * 0.5 + 0.5;
+        streak = smoothstep(0.72, 1.0, streak);
+        float caus = pow(fbm(sp * 9.0 + flow * 2.0), 3.0) * 2.4;
+        float facing = abs(dot(normalize(vN), normalize(vV)));
+        float edge = pow(1.0 - facing, 2.2);
+        float front = uGrow * 1.12 - 0.06 + (flow - 0.5) * 0.08;
+        float top = 1.0 - uFall * 1.15 + (flow - 0.5) * 0.1;
+        float vis = smoothstep(front, front - 0.04, h) * smoothstep(top + 0.04, top - 0.02, h);
+        float lip = exp(-pow((h - front) * 26.0, 2.0)) * step(uGrow, 0.995) + exp(-pow((h - top) * 22.0, 2.0)) * step(0.001, uFall);
+        float flick = 1.0 - uWarn * (0.5 + 0.5 * sin(uT * 26.0));
+        vec3 c = mix(uDeep, uLight, clamp(flow * 0.9 + edge * 0.8, 0.0, 1.0));
+        c += uFoam * (streak * 0.55 + caus * 0.35 + vRip * 1.4 + lip * 1.2);
+        float a = (0.16 + edge * 0.62 + streak * 0.22 + caus * 0.12) * flick + vRip * 0.9 + lip * 0.8;
+        a *= vis * uOp * mix(1.0, 0.45, uBack);
+        gl_FragColor = vec4(c, clamp(a, 0.0, 0.95));
+      }`;
+    const mk = (side, back, order) => {
+      const m = new THREE.ShaderMaterial({ uniforms: { ...this.domeU, uBack: { value: back } }, vertexShader: vs, fragmentShader: fs, transparent: true, depthWrite: false, side, fog: false });
+      this.mats.push(m);
+      const mesh = new THREE.Mesh(geo, m); mesh.renderOrder = order; mesh.frustumCulled = false; this.group.add(mesh);
+      return mesh;
+    };
+    this.back = mk(THREE.BackSide, 1, 4);
+    this.front = mk(THREE.FrontSide, 0, 6);
+  }
+
+  // Tres corrientes helicoidales que rodean la cúpula
+  buildCurrents() {
+    const R = this.R, Hh = this.Hh, N = 90, turns = 1.35;
+    this.curU = { uT: { value: 0 }, uOp: { value: 0 }, uGrow: { value: 0 }, uFall: { value: 0 } };
+    const mat = new THREE.ShaderMaterial({
+      uniforms: this.curU, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, fog: false,
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: NOISE + `uniform float uT; uniform float uOp; uniform float uGrow; uniform float uFall; varying vec2 vUv;
+        void main(){
+          float along = vUv.x, across = abs(vUv.y - 0.5) * 2.0;
+          float body = 1.0 - smoothstep(0.35, 1.0, across);
+          float pulse = 0.55 + 0.45 * sin((along * 5.0 - uT * 2.2) * 6.2831853);
+          float n = vnoise(vec2(along * 30.0 - uT * 6.0, vUv.y * 4.0));
+          float vis = smoothstep(uGrow + 0.02, uGrow - 0.06, along) * (uFall > 0.001 ? smoothstep(1.0 - uFall + 0.02, 1.0 - uFall - 0.06, along) : 1.0);
+          float tip = smoothstep(0.0, 0.08, along) * (1.0 - smoothstep(0.9, 1.0, along));
+          vec3 c = mix(vec3(0.25, 0.75, 1.0), vec3(0.92, 1.0, 1.0), pulse * n);
+          gl_FragColor = vec4(c, body * (0.35 + 0.65 * pulse * n) * vis * tip * uOp);
+        }`,
+    });
+    this.mats.push(mat);
+    this.currents = new THREE.Group(); this.group.add(this.currents);
+    for (let k = 0; k < 3; k++) {
+      const pos = [], uv = [], idx = [];
+      for (let i = 0; i <= N; i++) {
+        const s = i / N, y = s * Hh * 0.96, a = k / 3 * TAU + s * turns * TAU;
+        const yy = (y / (Hh / 2)) - 1, r = R * 1.04 * Math.sqrt(Math.max(0.06, 1 - yy * yy));
+        const w = 0.16 + 0.1 * Math.sin(s * Math.PI);
+        const cx = Math.sin(a) * r, cz = Math.cos(a) * r;
+        pos.push(cx, y - w * 0.6, cz, cx, y + w * 0.6, cz);
+        uv.push(s, 0, s, 1);
+        if (i < N) { const b = i * 2; idx.push(b, b + 1, b + 2, b + 1, b + 3, b + 2); }
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3));
+      g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+      g.setIndex(idx);
+      this.geos.push(g);
+      const m = new THREE.Mesh(g, mat); m.renderOrder = 7; m.frustumCulled = false; this.currents.add(m);
+    }
+  }
+
+  // Anillo de espuma en el suelo, en la base de la cúpula
+  buildFoam() {
+    const R = this.R;
+    const g = new THREE.RingGeometry(R * 0.7, R * 1.45, 96, 3); g.rotateX(-Math.PI / 2);
+    this.geos.push(g);
+    this.foamU = { uT: { value: 0 }, uOp: { value: 0 }, uR0: { value: R * 0.7 }, uR1: { value: R * 1.45 } };
+    const m = new THREE.ShaderMaterial({
+      uniforms: this.foamU, transparent: true, depthWrite: false, fog: false,
+      vertexShader: `varying vec2 vP; void main(){ vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: NOISE + `uniform float uT; uniform float uOp; uniform float uR0; uniform float uR1; varying vec2 vP;
+        void main(){
+          float r = length(vP), k = (r - uR0) / (uR1 - uR0);
+          float a = atan(vP.x, vP.y);
+          float f = fbm(vec2(a * 3.0 + uT * 1.6 - r * 1.5, r * 3.0 - uT * 0.8));
+          float foam = smoothstep(0.42, 0.75, f) * (1.0 - smoothstep(0.55, 1.0, k)) * smoothstep(0.0, 0.25, k);
+          vec3 c = mix(vec3(0.35, 0.8, 1.0), vec3(1.0), foam);
+          gl_FragColor = vec4(c, (foam * 0.85 + 0.12 * (1.0 - k)) * uOp);
+        }`,
+    });
+    this.mats.push(m);
+    this.foam = new THREE.Mesh(g, m); this.foam.renderOrder = 3; this.foam.position.y = 0.05; this.group.add(this.foam);
+  }
+
+  // Un golpe bloqueado: onda que recorre la cúpula desde el punto de impacto
+  impact(from) {
+    const P = this.p.pos;
+    let dx = 0, dz = 1;
+    if (from) { dx = from.x - P.x; dz = from.z - P.z; }
+    const l = Math.hypot(dx, dz) || 1;
+    const h = this.domeU.uHits.value[this.hitIdx++ % 4];
+    h.set(dx / l, 0.15, dz / l, 0);
+    const R = this.R, y = P.y + this.Hh * 0.55;
+    const x = P.x + (dx / l) * R, z = P.z + (dz / l) * R;
+    for (let i = 0; i < 10; i++) this.g.fx.spray(x, y, z, (dx / l) * rnd(1, 4) + rnd(-1.5, 1.5), rnd(1, 4), (dz / l) * rnd(1, 4) + rnd(-1.5, 1.5), 1);
+    this.g.fx.sparkle(x, y, z, 0xd8f6ff, 2.4);
+  }
+
+  // grow: aparición (0..1) · warn: aviso de fin (0..1) · fall: ruptura (0..1)
+  update(dt, { grow = 1, warn = 0, fall = 0 } = {}) {
+    this.t += dt;
+    const P = this.p.pos, t = this.t;
+    this.group.position.set(P.x, P.y, P.z);
+    this.grow = grow; this.fall = fall;
+    const pop = grow < 1 ? 0.82 + 0.18 * easeOut(grow) + 0.06 * Math.sin(grow * Math.PI) : 1 + 0.015 * Math.sin(t * 3.2);
+    const spread = 1 + fall * 0.18;
+    const u = this.domeU;
+    u.uT.value = t; u.uGrow.value = grow; u.uFall.value = fall; u.uWarn.value = warn;
+    u.uOp.value = 1 - fall * 0.4;
+    u.uScale.value.set(this.R * pop * spread, (this.Hh / 2) * pop, this.R * pop * spread);
+    for (const m of [this.back, this.front]) m.position.y = this.Hh / 2 - 0.12;
+    for (const h of u.uHits.value) h.w = Math.min(9, h.w + dt);
+    this.curU.uT.value = t; this.curU.uGrow.value = grow; this.curU.uFall.value = fall;
+    this.curU.uOp.value = (1 - warn * 0.5 * (0.5 + 0.5 * Math.sin(t * 26))) * (1 - fall);
+    this.currents.rotation.y += dt * (2.6 + (1 - grow) * 6);
+    this.currents.scale.setScalar(pop * spread);
+    this.foamU.uT.value = t; this.foamU.uOp.value = Math.min(1, grow * 1.5) * (1 - fall * 0.5);
+    this.foam.scale.setScalar(0.6 + 0.4 * easeOut(grow) + fall * 0.9);
+    // gotas que resbalan por la cúpula, y agua que sube en espiral mientras se forma
+    const R = this.R * pop;
+    if (fall <= 0 && grow > 0.6 && Math.random() < dt * 14) {
+      const a = rnd(0, TAU); this.g.fx.spray(P.x + Math.sin(a) * R, P.y + 0.15, P.z + Math.cos(a) * R, Math.sin(a) * 1.2 + Math.cos(a) * 2, rnd(1, 2.5), Math.cos(a) * 1.2 - Math.sin(a) * 2, 0.7);
+    }
+    if (grow < 1 && Math.random() < dt * 40) {
+      const a = t * 9 + rnd(-0.3, 0.3); this.g.fx.spray(P.x + Math.sin(a) * R, P.y + grow * this.Hh, P.z + Math.cos(a) * R, Math.cos(a) * 2, rnd(2, 4), -Math.sin(a) * 2, 0.9);
+    }
+  }
+
+  dispose() {
+    this.g.vfx.group.remove(this.group);
+    for (const g of this.geos) g.dispose();
+    for (const m of this.mats) m.dispose();
+  }
 }

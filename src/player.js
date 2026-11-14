@@ -190,7 +190,7 @@ export class Player {
     } else if (type === 'pillar') {
       if (moving) this.speedBoost(4, 1.6, 0.8); // corriendo: raíces impulsoras
       else { w.spawnPillar(this.pos.x, this.pos.z, this.pos.y); this.vy = Math.max(this.vy, 0); } // quieta: pilar de tierra (como siempre)
-    } else if ((type === 'ice' || type === 'surf') && !w.hasWater) {
+    } else if ((type === 'ice' || type === 'surf') && (!w.hasWater || (w.sc && w.sc.id === 'campfire'))) { // en Camp Fire: impulso de velocidad, como en los escenarios sin agua
       this.speedBoost(type === 'surf' ? 5 : 6, hid === 'halley' ? 1.7 : hid === 'nilo' ? 1.6 : 1.65, 0.8);
       this.grip = type === 'ice';
     } else if (type === 'ice') {

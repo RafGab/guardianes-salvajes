@@ -193,12 +193,14 @@ export const HERO_SKILLS = {
       visH: 6.5,                           // altura visual de la ola
       damage: 18, carry: 13,               // daño (una vez por enemigo) y arrastre (m/s)
     },
-    // MAELSTROM: remolino gigante con núcleo oscuro que absorbe a los enemigos
+    // MAELSTROM (escudo): cúpula de agua en remolino que envuelve a la Nutria y la sigue; bloquea los golpes,
+    // desvía los proyectiles y aparta a los enemigos que la tocan. Al romperse sale una ola que los empuja
     maelstrom: {
       id: 'maelstrom', name: 'Maelstrom', icon: '🌀', cd: 20,
-      prep: 0.6, exec: 4.6, recover: 0.5,
-      dist: 7, radius: 7.5,         // distancia delante del héroe y radio de succión
-      pull: 7, dps: 3.5, coreRadius: 1.4, collapseDamage: 8, collapseForce: 12, // en el núcleo los esbirros desaparecen
+      prep: 0.6, exec: 4.6, recover: 0.5,          // formarse, proteger y romperse
+      shieldR: 1.9, shieldH: 1.7,                  // radio de la cúpula y altura (× altura del héroe)
+      repel: 9, dps: 3.5,                          // empuje y daño por segundo a quien toca la cúpula
+      collapseRadius: 5, collapseDamage: 8, collapseForce: 12, // ola al romperse
     },
     // ARMA — BUMERÁN: sale en arco, golpea a la ida y a la vuelta, y regresa a su mano
     boomerang: { id: 'boomerang', name: 'Bumerán', icon: '🪃', cd: 2.2, prep: 0.15, flightT: 1.3, recover: 0.15, dist: 11, width: 3.2, hitRadius: 1.4, damage: 6, force: 4 },

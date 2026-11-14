@@ -23,12 +23,14 @@ const HERO = {
   lira: { face: [0.5, 0.235], s: 0.95 },
   nilo: { face: [0.5, 0.21], s: 0.9 },
   halley: { face: [0.5, 0.25], s: 0.84 },
-  ambar: { face: [0.44, 0.15], s: 1.02 },
+  ambar: { face: [0.475, 0.19], s: 1.02 },
+  ambar_grupo: { face: [0.44, 0.15], s: 1.02 }, // Ámbar de frente: solo en el plano final con todo el grupo
   kyra: { face: [0.5, 0.2], s: 0.97 },
   jago: { face: [0.49, 0.155], s: 1.0 },
-  kairo: { face: [0.5, 0.19], s: 1.05 },
+  kairo: { face: [0.42, 0.14], s: 1.05 },
 };
 const ORDER = ['nilo', 'halley', 'ambar', 'kyra', 'jago', 'kairo', 'lira'];
+const LINE = ['halley', 'kairo', 'kyra', 'jago', 'lira', 'ambar_grupo', 'nilo']; // plano final del grupo
 const ease = (k) => k * k * (3 - 2 * k);
 const easeOut = (k) => 1 - Math.pow(1 - k, 3);
 const easeInOut = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
@@ -221,12 +223,12 @@ class Particles {
 const ATM = {
   void: { a: '#020306', b: '#0a1220', key: '#3a6aaa', keyI: 0.25, keyPos: [0.5, 1.0], rim: '#7ab8ff', beam: '#6a9ad8', beamI: 0.12, fog: '#4a6a9a', fogI: 0.12, emit: ['dust'] },
   lira: { a: '#03060e', b: '#0d2038', key: '#2a6aff', keyI: 0.8, keyPos: [0.5, 0.62], rim: '#5aa8ff', beam: '#4a8aff', beamI: 0.35, fog: '#2a4a8a', fogI: 0.25, emit: ['dust', 'bolts'] },
-  nilo: { a: '#020c16', b: '#0a3352', key: '#1ab0ff', keyI: 0.9, keyPos: [0.5, 0.6], rim: '#6ad0ff', beam: '#3ab8ff', beamI: 0.45, fog: '#1a6a9a', fogI: 0.3, emit: ['bubbles', 'dust'] },
+  nilo: { a: '#020c16', b: '#0a3352', key: '#ff2a1a', keyI: 0.9, keyPos: [0.5, 0.6], rim: '#ff6a5a', beam: '#ff3a2a', beamI: 0.45, fog: '#1a6a9a', fogI: 0.3, emit: ['bubbles', 'dust'] },
   halley: { a: '#0c0612', b: '#2e1438', key: '#a050ff', keyI: 0.85, keyPos: [0.4, 0.6], rim: '#c890ff', beam: '#ffa040', beamI: 0.4, fog: '#6a3a5a', fogI: 0.3, emit: ['sand'] },
   ambar: { a: '#100902', b: '#3e2806', key: '#ffb030', keyI: 1.0, keyPos: [0.5, 0.75], rim: '#ffe090', beam: '#ffd070', beamI: 0.6, fog: '#8a6a2a', fogI: 0.25, emit: ['gold', 'wind'] },
   kyra: { a: '#08050f', b: '#26123a', key: '#ff5ad0', keyI: 0.8, keyPos: [0.35, 0.6], rim: '#9ad0ff', beam: '#6ab0ff', beamI: 0.4, fog: '#6a4a9a', fogI: 0.3, emit: ['snow', 'petals', 'leaves'] },
   jago: { a: '#0e0602', b: '#36180a', key: '#ff7020', keyI: 1.0, keyPos: [0.5, 0.55], rim: '#ffa050', beam: '#ff8a3a', beamI: 0.5, fog: '#7a4a2a', fogI: 0.35, emit: ['dust', 'sparks'] },
-  kairo: { a: '#120302', b: '#480e04', key: '#ff4010', keyI: 1.1, keyPos: [0.5, 0.45], rim: '#ffb030', beam: '#ff6a20', beamI: 0.55, fog: '#8a2a0a', fogI: 0.35, emit: ['embers'] },
+  kairo: { a: '#120302', b: '#480e04', key: '#20ff40', keyI: 1.1, keyPos: [0.5, 0.45], rim: '#80ff70', beam: '#3aff5a', beamI: 0.55, fog: '#8a2a0a', fogI: 0.35, emit: ['embers'] },
   lineup: { a: '#05040b', b: '#1c1232', key: '#ff8a3a', keyI: 0.9, keyPos: [0.5, 0.55], rim: '#ffd0a0', beam: '#8ab0ff', beamI: 0.45, fog: '#4a3a6a', fogI: 0.3, emit: ['multi'] },
   logo: { a: '#01030a', b: '#081a3a', key: '#2a70ff', keyI: 1.0, keyPos: [0.5, 0.52], rim: '#6ab0ff', beam: '#3a8aff', beamI: 0.0, fog: '#1a3a7a', fogI: 0.25, emit: ['logo'] },
 };
@@ -297,7 +299,7 @@ export class CinematicIntro {
     // texturas
     const loader = new THREE.TextureLoader();
     const load = (n) => new Promise((res) => loader.load(IMG + n + '.webp', (t) => { t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; res(t); }, undefined, () => res(null)));
-    const names = [...ORDER, 'logo'];
+    const names = [...ORDER, 'ambar_grupo', 'logo'];
     const texs = await Promise.all(names.map(load));
     this.tex = {}; names.forEach((n, i) => { this.tex[n] = texs[i]; });
     // fondo pegado a la cámara (siempre llena el encuadre)
@@ -331,7 +333,7 @@ export class CinematicIntro {
     this.ring.position.set(0, 5, 0.5); this.scene.add(this.ring);
     // personajes (y su reflejo en el suelo)
     this.cards = {};
-    for (const n of [...ORDER, 'logo']) {
+    for (const n of [...ORDER, 'ambar_grupo', 'logo']) {
       const t = this.tex[n]; if (!t) continue;
       const aspect = t.image.width / t.image.height;
       const mk = (refl) => {
@@ -564,7 +566,7 @@ export class CinematicIntro {
       }
       case 'lineup': {
         set([-19, 3.2, 19], [-4, 5.2, -3], [15, 5.6, 24], [3, 5.4, -3], easeInOut(k)); // travelling ante los siete guardianes
-        for (const n of ORDER) {
+        for (const n of LINE) {
           const c = card(n), u = c.main.u;
           u.uExp.value = clamp01(lt / 0.25); c.refl.u.uExp.value = u.uExp.value; u.uRim.value = 0.4;
           u.uSweep.value = -0.6 + clamp01((lt - 1.2) / 1.2) * 2.4; u.uSweepCol.value.set('#ffffff');
@@ -660,7 +662,7 @@ export class CinematicIntro {
     } else if (S.id === 'montage') { this.glow.clear(); }
     else if (S.id === 'lineup') {
       this.setAtmosphere('lineup');
-      const xs = [-15, -10, -5, 0, 5, 10, 15], line = ['halley', 'kairo', 'kyra', 'jago', 'lira', 'ambar', 'nilo'];
+      const xs = [-15, -10, -5, 0, 5, 10, 15], line = LINE;
       const place = {};
       line.forEach((n, i) => { place[n] = { x: xs[i] * 0.95, z: -Math.abs(i - 3) * 2.6, s: HERO[n].s }; });
       this.showOnly(line, place);
