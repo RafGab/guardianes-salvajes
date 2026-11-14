@@ -4,7 +4,7 @@ import { Skill, DEG, ease, lerp, clamp, V } from './base.js';
 import { terrainH } from '../terrain.js';
 import { ui } from '../ui.js';
 import { douseFires, propsNear, captureProp, dropFlung, wetGround } from './envreact.js';
-import { MirageWard, TsunamiWave, WaterVortex, FoamPool, WaterShield } from './fx4.js';
+import { MirageWard, TsunamiWave, WaterVortex, FoamPool, WaterShield, MagmaGeyser, ObsidianSpikes, CrystalDebris } from './fx4.js';
 
 // PODERES ESPECIALES NUEVOS (3 por héroe; la Zorra Ártica tiene 4).
 // Cada poder es una lista de etapas PREPARACIÓN → EJECUCIÓN → RECUPERACIÓN (como skills/hero.js).
@@ -86,7 +86,7 @@ export class GeyserSkill extends Skill {
       const lt = t - s.delay;
       if (lt < 0) continue;
       if (!s.g) { // nace el géiser
-        s.g = this.v2.geyser(s.x, s.z, { r: d.radius * 0.6, h: d.height * rnd(0.75, 1.1), life: d.exec - s.delay + 0.3 });
+        s.g = new MagmaGeyser(this.g, s.x, s.z, { r: d.radius * 0.6, h: d.height * rnd(0.75, 1.1), life: d.exec - s.delay + 0.3 }); // columna de magma con volumen, corona y salpicaduras
         this.track(s.g);
         const y = s.g.y;
         this.vfx.ring(s.x, null, s.z, { r0: 0.3, r1: d.radius * 1.8, dur: 0.5, color: 0xffa040 });
@@ -893,6 +893,10 @@ export class ObsidianSkill extends Skill {
     this.shake(d.shake);
     this.sfx('avalanche');
     this.sh = this.track(this.v2.shards(d.shards, { obsidian: true, life: d.exec + d.recover + 0.5 }));
+    // ESTALACTITAS: púas de obsidiana que brotan del suelo al paso del frente, y fragmentos que saltan
+    this.spikes = this.track(new ObsidianSpikes(this.g, 72, d.exec + d.recover + 0.6));
+    this.debris = this.track(new CrystalDebris(this.g, 200, d.exec + d.recover + 2));
+    this.nextRow = 1.5;
     // cada fragmento: posición lateral, retraso, tamaño, giro
     this.parts = Array.from({ length: d.shards }, () => ({
       s: rnd(-0.5, 0.5) * d.width, lag: rnd(0, 3.2), h: rnd(0, 1.6), size: rnd(0.25, 0.9),
@@ -918,6 +922,18 @@ export class ObsidianSkill extends Skill {
     this.sh.commit();
     // frente: polvo, destellos cristalinos y vibración
     const fx = this.o.x + ux * front, fz = this.o.z + uz * front, fy = terrainH(fx, fz);
+    // filas de estalactitas que brotan inclinadas hacia delante, con grieta violeta y esquirlas
+    while (this.nextRow < front && this.nextRow < d.length) {
+      const r = this.nextRow, n = 3;
+      for (let j = 0; j < n; j++) {
+        const s = ((j + rnd(0.15, 0.85)) / n - 0.5) * d.width * 0.95, x = this.o.x + ux * r - uz * s, z = this.o.z + uz * r + ux * s;
+        const tilt = rnd(0.25, 0.55), side = rnd(-0.25, 0.25);
+        this.spikes.add(x, z, { h: rnd(0.9, 2.3) * (1 - Math.abs(s) / d.width * 0.6), w: rnd(0.22, 0.42), tiltX: tilt * (uz >= 0 ? 1 : -1) * Math.abs(uz) + side * ux, tiltZ: -tilt * ux + side * uz });
+        this.debris.burst(x, terrainH(x, z) + 0.2, z, 2, 0.8, 0.14);
+      }
+      this.track(this.v2.crack(this.o.x + ux * (r - 1.1), this.o.z + uz * (r - 1.1), 1.3, Math.atan2(ux, uz) + rnd(-0.3, 0.3), { life: d.exec - this.t + d.recover + 0.4, width: 0.16, color: 0x8a50ff }));
+      this.nextRow += rnd(0.9, 1.3);
+    }
     for (let i = 0; i < 3; i++) { const s = rnd(-0.5, 0.5) * d.width; this.g.fx.dustPuff(fx - uz * s, fy + 0.2, fz + ux * s, 1.8); }
     if (Math.random() < 0.6) this.vfx.sparks(fx, fy + 1, fz, 0xc8a0ff, 3, 3);
     if (Math.random() < 0.4) this.g.fx.rock(fx, fy + 0.5, fz);
@@ -933,6 +949,8 @@ export class ObsidianSkill extends Skill {
         this.shake(0.3); this.sfx('crack');
         this.vfx.ring(t.pos.x, null, t.pos.z, { r0: 0.5, r1: 3, dur: 0.4, color: 0xb080ff });
         this.vfx.sparks(t.pos.x, t.pos.y + 0.8, t.pos.z, 0xe0d0ff, 12, 3.5);
+        this.debris.burst(t.pos.x, t.pos.y + 0.8, t.pos.z, 12, 1.1, 0.2); // impacto: estalla en esquirlas
+        this.g.fx.dustPuff(t.pos.x, t.pos.y + 0.3, t.pos.z, 2);
       }
     }
   }
@@ -945,6 +963,9 @@ export class ObsidianSkill extends Skill {
       this.vfx.sparks(x, terrainH(x, z) + 0.6, z, i % 2 ? 0xd8c8ff : 0x8a60c0, 2, 2.4);
     }
     const sh = this.sh, parts = this.parts, tmp = new THREE.Vector3();
+    // las estalactitas estallan en fragmentos y los bloques sueltan esquirlas
+    if (this.spikes) this.spikes.shatterAll(this.debris);
+    if (this.debris) for (let i = 0; i < parts.length; i += 4) { sh.mesh.getMatrixAt(i, sh.dummy.matrix); tmp.setFromMatrixPosition(sh.dummy.matrix); this.debris.spawn(tmp.x, tmp.y, tmp.z, rnd(-3, 3), rnd(2, 6), rnd(-3, 3), parts[i].size * 0.35); }
     let t = 0;
     this.linger({ life: 0.5, update: (dt) => { // los fragmentos se hunden y encogen
       t += dt;

@@ -15,6 +15,8 @@ import { cloudMat } from './fx3.js';
                    acumula energía
    · FoamPool    — charco de espuma que queda en el suelo tras la rompiente
    · WaterShield — MAELSTROM de la Nutria: cúpula de agua en remolino que la protege
+   · MagmaGeyser — GÉISER del Komodo: columna de magma con volumen, corona, gotas y charco
+   · ObsidianSpikes / CrystalDebris — OBSIDIANA de Jaglion: estalactitas que brotan y fragmentos
    Todo usa geometrías y materiales propios que se liberan en dispose().
    ====================================================================== */
 
@@ -757,4 +759,289 @@ export class WaterShield {
     for (const g of this.geos) g.dispose();
     for (const m of this.mats) m.dispose();
   }
+}
+
+/* ================================================================== */
+/*  KOMODO — GÉISER DE MAGMA                                           */
+/* ================================================================== */
+// Geometrías compartidas (no se crean ni se liberan con cada géiser)
+let SHARED = null;
+function shared() {
+  if (SHARED) return SHARED;
+  const col = new THREE.CylinderGeometry(1, 1, 1, 28, 28, true); col.translate(0, 0.5, 0);
+  const splash = new THREE.CylinderGeometry(1, 1, 1, 36, 4, true); splash.translate(0, 0.5, 0);
+  const pool = new THREE.CircleGeometry(1, 40); pool.rotateX(-Math.PI / 2);
+  SHARED = {
+    col, splash, pool,
+    crown: new THREE.IcosahedronGeometry(1, 3),
+    drop: new THREE.IcosahedronGeometry(1, 1),
+    spike: (() => { const g = new THREE.ConeGeometry(1, 1, 5, 1); g.translate(0, 0.5, 0); return g; })(),
+    frag: new THREE.TetrahedronGeometry(1, 0),
+  };
+  return SHARED;
+}
+const MAGMA = /* glsl */`
+  vec3 magma(float n, float vein, float boost){
+    vec3 dark = vec3(0.35, 0.05, 0.02), hot = vec3(1.0, 0.42, 0.06), white = vec3(1.0, 0.85, 0.45);
+    vec3 c = mix(dark, hot, smoothstep(0.25, 0.6, n));
+    return mix(c, white, clamp(vein * 0.7 + boost, 0.0, 1.0));
+  }`;
+
+// Columna de magma con volumen: brota con fuerza, ondula y se retuerce, sube en pulsos,
+// corona hirviente en lo alto, salpicaduras de gotas incandescentes que caen en arco,
+// anillo de salpicadura y charco de lava en la base. Mismo manejador que vfx2.geyser().
+export class MagmaGeyser {
+  constructor(g, x, z, { r = 1.0, h = 7, life = 1.6 } = {}) {
+    const S = shared();
+    this.g = g; this.x = x; this.z = z; this.r = r; this.h = h; this.life = life;
+    this.y = terrainH(x, z);
+    this.height = 0; this.k = 0; this.prevK = 0; this.burst = false; this.t = 0;
+    const group = this.group = new THREE.Group();
+    group.position.set(x, this.y, z);
+    this.mats = [];
+    const U = this.U = { uT: { value: 0 }, uA: { value: 1 }, uH: { value: 0.01 }, uR: { value: r }, uSeed: { value: Math.random() * 10 } };
+    // columna exterior y núcleo
+    const colVS = NOISE + `uniform float uT; uniform float uH; uniform float uR; uniform float uSeed; uniform float uScale; varying vec2 vUv; varying float vY;
+      void main(){
+        vUv = uv; float t = position.y; vY = t;
+        float y = t * uH;
+        float prof = 0.55 + 0.6 * exp(-t * 7.0) + 0.35 * smoothstep(0.72, 1.0, t);   // ensanchada en la base y en la boca
+        float surge = 0.16 * sin(y * 1.6 - uT * 13.0 + uSeed) + 0.1 * (vnoise(vec2(atan(position.x, position.z) * 2.0 + uSeed, y * 1.2 - uT * 6.0)) - 0.5);
+        float rad = uR * uScale * prof * (1.0 + surge);
+        vec2 sway = vec2(sin(t * 3.1 + uT * 2.3 + uSeed), cos(t * 2.7 + uT * 1.9 + uSeed)) * 0.22 * uR * t * t;
+        vec3 p = vec3(position.x * rad + sway.x, y, position.z * rad + sway.y);
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }`;
+    const colFS = NOISE + MAGMA + `uniform float uT; uniform float uA; uniform float uH; uniform float uCore; varying vec2 vUv; varying float vY;
+      void main(){
+        float n = fbm(vec2(vUv.x * 8.0, vUv.y * uH * 0.55 - uT * 6.5));
+        float vein = smoothstep(0.55, 0.8, n);
+        float pulse = smoothstep(0.65, 1.0, sin(vUv.y * uH * 1.3 - uT * 15.0) * 0.5 + 0.5);   // pulsos que suben por la columna
+        vec3 c = magma(n, vein, pulse * 0.28 + uCore * 0.3);
+        float a = smoothstep(1.0, 0.82, vUv.y) * (0.86 + 0.14 * n) * uA;
+        gl_FragColor = vec4(c, a);
+      }`;
+    const mkCol = (scale, core, order) => {
+      const m = new THREE.ShaderMaterial({ uniforms: { ...U, uScale: { value: scale }, uCore: { value: core } }, vertexShader: colVS, fragmentShader: colFS, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false });
+      m.userData.own = true; this.mats.push(m);
+      const mesh = new THREE.Mesh(S.col, m); mesh.renderOrder = order; mesh.frustumCulled = false; group.add(mesh);
+      return mesh;
+    };
+    this.outer = mkCol(1, 0, 4);
+    this.core = mkCol(0.45, 1, 5);
+    // corona hirviente: magma que rebosa en lo alto y vuelve a caer
+    const crownMat = new THREE.ShaderMaterial({
+      uniforms: { uT: U.uT, uA: U.uA, uSeed: U.uSeed }, transparent: true, depthWrite: false, fog: false,
+      vertexShader: `uniform float uT; uniform float uSeed; varying vec3 vN; varying float vB;
+        void main(){ vec3 n = normalize(position);
+          float b = sin(n.x * 5.0 + uT * 7.0 + uSeed) * sin(n.y * 6.0 - uT * 9.0) * sin(n.z * 4.0 + uT * 6.0);
+          vB = b; vN = n;
+          vec3 p = n * (1.0 + 0.32 * b) * vec3(1.0, 0.7, 1.0);
+          gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }`,
+      fragmentShader: NOISE + MAGMA + `uniform float uT; uniform float uA; varying vec3 vN; varying float vB;
+        void main(){ float n = fbm(vN.xz * 3.0 + vec2(uT * 1.5, -uT * 2.0)) * 0.7 + (vB * 0.5 + 0.5) * 0.3;
+          vec3 c = magma(n * 1.1, smoothstep(0.5, 0.8, n), 0.2);
+          gl_FragColor = vec4(c, (0.92 + 0.08 * n) * uA); }`,
+    });
+    crownMat.userData.own = true; this.mats.push(crownMat);
+    this.crown = new THREE.Mesh(S.crown, crownMat); this.crown.renderOrder = 5; group.add(this.crown);
+    // anillo de salpicadura en la base y charco de lava
+    const splashMat = new THREE.ShaderMaterial({
+      uniforms: { uT: U.uT, uA: { value: 0 } }, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false,
+      vertexShader: `varying vec2 vUv; void main(){ vUv = uv; vec3 p = position; p.xz *= 1.0 + p.y * 0.9; gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0); }`,
+      fragmentShader: NOISE + MAGMA + `uniform float uT; uniform float uA; varying vec2 vUv;
+        void main(){ float n = fbm(vec2(vUv.x * 14.0, vUv.y * 2.0 - uT * 3.0));
+          float tear = smoothstep(0.35, 0.7, n + (1.0 - vUv.y) * 0.5);
+          gl_FragColor = vec4(magma(n, smoothstep(0.6, 0.85, n), 0.2), tear * (1.0 - vUv.y) * uA); }`,
+    });
+    splashMat.userData.own = true; this.mats.push(splashMat); this.splashMat = splashMat;
+    this.splash = new THREE.Mesh(S.splash, splashMat); this.splash.renderOrder = 4; group.add(this.splash);
+    const poolMat = new THREE.ShaderMaterial({
+      uniforms: { uT: U.uT, uA: { value: 0 } }, transparent: true, depthWrite: false, fog: false, polygonOffset: true, polygonOffsetFactor: -4,
+      vertexShader: `varying vec2 vP; void main(){ vP = position.xz; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+      fragmentShader: NOISE + MAGMA + `uniform float uT; uniform float uA; varying vec2 vP;
+        void main(){ float r = length(vP); float n = fbm(vP * 3.0 + vec2(uT * 0.4, -uT * 0.3));
+          float rim = smoothstep(1.0, 0.75, r) * (0.6 + 0.4 * smoothstep(0.55, 0.95, r + n * 0.2));
+          gl_FragColor = vec4(magma(n, smoothstep(0.6, 0.8, n), 0.0), rim * uA * 0.9); }`,
+    });
+    poolMat.userData.own = true; this.mats.push(poolMat); this.poolMat = poolMat;
+    this.pool = new THREE.Mesh(S.pool, poolMat); this.pool.position.y = 0.05; this.pool.renderOrder = 3; group.add(this.pool);
+    // gotas incandescentes (instanciadas): salen de la boca y caen en arco, enfriándose
+    const N = this.N = 48;
+    const dropMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, depthWrite: false, fog: false });
+    dropMat.userData.own = true; this.mats.push(dropMat);
+    this.drops = new THREE.InstancedMesh(S.drop, dropMat, N);
+    this.drops.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.drops.frustumCulled = false; this.drops.renderOrder = 6;
+    this.dp = Array.from({ length: N }, () => ({ on: false, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, s: 0, age: 0 }));
+    this.dummy = new THREE.Object3D(); this.col = new THREE.Color();
+    for (let i = 0; i < N; i++) { this.dummy.scale.setScalar(0); this.dummy.updateMatrix(); this.drops.setMatrixAt(i, this.dummy.matrix); this.drops.setColorAt(i, this.col.set(0xffa040)); }
+    group.add(this.drops);
+    this.it = g.vfx.add(group, life, (it, dt) => this.tick(it, dt || 1 / 60));
+    this.setHeight(0.01);
+  }
+  setHeight(k) { this.k = k; this.height = this.h * k; }
+  kill() { this.g.vfx.kill(this.it); }
+  spawnDrop(vScale = 1) {
+    const d = this.dp.find((p) => !p.on); if (!d) return;
+    const top = Math.max(0.3, this.height), a = rnd(0, TAU), sp = rnd(1.5, 4.5) * vScale;
+    d.on = true; d.age = 0; d.s = rnd(0.06, 0.14) * (0.7 + this.r * 0.4);
+    d.x = Math.cos(a) * this.r * 0.4; d.z = Math.sin(a) * this.r * 0.4; d.y = top * rnd(0.85, 1.02);
+    d.vx = Math.cos(a) * sp; d.vz = Math.sin(a) * sp; d.vy = rnd(2, 6) * vScale;
+  }
+  tick(it, dt) {
+    const t = this.t = it.t, U = this.U, lk = it.t / this.life;
+    const fade = lk > 0.7 ? (1 - lk) / 0.3 : 1;
+    const rising = this.k > this.prevK + 1e-4, falling = this.k < this.prevK - 1e-4;
+    this.prevK = this.k;
+    // estallido inicial: al brotar, salpicadura y lluvia de gotas
+    if (!this.burst && this.k > 0.05) {
+      this.burst = true; this.burstT = t;
+      for (let i = 0; i < 22; i++) this.spawnDrop(1.5);
+    }
+    const bt = this.burst ? t - this.burstT : 0;
+    const throb = 1 + 0.06 * Math.sin(t * 9 + U.uSeed.value) + 0.04 * Math.sin(t * 23);
+    const H = Math.max(0.01, this.height * throb);
+    U.uT.value = t; U.uA.value = fade; U.uH.value = H;
+    // corona: bulle en la boca; al caer el géiser se desploma con él
+    const cs = this.r * (0.85 + 0.25 * Math.sin(t * 11)) * Math.min(1, this.k * 3) * (falling ? 0.8 : 1);
+    this.crown.position.set(Math.sin(3.1 + t * 2.3 + U.uSeed.value) * 0.22 * this.r, H + cs * 0.15, Math.cos(2.7 + t * 1.9 + U.uSeed.value) * 0.22 * this.r);
+    this.crown.scale.setScalar(Math.max(0.001, cs));
+    this.crown.rotation.y += dt * 1.5;
+    // anillo de salpicadura: se abre de golpe y se deshace
+    const sk = clamp01(bt / 0.45);
+    this.splash.scale.set(this.r * (0.8 + 2.2 * easeOut(sk)), this.r * (1.4 * Math.sin(Math.PI * sk) + 0.05), this.r * (0.8 + 2.2 * easeOut(sk)));
+    this.splashMat.uniforms.uA.value = this.burst ? (1 - sk) * fade : 0;
+    // charco de lava que se extiende en la base
+    this.pool.scale.setScalar(this.r * (0.6 + 1.6 * easeOut(clamp01(bt / 0.6))));
+    this.poolMat.uniforms.uA.value = (this.burst ? 1 : 0) * fade;
+    // gotas: brotan mientras sube, llueven cuando cae
+    if (this.burst && fade > 0.2) {
+      const rate = falling ? 26 : rising ? 34 : 18;
+      this.acc = (this.acc || 0) + dt * rate;
+      while (this.acc >= 1) { this.acc--; this.spawnDrop(falling ? 0.6 : 1); }
+    }
+    const dm = this.dummy, col = this.col;
+    for (let i = 0; i < this.N; i++) {
+      const d = this.dp[i];
+      if (d.on) {
+        d.age += dt; d.vy -= 16 * dt;
+        d.x += d.vx * dt; d.y += d.vy * dt; d.z += d.vz * dt;
+        if (d.y <= 0.05) { // salpica en el suelo
+          d.on = false;
+          if (Math.random() < 0.35) this.g.fx.ember(this.x + d.x, this.y + 0.1, this.z + d.z, 0.8);
+        }
+      }
+      const s = d.on ? d.s * (1 - clamp01(d.age / 2.2)) : 0;
+      const sp = Math.hypot(d.vx, d.vy, d.vz);
+      dm.position.set(d.x, d.y, d.z);
+      dm.scale.set(s, s * (1 + Math.min(1.5, sp * 0.12)), s); // se estira con la velocidad
+      dm.lookAt(d.x + d.vx, d.y + d.vy, d.z + d.vz); dm.rotateX(Math.PI / 2);
+      dm.updateMatrix(); this.drops.setMatrixAt(i, dm.matrix);
+      if (d.on) this.drops.setColorAt(i, col.setRGB(lerp(1, 0.5, clamp01(d.age / 1.4)), lerp(0.6, 0.08, clamp01(d.age / 0.9)), lerp(0.16, 0.02, clamp01(d.age / 0.6))));
+    }
+    this.drops.instanceMatrix.needsUpdate = true;
+    if (this.drops.instanceColor) this.drops.instanceColor.needsUpdate = true;
+  }
+}
+
+/* ================================================================== */
+/*  JAGLION — ESTALACTITAS DE OBSIDIANA                                */
+/* ================================================================== */
+const obsidianMat = () => {
+  const m = new THREE.MeshStandardMaterial({ color: 0x07060c, roughness: 0.06, metalness: 0.55, emissive: 0x1a0a2e, emissiveIntensity: 0.35, envMapIntensity: 2.4, flatShading: true });
+  m.userData.own = true;
+  return m;
+};
+
+// Púas de obsidiana que brotan del suelo con fuerza al paso del frente (con rebote),
+// tiemblan al asentarse y, al final, estallan en fragmentos.
+export class ObsidianSpikes {
+  constructor(g, n = 72, life = 5) {
+    this.g = g; this.n = n; this.count = 0;
+    this.mesh = new THREE.InstancedMesh(shared().spike, obsidianMat(), n);
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.mesh.castShadow = true; this.mesh.frustumCulled = false;
+    this.list = [];
+    this.dummy = new THREE.Object3D();
+    for (let i = 0; i < n; i++) { this.dummy.scale.setScalar(0); this.dummy.updateMatrix(); this.mesh.setMatrixAt(i, this.dummy.matrix); }
+    this.it = g.vfx.add(this.mesh, life, (it, dt) => this.tick(dt || 1 / 60));
+  }
+  add(x, z, { h = 1.5, w = 0.35, tiltX = 0, tiltZ = 0 } = {}) {
+    if (this.count >= this.n) return null;
+    const s = { i: this.count++, x, z, y: terrainH(x, z) - 0.15, h, w, tiltX, tiltZ, yaw: rnd(0, TAU), age: 0, dying: false, wait: 0, dk: 0 };
+    this.list.push(s);
+    return s;
+  }
+  // estallan todas, de la primera a la última
+  shatterAll(debris) {
+    this.list.forEach((s, k) => { s.dying = true; s.wait = k * 0.012; s.debris = debris; });
+  }
+  tick(dt) {
+    const dm = this.dummy;
+    for (const s of this.list) {
+      s.age += dt;
+      let hk;
+      if (s.dying) {
+        s.wait -= dt;
+        if (s.wait > 0) hk = 1;
+        else {
+          s.dk += dt;
+          if (!s.burst) { s.burst = true; if (s.debris) for (let j = 0; j < 3; j++) s.debris.spawn(s.x, s.y + s.h * rnd(0.3, 0.9), s.z, rnd(-3, 3), rnd(3, 7), rnd(-3, 3), s.w * rnd(0.5, 0.9)); }
+          hk = Math.max(0, 1 - s.dk / 0.14);
+        }
+      } else {
+        // brote: sale disparada, se pasa un poco y rebota hasta asentarse
+        const a = s.age / 0.22;
+        hk = a < 1 ? easeOut(a) * 1.18 : 1 + 0.18 * Math.exp(-(s.age - 0.22) * 9) * Math.cos((s.age - 0.22) * 28);
+      }
+      const jit = s.age < 0.5 ? 0.04 * (1 - s.age / 0.5) * Math.sin(s.age * 90) : 0;
+      dm.position.set(s.x, s.y, s.z);
+      dm.rotation.set(s.tiltX + jit, s.yaw, s.tiltZ - jit, 'ZXY'); // primero gira sobre su eje, luego se inclina
+      dm.scale.set(s.w * (0.8 + 0.2 * hk), Math.max(0.0001, s.h * hk), s.w * (0.8 + 0.2 * hk));
+      dm.updateMatrix(); this.mesh.setMatrixAt(s.i, dm.matrix);
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+  kill() { this.g.vfx.kill(this.it); }
+}
+
+// Fragmentos de obsidiana que salen despedidos, giran, rebotan en el suelo y se desvanecen
+export class CrystalDebris {
+  constructor(g, n = 180, life = 6) {
+    this.g = g; this.n = n;
+    this.mesh = new THREE.InstancedMesh(shared().frag, obsidianMat(), n);
+    this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.mesh.frustumCulled = false;
+    this.p = Array.from({ length: n }, () => ({ on: false }));
+    this.next = 0;
+    this.dummy = new THREE.Object3D();
+    for (let i = 0; i < n; i++) { this.dummy.scale.setScalar(0); this.dummy.updateMatrix(); this.mesh.setMatrixAt(i, this.dummy.matrix); }
+    this.it = g.vfx.add(this.mesh, life, (it, dt) => this.tick(dt || 1 / 60));
+  }
+  spawn(x, y, z, vx, vy, vz, s = 0.2) {
+    const q = this.p[this.next]; this.next = (this.next + 1) % this.n;
+    Object.assign(q, { on: true, x, y, z, vx, vy, vz, s, age: 0, life: rnd(0.9, 1.5), rx: rnd(0, TAU), ry: rnd(0, TAU), wx: rnd(-12, 12), wy: rnd(-12, 12), bounced: false });
+  }
+  burst(x, y, z, n, power = 1, size = 0.18) {
+    for (let i = 0; i < n; i++) { const a = rnd(0, TAU), s = rnd(2, 6) * power; this.spawn(x, y, z, Math.cos(a) * s, rnd(3, 8) * power, Math.sin(a) * s, size * rnd(0.5, 1.3)); }
+  }
+  tick(dt) {
+    const dm = this.dummy;
+    for (let i = 0; i < this.n; i++) {
+      const q = this.p[i];
+      if (!q.on) continue;
+      q.age += dt; q.vy -= 20 * dt;
+      q.x += q.vx * dt; q.y += q.vy * dt; q.z += q.vz * dt;
+      q.rx += q.wx * dt; q.ry += q.wy * dt;
+      const gy = terrainH(q.x, q.z) + q.s * 0.5;
+      if (q.y < gy) { q.y = gy; if (!q.bounced && q.vy < -2) { q.vy *= -0.35; q.vx *= 0.5; q.vz *= 0.5; q.wx *= 0.4; q.wy *= 0.4; q.bounced = true; } else { q.vy = 0; q.vx *= 0.8; q.vz *= 0.8; q.wx *= 0.8; q.wy *= 0.8; } }
+      const k = q.age / q.life;
+      if (k >= 1) { q.on = false; dm.scale.setScalar(0); }
+      else { dm.position.set(q.x, q.y, q.z); dm.rotation.set(q.rx, q.ry, 0); dm.scale.set(q.s, q.s * 1.6, q.s * 0.8).multiplyScalar(k > 0.75 ? (1 - k) / 0.25 : 1); }
+      dm.updateMatrix(); this.mesh.setMatrixAt(i, dm.matrix);
+    }
+    this.mesh.instanceMatrix.needsUpdate = true;
+  }
+  kill() { this.g.vfx.kill(this.it); }
 }
