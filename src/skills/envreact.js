@@ -15,6 +15,29 @@ export function douseFires(game, x, z, r) {
   return h && h.douse ? h.douse(x, z, r) : 0;
 }
 
+// Otros poderes que también sofocan las llamas igual que el agua (Haboob, Estalactitas, Lava Negra):
+// usan la misma extinción (el foco queda apagado y humeante) y añaden su propio efecto visible encima.
+export function smotherFires(game, x, z, r, style) {
+  const h = game.hazards;
+  if (!h || !h.douse) return 0;
+  const before = h.zones ? h.zones.filter((zn) => zn.state === 'burn' && Math.hypot(x - zn.x, z - zn.z) <= r + zn.r * 0.6).map((zn) => ({ x: zn.x, y: zn.y, z: zn.z, r: zn.r })) : [];
+  const n = h.douse(x, z, r);
+  if (!n) return 0;
+  const fx = game.fx, vfx = game.vfx;
+  for (const zn of before.length ? before : [{ x, y: terrainH(x, z), z, r: 2 }]) {
+    const y = zn.y ?? terrainH(zn.x, zn.z);
+    for (let i = 0; i < 8; i++) {
+      const px = zn.x + rnd(-1, 1) * zn.r * 0.6, pz = zn.z + rnd(-1, 1) * zn.r * 0.6;
+      if (style === 'sand') { fx.dustPuff(px, y + 0.3, pz, 2); fx.mist(px, y + rnd(0.3, 1.6), pz, 0xd8b070, 1.8); } // la arena cubre las llamas
+      else if (style === 'rock') { fx.dustPuff(px, y + 0.2, pz, 1.6); fx.sparkle(px, y + 0.5, pz, 0xc8a0ff, 1.6); } // la obsidiana las aplasta
+      else { fx.smokePuff(px, y + 0.4, pz, 1.4, 0x1a1412); } // la lava negra se enfría y las ahoga en humo oscuro
+      fx.mist(px, y + 0.8, pz, 0xffffff, 2); // vapor / humo blanco del fuego apagado
+    }
+    if (vfx) vfx.ring(zn.x, null, zn.z, { r0: 0.3, r1: zn.r * 1.3, dur: 0.6, color: style === 'sand' ? 0xe0c080 : style === 'rock' ? 0xb080ff : 0x8a8a8a, opacity: 0.55 });
+  }
+  return n;
+}
+
 // objetos del escenario que puede arrastrar el agua (cerca de x,z)
 export function propsNear(game, x, z, r) {
   return game.combat.props.filter((p) => !p.dead && p.mesh && Math.hypot(p.pos.x - x, p.pos.z - z) < r + p.radius);

@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { glintSprite } from './impactfx.js';
 import { rnd, TAU } from './attack.js';
 import { Skill, DEG, ease, lerp, clamp, V, boneWorld } from './base.js';
 import { glowMat } from './vfx2.js';
@@ -541,7 +542,16 @@ class WeaponSkill extends Skill {
     g.position.set(p.pos.x, y, p.pos.z);
     if (vertical) { m.rotation.y = Math.PI / 2; g.rotation.y = p.facing; m.rotation.z = Math.PI / 2 + tilt; }
     else { m.rotation.x = -Math.PI / 2 + tilt; g.rotation.y = p.facing - Math.PI / 2; m.rotation.z = Math.PI / 2; }
-    return this.vfx.add(g, life, (it) => { const k = it.t / life; mat.opacity = 0.55 * (1 - k) * (1 - k); m.scale.setScalar(0.85 + 0.25 * k); if (it.t >= life - 0.001) geo.dispose(); }); // se desvanece rápido: no tapa la escena
+    // filo de luz blanca en el borde exterior del tajo: el golpe se ve más rápido y con más energía
+    const geo2 = new THREE.RingGeometry(r * 0.97, r * 1.03, 32, 1, -arc * DEG / 2, arc * DEG);
+    const mat2 = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.6, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending, toneMapped: false });
+    const m2 = new THREE.Mesh(geo2, mat2);
+    m2.userData.own = true;
+    m2.rotation.copy(m.rotation);
+    g.add(m2);
+    const tp = this.tipPos();
+    for (let i = 0; i < 6; i++) this.g.fx.sparkle(tp.x, tp.y, tp.z, i % 2 ? color : 0xffffff, 2.4);
+    return this.vfx.add(g, life, (it) => { const k = it.t / life; mat.opacity = 0.7 * (1 - k) * (1 - k); mat2.opacity = 0.6 * (1 - k) * (1 - k); m.scale.setScalar(0.85 + 0.25 * k); m2.scale.setScalar(0.85 + 0.27 * k); if (it.t >= life - 0.001) { geo.dispose(); geo2.dispose(); } }); // se desvanece rápido: no tapa la escena
   }
   hitArc(range, arcDeg, dmg, force, extra) {
     const p = this.p;
@@ -784,6 +794,11 @@ export class BoomerangSkill extends WeaponSkill {
     W.setHome(0, false); // el de la mano desaparece mientras vuela
     this.trail = new Trail(this.g.scene, 0x3ad8ff, 0x9af0ff, 26);
     this.track({ kill: () => this.trail.dispose() });
+    // destello de agua que acompaña al bumerán en vuelo
+    this.glint = glintSprite(0x9af0ff);
+    this.glint.visible = true; this.glint.material.opacity = 0.9;
+    this.g.scene.add(this.glint);
+    this.track({ kill: () => { this.g.scene.remove(this.glint); this.glint.material.dispose(); } });
     this.o = this.p.pos.clone();
     this.dir = this.fwd;
     this.hitOut = new Set(); this.hitBack = new Set();
@@ -804,7 +819,9 @@ export class BoomerangSkill extends WeaponSkill {
     const r = 0.36 * pw;
     this.trail.push(V(pos.x + Math.cos(g.rotation.z) * r, pos.y, pos.z - Math.sin(g.rotation.z) * r), V(pos.x - Math.cos(g.rotation.z) * r, pos.y, pos.z + Math.sin(g.rotation.z) * r));
     this.trail.update(dt, true);
+    if (this.glint) { this.glint.position.copy(pos); this.glint.scale.setScalar((0.9 + 0.3 * Math.sin(this.t * 40)) * pw); this.glint.material.rotation = this.t * 8; }
     if (Math.random() < 0.6) this.g.fx.spray(pos.x, pos.y, pos.z, 0, 0.5, 0, 0.8);
+    if (Math.random() < 0.5) this.g.fx.splash(pos.x, pos.y, pos.z, 2, 0.4);
     if (Math.random() < 0.5) this.g.fx.sparkle(pos.x, pos.y, pos.z, u < 0.5 ? 0x3ad8ff : 0x9af0ff, 1);
     if (pw > 1 && !this.burst && u > 0.5) { this.burst = true; this.vfx.splash(pos.x, pos.y, pos.z, 18, 1.2); this.vfx.ring(pos.x, pos.y, pos.z, { r0: 0.3, r1: 3, dur: 0.4, color: 0x3ad8ff }); for (const t of this.combat.inCircle(pos.x, pos.z, 3)) { this.hit(t, d.damage * 0.6); this.impactAt(t); } }
     const set = u < 0.5 ? this.hitOut : this.hitBack;

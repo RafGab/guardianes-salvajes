@@ -13,6 +13,7 @@ import { Skill, DEG, ease, lerp, clamp, V, NEUTRAL, SKIP_TAGS, makeElastic, bone
 import { POWER_CLASSES } from './powers.js';
 import { POWER2_CLASSES } from './powers2.js';
 import { SandStorm, WaterGate, SpringWard, puddle } from './fx3.js';
+import { smotherFires } from './envreact.js';
 const damp1 = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 
 /* ====================================================================== */
@@ -346,6 +347,19 @@ class HaboobSkill extends Skill {
     }
     this.combat.deflect(this.pos.x, this.pos.z, d.deflectRadius); // desvía proyectiles ligeros
     if (d.clearsObstacles) this.clearObstacles(this.pos.x, this.pos.z, r);
+    // la tormenta de arena cubre las llamas y apaga los focos de incendio por los que pasa
+    this.doused = (this.doused || 0) + smotherFires(this.g, this.pos.x, this.pos.z, r, 'sand');
+    // RELÁMPAGOS dentro de la tormenta de arena (electricidad estática del haboob) y granos que brillan
+    this.boltT = (this.boltT || 0) - dt;
+    if (this.boltT <= 0 && this.fadeAt > 0.5) {
+      this.boltT = rnd(0.12, 0.26);
+      const a1 = rnd(0, TAU), a2 = a1 + rnd(0.8, 2.2), r1 = r * rnd(0.2, 0.8), r2 = r * rnd(0.2, 0.8);
+      const A = V(this.pos.x + Math.cos(a1) * r1, this.pos.y + rnd(2.2, 4.6), this.pos.z + Math.sin(a1) * r1);
+      const B = V(this.pos.x + Math.cos(a2) * r2, this.pos.y + rnd(0.6, 3), this.pos.z + Math.sin(a2) * r2);
+      this.vfx.bolt(A, B, { color: Math.random() < 0.5 ? 0xfff0c0 : 0xffc870, life: 0.12, jag: 0.6, segs: 8 });
+      this.vfx.orb(B, { r: 0.35, color: 0xffe0a0, opacity: 0.8, life: 0.14, grow: 2 });
+    }
+    for (let i = 0; i < 2; i++) { const a = rnd(0, TAU), rr = r * Math.sqrt(Math.random()); this.g.fx.sparkle(this.pos.x + Math.cos(a) * rr, this.pos.y + rnd(0.4, 4), this.pos.z + Math.sin(a) * rr, i ? 0xffd890 : 0xfff4d0, 1.2); }
     // polvo que levanta en la base y estela de arena detrás de la tormenta
     this.sandT = (this.sandT || 0) - dt;
     if (this.sandT <= 0) {
@@ -362,7 +376,10 @@ class HaboobSkill extends Skill {
       if (Math.hypot(o.x - x, o.z - z) < r + 1) w.breakObstacle(o);
     }
   }
-  exitStorm() { for (let i = 0; i < 8; i++) this.g.fx.mist(this.pos.x + rnd(-2, 2), this.pos.y + rnd(0.5, 3), this.pos.z + rnd(-2, 2), 0xe0c890, 1.8); } // la arena se dispersa en el aire
+  exitStorm() {
+    for (let i = 0; i < 8; i++) this.g.fx.mist(this.pos.x + rnd(-2, 2), this.pos.y + rnd(0.5, 3), this.pos.z + rnd(-2, 2), 0xe0c890, 1.8); // la arena se dispersa en el aire
+    if (this.doused) ui.banner('good', `🌪️ ¡El Haboob apaga ${this.doused} ${this.doused > 1 ? 'focos' : 'foco'}!`, `+${30 * this.doused} puntos`);
+  }
 }
 
 /* ====================================================================== */

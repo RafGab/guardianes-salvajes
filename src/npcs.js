@@ -1,5 +1,7 @@
 import * as THREE from 'three';
 import { makeCanvas, texFromCanvas, makeRng, TAU, lerp } from './utils.js';
+import { loadGLB, cachedGLB, normalizeModel } from './glb.js';
+import { modelUrl } from './scale.js';
 
 const M = (geo, mat, parent, o = {}) => {
   const m = new THREE.Mesh(geo, mat);
@@ -19,6 +21,10 @@ export const VICTIM_KINDS = {
   perro: { label: 'Perro', animal: true, scale: 1.25, icon: '🐕' },
   gato: { label: 'Gato', animal: true, scale: 1.25, icon: '🐈' },
   ciervo: { label: 'Cervatillo', animal: true, scale: 1.0, icon: '🦌' },
+  // rescatables con modelo 3D propio (public/models/props): cachorro de border collie, zorro blanco y lince pequeño
+  collie: { label: 'Perro', animal: true, scale: 1, icon: '🐶' },
+  zorro: { label: 'Fox', animal: true, scale: 1, icon: '🦊' },
+  lince: { label: 'Lince pequeño', animal: true, scale: 1, icon: '🐱' },
   hombre: { label: 'Hombre', animal: false, scale: 1.25, icon: '👨' },
   mujer: { label: 'Mujer', animal: false, scale: 1.2, icon: '👩' },
   nino: { label: 'Niño', animal: false, scale: 0.95, icon: '👧' },
@@ -228,16 +234,127 @@ function deer(seed) {
   return { root, inner, legs, head, animal: true, type: 'deer', neck };
 }
 
+/* ------------------------------------------------------------------ */
+/*  RESCATABLES CON MODELO 3D: Perro (border collie), Fox y Lince pequeño */
+/*  Los modelos son cachorros sentados sin esqueleto: se animan con una  */
+/*  deformación suave en el sombreador (cabeza que se inclina y asiente,  */
+/*  cola que se mueve y respiración) más saltitos y giros del cuerpo.     */
+/* ------------------------------------------------------------------ */
+const GLB_ANIMALS = {
+  collie: { file: 'props/collie.glb', h: 0.62, tail: [0.12, 0.1, -0.12], head: 0.5 },
+  zorro: { file: 'props/zorro.glb', h: 0.6, tail: [0.0, 0.1, -0.12], head: 0.5 },
+  lince: { file: 'props/lince.glb', h: 0.6, tail: [0.0, 0.1, -0.2], head: 0.48 },
+};
+export const GLB_VICTIMS = Object.keys(GLB_ANIMALS);
+export function preloadVictimModels() {
+  return Promise.all(Object.values(GLB_ANIMALS).map((a) => loadGLB(modelUrl(a.file)).catch(() => null)));
+}
+
+function wiggleMaterial(src, toModel, cfg) {
+  const m = src.clone();
+  const U = { uHead: { value: new THREE.Vector2() }, uTail: { value: 0 }, uBreath: { value: 0 }, uM: { value: toModel.clone() }, uMi: { value: toModel.clone().invert() },
+    uTailP: { value: new THREE.Vector3(...cfg.tail) }, uHeadY: { value: cfg.head } };
+  m.onBeforeCompile = (sh) => {
+    Object.assign(sh.uniforms, U);
+    sh.vertexShader = sh.vertexShader
+      .replace('#include <common>', `#include <common>
+        uniform vec2 uHead; uniform float uTail; uniform float uBreath; uniform mat4 uM; uniform mat4 uMi; uniform vec3 uTailP; uniform float uHeadY;
+        vec3 rotX(vec3 p, float a){ float c=cos(a), s=sin(a); return vec3(p.x, c*p.y - s*p.z, s*p.y + c*p.z); }
+        vec3 rotY(vec3 p, float a){ float c=cos(a), s=sin(a); return vec3(c*p.x + s*p.z, p.y, -s*p.x + c*p.z); }
+        vec3 rotZ(vec3 p, float a){ float c=cos(a), s=sin(a); return vec3(c*p.x - s*p.y, s*p.x + c*p.y, p.z); }`)
+      .replace('#include <begin_vertex>', `#include <begin_vertex>
+        {
+          vec3 mp = (uM * vec4(transformed, 1.0)).xyz;
+          // respiración: el pecho se hincha un poco
+          float wb = smoothstep(0.05, 0.3, mp.y) * (1.0 - smoothstep(0.45, 0.6, mp.y));
+          mp.xz *= 1.0 + uBreath * 0.03 * wb;
+          // cola (detrás y abajo): se mueve de lado a lado, más cuanto más lejos de su raíz
+          float wt = smoothstep(uTailP.z + 0.04, uTailP.z - 0.12, mp.z) * (1.0 - smoothstep(0.42, 0.55, mp.y));
+          vec3 tp = mp - vec3(0.0, uTailP.y, uTailP.z);
+          float far = clamp(length(tp.xz) * 2.5, 0.0, 1.0);
+          mp = mix(mp, rotY(tp, uTail * far) + vec3(0.0, uTailP.y, uTailP.z), wt);
+          // cabeza: se inclina hacia los lados y asiente (el cuello la sostiene)
+          float wh = smoothstep(uHeadY - 0.06, uHeadY + 0.08, mp.y);
+          vec3 hp = mp - vec3(0.0, uHeadY - 0.04, 0.02);
+          hp = rotZ(rotX(hp, uHead.y), uHead.x);
+          mp = mix(mp, hp + vec3(0.0, uHeadY - 0.04, 0.02), wh);
+          transformed = (uMi * vec4(mp, 1.0)).xyz;
+        }`);
+  };
+  m.customProgramCacheKey = () => 'victim-wiggle';
+  return { mat: m, U };
+}
+
+function glbAnimal(kind, seed) {
+  const cfg = GLB_ANIMALS[kind];
+  const gltf = cachedGLB(modelUrl(cfg.file));
+  if (!gltf) return null;
+  const r = makeRng(seed);
+  const { root: norm } = normalizeModel(gltf.scene.clone(true));
+  const holder = new THREE.Group();
+  holder.add(norm);
+  holder.scale.setScalar(cfg.h * r.range(0.94, 1.06));
+  const root = new THREE.Group();
+  const inner = new THREE.Group();
+  root.add(inner);
+  inner.add(holder);
+  norm.updateMatrixWorld(true);
+  const inv = new THREE.Matrix4().copy(norm.matrixWorld).invert();
+  const uniforms = [];
+  norm.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true; o.receiveShadow = true;
+    const toModel = new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld);
+    const { mat, U } = wiggleMaterial(o.material, toModel, cfg);
+    o.material = mat;
+    uniforms.push(U);
+  });
+  return { root, inner, legs: [], head: null, tail: null, animal: true, type: kind, glb: true, uniforms, ph: r.range(0, TAU) };
+}
+
+// animación de los rescatables con modelo 3D (sin esqueleto)
+function animateGLB(p, mode, t, dt) {
+  const inner = p.inner;
+  let head = 0, nod = 0, tail = 0, hop = 0, yaw = 0, lean = 0;
+  const ph = p.ph;
+  if (mode === 'wave') { // pide ayuda: saltitos nerviosos, mira a un lado y a otro y mueve la cola
+    const jump = Math.max(0, Math.sin(t * 3.2 + ph)) ** 6;
+    hop = jump * 0.09;
+    head = Math.sin(t * 1.7 + ph) * 0.28;
+    nod = -0.12 + Math.sin(t * 5 + ph) * 0.06;
+    tail = Math.sin(t * 13) * 0.55;
+    yaw = Math.sin(t * 0.8 + ph) * 0.35;
+    lean = -jump * 0.12;
+  } else if (mode === 'carried') { // dentro de la burbuja: tranquilo, curioso
+    head = Math.sin(t * 1.1 + ph) * 0.18 + 0.12;
+    nod = Math.sin(t * 2.2) * 0.05;
+    tail = Math.sin(t * 5) * 0.3;
+  } else { // contento / caminando: brincos alegres y cola a toda velocidad
+    const jump = Math.abs(Math.sin(t * (mode === 'walk' ? 7 : 5.5)));
+    hop = jump * (mode === 'walk' ? 0.07 : 0.12);
+    head = Math.sin(t * 3 + ph) * 0.2;
+    nod = -0.08 + Math.sin(t * 6) * 0.08;
+    tail = Math.sin(t * 18) * 0.7;
+    lean = (mode === 'walk' ? 0.12 : 0) - (1 - jump) * 0.05;
+  }
+  inner.position.y = hop;
+  inner.rotation.y = lerp(inner.rotation.y, yaw, Math.min(1, dt * 4));
+  inner.rotation.x = lean;
+  const sq = 1 - Math.max(0, 0.03 - hop) * 1.5; // se agacha un poco antes de cada salto
+  inner.scale.set(1 + (1 - sq) * 0.5, sq, 1 + (1 - sq) * 0.5);
+  for (const U of p.uniforms) { U.uHead.value.set(head, nod); U.uTail.value = tail; U.uBreath.value = Math.sin(t * 3.4 + ph); }
+}
+
 export function createVictim(kind, seed = 1) {
   const info = VICTIM_KINDS[kind];
-  const parts = kind === 'perro' ? dog(seed) : kind === 'gato' ? cat(seed) : kind === 'ciervo' ? deer(seed) : human(kind, seed);
+  const parts = GLB_ANIMALS[kind] ? (glbAnimal(kind, seed) || dog(seed)) : kind === 'perro' ? dog(seed) : kind === 'gato' ? cat(seed) : kind === 'ciervo' ? deer(seed) : human(kind, seed);
   const root = new THREE.Group();
   root.add(parts.root);
   parts.root.scale.setScalar(info.scale);
   const victim = {
     kind, info, seed, root, parts,
     mode: 'wave', t: Math.random() * 10,
-    height: kind === 'ciervo' ? 1.2 : kind === 'perro' ? 0.7 : kind === 'gato' ? 0.5 : 1.35 * (kind === 'nino' ? 0.78 : 1),
+    height: kind === 'ciervo' ? 1.2 : kind === 'perro' ? 0.7 : GLB_ANIMALS[kind] ? GLB_ANIMALS[kind].h : kind === 'gato' ? 0.5 : 1.35 * (kind === 'nino' ? 0.78 : 1),
     state: 'waiting', found: false, rescued: false, marker: null,
     setMode(m) { this.mode = m; },
     update(dt) {
@@ -246,6 +363,7 @@ export function createVictim(kind, seed = 1) {
       const p = this.parts;
       const mode = this.mode;
       const inner = p.inner;
+      if (p.glb) { animateGLB(p, mode, t, dt); return; }
       if (!p.animal) {
         if (mode === 'wave') {
           inner.position.y = Math.abs(Math.sin(t * 4)) * 0.04;

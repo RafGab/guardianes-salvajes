@@ -146,6 +146,7 @@ export class Combat {
     const mul = (t.st.mark > 0 ? 1.5 : 1) * this.damageMul;
     // PESO DEL GOLPE: un instante de cámara lenta y una pequeña sacudida cuando el héroe del jugador acierta
     if (!quiet && !t.prop && !(this.src && this.src.member) && this.game.boss) { this.game.slowT = Math.max(this.game.slowT || 0, 0.06); this.game.chase.shake(0.1); }
+    if (!t.prop && this.game.impactFx) this.game.impactFx.hit(t, n * mul, quiet); // el impacto se ve en el enemigo
     if (t.heavy) {
       t.takeDamage(n * mul, quiet);
       // número de daño sobre el jefe: los golpes sueltos siempre; el daño continuo se acumula

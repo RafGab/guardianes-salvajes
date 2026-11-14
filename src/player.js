@@ -298,6 +298,7 @@ export class Player {
     this.swimming = deep && !surfing;
     this.wading = !this.swimming && !surfing && this.depth > 0.3;
     this.surfing = surfing;
+    if (this.swimming !== !!this._wasSwim) { this.events.push({ type: this.swimming ? 'swimIn' : 'swimOut' }); this._wasSwim = this.swimming; } // salpicadura al entrar/salir nadando
 
     // velocidad objetivo
     let maxSpeed = st.speed * (inp.sprint ? 1.3 : 1);
@@ -420,6 +421,7 @@ export class Player {
         speed: this.swimming ? clamp(hs / st.swim, 0, 1.2) : hs / runRef,
         grounded: this.grounded,
         swimming: this.swimming,
+        wading: this.wading, depth: this.depth,
         vy: this.vy,
         gliding: this.gliding || (this.glideT > 0 && !this.grounded && this.hero.id === 'ambar'),
         flying: !!fly, flyLean: fly ? fly.lean * Math.min(1, hs / Math.max(1, fly.speed)) : 0,

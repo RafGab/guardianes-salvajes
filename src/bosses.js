@@ -634,6 +634,7 @@ export class BossBase {
   }
 
   update(dtRaw) {
+    if (this.punch > 0) this.punch = Math.max(0, this.punch - dtRaw * 5.5);
     const prev = this.pos.clone();
     if (this.state !== 'dead' && !this.victory) this.pickTarget(dtRaw);
     this.updateLogic(dtRaw);
@@ -849,13 +850,17 @@ export class BossBase {
     const gy = this.groundY(this.pos.x, this.pos.z) + this.flyHeight;
     this.model.root.position.set(this.pos.x, gy, this.pos.z);
     this.model.root.rotation.y = this.facing;
+    // REACCIÓN AL IMPACTO (skills/impactfx.js): retrocede en la dirección del golpe y se echa hacia atrás un instante
+    const pk = this.punch > 0 ? this.punch * this.punch : 0;
+    if (pk) { this.model.root.position.x += (this.punchDx || 0) * pk * 0.45; this.model.root.position.z += (this.punchDz || 0) * pk * 0.45; }
     const bob = this.state === 'idle' ? Math.sin(this.t * 2.2) * 0.04 : 0;
     this.model.body.position.y = bob + (this.model.flies ? Math.sin(this.t * 1.4) * 0.3 : 0) + this.anim.dy;
-    this.model.body.rotation.x = this.anim.rx;
+    this.model.body.rotation.x = this.anim.rx - 0.16 * pk;
     this.model.body.rotation.y = this.anim.spin;
     const windup = this.state === 'tg_charge' || this.state === 'tg_slam';
     const kScale = 1 + (windup ? Math.sin(this.stateT * 14) * 0.04 : 0) + (this.state === 'charge' ? 0.06 : 0);
-    this.model.root.scale.set(this.baseScale * kScale, this.baseScale * kScale * this.anim.sy, this.baseScale * kScale);
+    const sq = this.punch > 0 ? this.punch * this.punch : 0; // se encoge con el golpe
+    this.model.root.scale.set(this.baseScale * kScale * (1 + 0.05 * sq), this.baseScale * kScale * this.anim.sy * (1 - 0.08 * sq), this.baseScale * kScale * (1 + 0.05 * sq));
     for (const limb of this.model.limbs || []) {
       const raise = this.state === 'tg_slam' || this.state === 'slam' ? -2.2 : this.state === 'charge' ? -0.6 : -0.2;
       limb.sh.rotation.x = damp(limb.sh.rotation.x, raise, 8, 0.016);

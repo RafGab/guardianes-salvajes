@@ -115,6 +115,7 @@ function clamp01(v, N) {
 /* ------------------------------------------------------------------ */
 const PEOPLE = ['hombre', 'mujer', 'nino', 'anciano'];
 const ANIMALS = ['perro', 'gato', 'ciervo'];
+const NEW_ANIMALS = ['collie', 'zorro', 'lince']; // Perro (border collie), Fox y Lince pequeño: siempre entre los animales de cada misión
 
 function shuffle(arr, rng) {
   for (let i = arr.length - 1; i > 0; i--) {
@@ -178,7 +179,9 @@ export function generateRescues(world, params) {
 
   // lista de tipos de rescatado
   const nAnimals = Math.round(count * animalRatio);
-  const kinds = shuffle([...Array(count - nAnimals).fill(0).map((_, i) => PEOPLE[(i + Math.floor(rng.next() * 4)) % 4]), ...Array(nAnimals).fill(0).map((_, i) => ANIMALS[(i + Math.floor(rng.next() * 3)) % 3])], rng);
+  const animalKinds = Array(nAnimals).fill(0).map((_, i) => ANIMALS[(i + Math.floor(rng.next() * 3)) % 3]);
+  shuffle(NEW_ANIMALS.slice(), rng).forEach((k, i) => { if (i < nAnimals) animalKinds[i] = k; });
+  const kinds = shuffle([...Array(count - nAnimals).fill(0).map((_, i) => PEOPLE[(i + Math.floor(rng.next() * 4)) % 4]), ...animalKinds], rng);
 
   const chosen = [];
   let sep = minSep;
@@ -228,7 +231,7 @@ export function generateRescues(world, params) {
     if (ground && tools.has('axe') && rng.next() < 0.28 * difficulty && world.sc.allowObstacles !== false) twists.push([c, 'axe']);
     else if (ground && tools.has('wind') && world.sc.windCover && rng.next() < 0.3 * difficulty) twists.push([c, 'wind']);
     else if (ground && tools.has('flashlight') && rng.next() < 0.3 * difficulty) twists.push([c, 'flashlight']);
-    else if (tools.has('canteen') && world.sc.thirst && (c.kind === 'perro' || c.kind === 'gato' || c.kind === 'ciervo') && rng.next() < 0.6) twists.push([c, 'canteen']);
+    else if (tools.has('canteen') && world.sc.thirst && (c.kind === 'perro' || c.kind === 'gato' || c.kind === 'ciervo' || NEW_ANIMALS.includes(c.kind)) && rng.next() < 0.6) twists.push([c, 'canteen']);
   }
   const slots = chosen.map((c) => ({
     kind: c.kind, zone: c.zone, type: c.type,

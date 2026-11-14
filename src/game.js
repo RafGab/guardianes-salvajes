@@ -23,6 +23,7 @@ import { Pickups } from './pickups.js';
 import { WeaponSystem } from './weapons/system.js';
 import { RescuePortal } from './portal.js';
 import { RescueBubbles } from './rescue.js';
+import { ImpactFx } from './skills/impactfx.js';
 import { Allies } from './allies.js';
 import { AimSystem } from './aim.js';
 import { SEE, enableSeeThrough } from './seethrough.js';
@@ -101,6 +102,7 @@ export class Game {
     // habilidades de héroe y ataques de jefe: capa visual, combate compartido y gestor de habilidades
     this.vfx = new Vfx(scene, fx);
     this.vfx2 = new Vfx2(this); // cielo, aurora, lava, olas... de los poderes especiales
+    this.impactFx = new ImpactFx(this); // impacto visible de poderes y armas sobre el jefe y sus soldados
     this.combat = new Combat(this);
     this.skills = new HeroSkills(this);
     this.weapons = new WeaponSystem(this); // arma 3D de cada héroe (botón ARMA), unida al hueso de su mano
@@ -390,7 +392,7 @@ export class Game {
   // T o botón 🎯: activa / quita la mira de Halley
   toggleAim() {
     if (this.state !== 'playing') return false;
-    if (!this.hero || this.hero.id !== 'halley') { ui.banner('find', '🎯', 'La mira es de Halley y su lanza'); return false; }
+    if (!this.hero || this.hero.id !== 'halley') { ui.banner('find', '🎯', 'La mira es de Bada y su lanza'); return false; }
     const on = this.aimSys.toggle();
     ui.banner('find', '🎯', on ? 'Mira activada: apunta y dispara con el arma' : 'Mira desactivada');
     return on;
@@ -588,6 +590,10 @@ export class Game {
           audio.tone(300, 0.12, 'triangle', 0.08, 200);
           if (ev.water) { fx.splash(p.x, world.waterY, p.z, 10, 0.8); audio.splash(); }
           break;
+        case 'swimIn': case 'swimOut':
+          fx.splash(p.x, world.waterY, p.z, ev.type === 'swimIn' ? 12 : 8, 0.7);
+          if (world.ripples) world.ripples.spawn(p.x, world.waterY + 0.03, p.z, 1.8, 1);
+          break;
         case 'land':
           if (ev.water) {
             fx.splash(p.x, world.waterY, p.z, 16, Math.min(1.6, ev.speed / 10));
@@ -776,8 +782,9 @@ export class Game {
     this.skills.reset();
     this.team.clear();
     ui.hud(false);
-    if (this.onBossPrep) this.onBossPrep();
-    else this.startBoss([this.hero.id]); // sin pantalla de equipo (pruebas): combate con el héroe actual
+    // COMBATE INDIVIDUAL: contra el jefe de zona lucha SOLO el héroe con el que se ha jugado el mundo
+    // (sin pantalla de equipo, sin compañeros ni aliados que ayuden)
+    this.startBoss([this.hero.id]);
   }
 
   // Comienza el combate con el equipo elegido (ids en orden; el primero sale al campo)
@@ -812,7 +819,7 @@ export class Game {
     this.bossStats = { t0: performance.now() / 1000, soldiers: 0, staggers: 0 }; // para la pantalla de victoria
     this.team.allOnField = true; // los tres héroes están en el campo combatiendo (nadie descansa en reserva)
     this.pickups.placeArena(this.mission, arena);
-    if (this.mission.ally) this.ally = createAlly(this.mission.ally, { scene, world, player, chase, camera, fx: this.fx, audio, ui, game: this });
+    // (sin aliados: el combate contra el jefe es individual)
     this.setBossCamera();
     ui.setGaugeMode(this.mission);
     // presentación del jefe y aparición del equipo (cada héroe con su estatura oficial)
@@ -871,7 +878,8 @@ export class Game {
     if ((this.bench || []).length && this.bossIntroT < TEAM.introT - 3.0) { this.bench = []; this.allies.sync(); }
     if (this.bossIntroT <= 0) {
       this.player.locked = false;
-      ui.banner('find', '⚔ ¡A combatir!', IS_TOUCH ? 'Toca los retratos para cambiar de héroe' : 'Q / clic: golpe con el arma · 2 poder · 3 escudo · Z / X cambian de héroe');
+      const solo = this.team.members.length < 2;
+      ui.banner('find', '⚔ ¡A combatir!', solo ? `${this.hero.name} se enfrenta en solitario al jefe${IS_TOUCH ? '' : ' · Q / clic: golpe con el arma · 2 poder · 3 escudo'}` : IS_TOUCH ? 'Toca los retratos para cambiar de héroe' : 'Q / clic: golpe con el arma · 2 poder · 3 escudo · Z / X cambian de héroe');
     }
   }
   // Barra del jefe, equipo, estados y acción actual (se refresca varias veces por segundo)
@@ -1481,6 +1489,7 @@ export class Game {
     this.combat.update(envDt);
     this.vfx.update(dtg);
     this.vfx2.update(dtg);
+    this.impactFx.update(dtg);
     this.envClock = (this.envClock ?? performance.now() / 1000) + envDt; // reloj de las animaciones del escenario (se para con el tiempo)
     world.update(envDt, this.envClock, camera.position, player.pos, missionT, true);
     const p = player.pos;

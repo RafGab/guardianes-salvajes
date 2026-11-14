@@ -154,11 +154,22 @@ export class Soldier {
     this.facing += d * Math.min(1, dt * 8);
     this.group.position.copy(this.pos);
     this.group.rotation.y = this.facing;
+    // REACCIÓN AL IMPACTO (skills/impactfx.js): sacudida hacia atrás y se encoge un instante
+    if (this.punch > 0) {
+      this.punch = Math.max(0, this.punch - dt * 6);
+      const pk = this.punch * this.punch;
+      this.group.position.x += (this.punchDx || 0) * pk * 0.3; this.group.position.z += (this.punchDz || 0) * pk * 0.3;
+      this.group.scale.set(this.scale * (1 + 0.08 * pk), this.scale * (1 - 0.12 * pk), this.scale * (1 + 0.08 * pk));
+    } else this.group.scale.setScalar(this.scale);
     this.animate(dt);
     // destello al recibir daño y anillo de enemigo activo / marcado
     this.flash = Math.max(0, this.flash - dt);
     const fl = this.flash > 0 ? 1 : 0;
     this.rig.plate.emissive.setRGB(fl + 0.15 * ((this.color >> 16) & 255) / 255, fl * 0.9 + 0.15 * ((this.color >> 8) & 255) / 255, fl * 0.9 + 0.15 * (this.color & 255) / 255);
+    // todo el cuerpo destella en blanco al recibir el golpe (no solo la coraza)
+    const am = this.rig.mats[0], dm = this.rig.mats[2];
+    if (am && am.emissive) am.emissive.setRGB(fl * 0.9, fl * 0.8, fl * 0.7);
+    if (dm && dm.emissive) dm.emissive.setRGB(fl * 0.7, fl * 0.6, fl * 0.5);
     this.ring.material.color.setHex(this.st.mark > 0 ? 0xffd24a : 0xff3a3a);
     this.ring.material.opacity = 0.45 + 0.3 * Math.sin(this.t * 5);
   }
@@ -199,7 +210,7 @@ export class Soldier {
   hurt(n) {
     if (this.dead) return;
     this.hp = Math.max(0, this.hp - n);
-    this.flash = 0.12; this.hurtT = 0.28;
+    this.flash = 0.16; this.hurtT = 0.28;
     // REACCIÓN SEGÚN EL GOLPE: uno flojo le hace encogerse; uno fuerte lo derriba y sale despedido hacia atrás
     const g = this.combat.game, from = g.player ? g.player.pos : null;
     if (from) { const dx = this.pos.x - from.x, dz = this.pos.z - from.z, l = Math.hypot(dx, dz) || 1, f = n >= 9 ? 7 : 2.5; this.vel.x += (dx / l) * f; this.vel.z += (dz / l) * f; }

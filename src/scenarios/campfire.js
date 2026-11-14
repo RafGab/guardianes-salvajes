@@ -1,3 +1,4 @@
+import { paintedCar, propModel } from '../props.js';
 import { CFG, terrainH, setTerrain, smoothstep, lerp, n2, gauss, pathDist, pathPoint, refugeHeight, startFlat, setStartSafe, makeDescriptor, placeSigns, paintRefugeAndStart } from './common.js';
 
 /* ======================================================================
@@ -191,6 +192,20 @@ export function build(K, { scene }) {
     '23,-30.6': 'school', '-7,-50.6': 'church', '45,-10.6': 'gas', '-25,-30.6': 'tower', '23,-10.6': 'shops', '-7,-10.6': 'shops',
   };
   const burnedLots = new Set(['23,2.6', '-25,-17.4', '45,-37.4', '-7,-37.4', '45,-50.6']);
+  const HOUSE_LOT = '-25,-50.6';
+  const placeHouse = (x, z, face) => {
+    const H = 9.5, w = 0.856 * H, d = 0.794 * H;          // medidas del modelo (normalizado a altura 1)
+    const g0 = Math.max(G(x, z), G(x - w / 2, z - d / 2), G(x + w / 2, z + d / 2), G(x - w / 2, z + d / 2), G(x + w / 2, z - d / 2));
+    const m = propModel('casa');
+    m.scale.setScalar(H);
+    m.position.set(x, g0 - 0.05, z);
+    m.rotation.y = face;
+    scene.add(m);
+    const ww = w * 0.7, dd = d * 0.72;                        // las paredes (el tejado sobresale por los lados)
+    K.box(x, g0 - 2, z, ww, 1.97, dd, 0x8a8478, { tag: 'building' }); // cimientos bajo el suelo: sin huecos si el terreno baja
+    K.solid(x - ww / 2, x + ww / 2, g0, g0 + H * 0.5, z - dd / 2, z + dd / 2, 'building');
+    K.buildings.push({ x, z, w: ww, d: dd, h: H * 0.5, roofY: g0 + H * 0.5, kind: 'casas de Paradise', solid: null });
+  };
   const crate = (x, z, h = 1.3) => { const g = G(x, z); K.box(x, g, z, 1.6, h, 1.6, 0x9a7040, { tag: 'crate' }); return g + h; };
   for (const L of lots) {
     const key = `${L.x},${Math.round(L.z * 10) / 10}`;
@@ -240,6 +255,16 @@ export function build(K, { scene }) {
       K.box(L.x - 1, TOWN.y + 2.6, L.z, 7.5, 0.25, 0.3, 0x1e1816, { solid: false, ry: 0.25 });
       K.box(L.x + 1.4, TOWN.y + 2.6, L.z + 1, 0.3, 0.25, 5, 0x1e1816, { solid: false, ry: -0.2 });
       K.cand('street', L.x + rr(-2, 2), TOWN.y, L.z + fz * 4.6, { zone: 'casas quemadas', type: 'ground' });
+    } else if (key === HOUSE_LOT && propModel('casa')) {
+      // LA CASA DE ENTRAMADO (modelo 3D): ocupa una parcela del pueblo mirando a la calle, a escala de la puerta
+      // (2,1 m), con su sólido, su candidato de rescate en la entrada y su buzón. Se consumen los mismos números
+      // aleatorios que la casa que había en la parcela para no alterar el resto del pueblo.
+      const roof = rng.chance(0.8) ? 'gable' : 'flat';
+      rr(7.5, 9); rr(2.9, 3.4); rng.pick(wallCols); rng.pick(roofCols); rng.chance(0.4);
+      if (roof === 'flat') { rng.range(0, 1); rng.range(0, 1); }
+      placeHouse(L.x, L.z, L.face);
+      K.cand('street', L.x + 1.6, TOWN.y, L.z + fz * 4.7, { zone: 'casas de Paradise', type: 'ground' });
+      if (rng.chance(0.6)) { const ox = rr(-3.5, 3.5) + 4.5, sc = rr(0.6, 0.85); if (ox > 5.2) K.tree('broad', L.x + ox, L.z - fz * 0.5, sc); }
     } else {
       const roof = rng.chance(0.8) ? 'gable' : 'flat';
       K.house({ x: L.x, z: L.z, w: rr(7.5, 9), d: 6, h: rr(2.9, 3.4), color: rng.pick(wallCols), roofColor: rng.pick(roofCols), roof, facing: L.face, chimney: rng.chance(0.4), cand: 'casas de Paradise' });
@@ -252,30 +277,33 @@ export function build(K, { scene }) {
     K.box(L.x - 3.4, TOWN.y, L.z + fz * 4.9, 0.12, 1.0, 0.12, 0x5a4a3a, { solid: false });
     K.box(L.x - 3.4, TOWN.y + 1.0, L.z + fz * 4.9, 0.4, 0.3, 0.55, rng.pick([0x2e6fb0, 0xc0392b, 0x3a8a4a]), { solid: false });
   }
-  // farolas, bocas de riego y coches aparcados
-  const carCols = [0xc0392b, 0x2e86c1, 0xf1c40f, 0x27ae60, 0xecf0f1, 0x8e44ad];
-  const car = (x, z, ry, col) => {
+  // farolas, bocas de riego y coches aparcados: deportivos (el Porsche) de varios colores
+  const carCols = ['rojo', 'azul', 'amarillo', 'verde', 'blanco', 'negro', 'plata', 'naranja', 'morado', 'turquesa'];
+  const cars = [];
+  const carFree = (x, z, w, d) => !K.solids.some((so) => so.x0 < x + w / 2 + 0.3 && so.x1 > x - w / 2 - 0.3 && so.z0 < z + d / 2 + 0.3 && so.z1 > z - d / 2 - 0.3 && so.y1 > G(x, z) + 0.3);
+  const car = (x, z, ry, col, fixed = false) => {
     const g = G(x, z);
-    K.box(x, g + 0.25, z, 1.9, 0.85, 4.1, col, { tag: 'car', ry });
-    K.box(x, g + 1.1, z, 1.7, 0.7, 2.2, 0xa8d8ee, { solid: false, ry });
-    for (const [ox, oz] of [[-0.85, -1.3], [0.85, -1.3], [-0.85, 1.3], [0.85, 1.3]]) {
-      const c = Math.cos(ry), s = Math.sin(ry);
-      K.cyl(x + ox * c + oz * s, g, z - ox * s + oz * c, 0.36, 0.5, 0x1a1a1a);
-    }
-    K.cand('roof', x, g + 1.12, z, { zone: 'coches abandonados' });
+    const side = Math.abs(Math.sin(ry)) > 0.7; // aparcado en paralelo a la calle (a lo largo de X)
+    const w = side ? 4.1 : 1.9, d = side ? 1.9 : 4.1;
+    if (!fixed && !carFree(x, z, w, d)) return false; // los coches nuevos solo donde hay sitio libre
+    K.solid(x - w / 2, x + w / 2, g - 0.5, g + 1.12, z - d / 2, z + d / 2, 'car');
+    K.cand('roof', x, g + 1.14, z, { zone: 'coches abandonados' });
+    cars.push({ x, y: g, z, ry, col });
+    return true;
   };
   for (const zs of CROSS) {
     for (let x = -26; x <= 50; x += 15) {
       K.cyl(x, TOWN.y, zs - 2.6, 0.1, 4.2, 0x3a3a3a);
       K.box(x, TOWN.y + 4.2, zs - 2.2, 0.3, 0.18, 1.0, 0xffe6a0, { key: 'glow', solid: false });
     }
-    car(rr(-24, -18), zs + 1.2, Math.PI / 2, rng.pick(carCols));
-    car(rr(38, 48), zs - 1.2, Math.PI / 2, rng.pick(carCols));
+    car(rr(-24, -18), zs + 1.2, Math.PI / 2 + 0.05 * Math.sin(zs * 7.1), rng.pick(carCols), true);
+    car(rr(38, 48), zs - 1.2, Math.PI / 2 - 0.05 * Math.sin(zs * 3.7), rng.pick(carCols), true);
     K.cyl(16, TOWN.y, zs + 2.4, 0.22, 0.75, 0xd8452a);
     for (let i = 0; i < 4; i++) { const x = -28 + i * 22 + rr(-3, 3); K.cand('street', x, TOWN.y, zs + rr(-1, 1), { zone: 'calles del pueblo', type: 'street' }); }
     for (let x = -22; x <= 48; x += 10) if (Math.abs(x - 8) > 3) pine(x, TOWN.y, zs);
   }
-  car(11, -18, 0.1, 0xc0392b); car(4.5, -40, -0.08, 0xecf0f1);
+  car(11, -18, 0.1, 'rojo', true); car(4.5, -40, -0.08, 'blanco', true);
+  /* (más deportivos al final de la construcción, cuando ya están todos los árboles y edificios) */
   // piñas por la Skyway
   for (let i = 0; i < 16; i++) { const p = pathPoint(ROAD, 0.04 + i * 0.058); if (!nearSafe(p[0], p[1], 14) && !nearStart(p[0], p[1], 6)) pineG(p[0] + (i % 2 ? 1.2 : -1.2), p[1]); }
   // cartel de bienvenida del pueblo
@@ -479,6 +507,19 @@ export function build(K, { scene }) {
     },
   });
 
+  // más deportivos repartidos con naturalidad: aparcados en las calles del pueblo (a ambos lados, en ambos
+  // sentidos), junto a la gasolinera y alguno abandonado en el arcén de la Skyway
+  const extraCars = [[23, -2.7, Math.PI / 2 + 0.04], [-6, -5.3, -Math.PI / 2 - 0.05], [3, -22.7, Math.PI / 2 - 0.03], [24, -25.3, -Math.PI / 2 + 0.06], [14, -42.7, Math.PI / 2 + 0.05],
+    [-14.7, -36, 0.04], [-14.7, -15, Math.PI - 0.05], [35.3, -17, 0.03], [35.3, -38, Math.PI + 0.06], [32.7, -50, -0.04],
+    [52.4, -48.6, Math.PI / 2], [-2.8, 64, -0.25], [3.8, -66, 0.15]];
+  extraCars.forEach(([x, z, ry], i) => car(x, z, ry, carCols[(i + 3) % carCols.length]));
+  for (const c of cars) {
+    const m = paintedCar(c.col);
+    if (!m) break;
+    m.position.set(c.x, c.y, c.z);
+    m.rotation.y = c.ry;
+    scene.add(m);
+  }
   return makeDescriptor(K, scene, {
     id: 'campfire', look, paint, refugeStyle: 'camp', mapView: { cx: 0, cz: 0, half: 112 }, windAmp: 1.2, hazard: 'fire', allowObstacles: false,
     water: { mode: 'rise', base: WATER_Y, max: WATER_Y, pow: 1, amp: 0.7, colors: { shallow: 0x46b4d0, deep: 0x15607a, mud: 0x6aa090 } },

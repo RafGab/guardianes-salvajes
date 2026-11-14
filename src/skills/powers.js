@@ -3,7 +3,7 @@ import { rnd, TAU } from './attack.js';
 import { Skill, DEG, ease, lerp, clamp, V } from './base.js';
 import { terrainH } from '../terrain.js';
 import { ui } from '../ui.js';
-import { douseFires, propsNear, captureProp, dropFlung, wetGround } from './envreact.js';
+import { douseFires, smotherFires, propsNear, captureProp, dropFlung, wetGround } from './envreact.js';
 import { MirageWard, TsunamiWave, WaterVortex, FoamPool, WaterShield, MagmaGeyser, ObsidianSpikes, CrystalDebris } from './fx4.js';
 
 // PODERES ESPECIALES NUEVOS (3 por héroe; la Zorra Ártica tiene 4).
@@ -140,7 +140,7 @@ export class BlackLavaSkill extends Skill {
         this.g.fx.smokePuff(c.x + this.dir.x * 0.6, c.y, c.z + this.dir.z * 0.6, 0.5, 0x15100e);
       } },
       { name: 'propagacion', dur: d.spreadT, enter: this.enterFlow, tick: this.tickFlow },
-      { name: 'recuperacion', dur: d.recover, enter: () => { this.lock(false); this.leaveZone(); }, tick: (dt, k) => { pose.rx = lerp(0.35, 0, k); pose.sy = lerp(1.05, 1, k); } },
+      { name: 'recuperacion', dur: d.recover, enter: () => { this.lock(false); this.leaveZone(); if (this.doused) ui.banner('good', `🌑 ¡La lava negra sofoca ${this.doused} ${this.doused > 1 ? 'focos' : 'foco'}!`, `+${30 * this.doused} puntos`); }, tick: (dt, k) => { pose.rx = lerp(0.35, 0, k); pose.sy = lerp(1.05, 1, k); } },
     ];
   }
   // LA LAVA NEGRA CUBRE MUCHO TERRENO: un río principal ancho y largo y, desde su mitad, dos brazos que
@@ -171,6 +171,8 @@ export class BlackLavaSkill extends Skill {
       f.flow.setProgress(e);
       if (kk <= 0 || kk >= 1) continue;
       const front = f.len * e, fx = f.o.x + f.dir.x * front, fz = f.o.z + f.dir.z * front, fy = terrainH(fx, fz);
+      // la lava negra cubre y sofoca los focos de incendio por donde avanza
+      this.doused = (this.doused || 0) + smotherFires(this.g, fx, fz, f.w * 0.65, 'lava');
       // frente de la corriente: humo negro denso, brasas y chispas naranjas a todo lo ancho
       for (let i = 0; i < 4; i++) {
         const s = rnd(-0.5, 0.5) * f.w;
@@ -935,6 +937,8 @@ export class ObsidianSkill extends Skill {
       this.nextRow += rnd(0.9, 1.3);
     }
     for (let i = 0; i < 3; i++) { const s = rnd(-0.5, 0.5) * d.width; this.g.fx.dustPuff(fx - uz * s, fy + 0.2, fz + ux * s, 1.8); }
+    // la avalancha de estalactitas aplasta y apaga los focos de incendio que encuentra a su paso
+    this.doused = (this.doused || 0) + smotherFires(this.g, fx, fz, d.width * 0.6, 'rock');
     if (Math.random() < 0.6) this.vfx.sparks(fx, fy + 1, fz, 0xc8a0ff, 3, 3);
     if (Math.random() < 0.4) this.g.fx.rock(fx, fy + 0.5, fz);
     this.shake(0.12);
@@ -958,6 +962,7 @@ export class ObsidianSkill extends Skill {
   shatter() {
     const d = this.def, ux = this.dir.x, uz = this.dir.z;
     this.sfx('crack');
+    if (this.doused) ui.banner('good', `🖤 ¡Las estalactitas apagan ${this.doused} ${this.doused > 1 ? 'focos' : 'foco'}!`, `+${30 * this.doused} puntos`);
     for (let i = 0; i < 24; i++) {
       const r = rnd(0, d.length), s = rnd(-0.5, 0.5) * d.width, x = this.o.x + ux * r - uz * s, z = this.o.z + uz * r + ux * s;
       this.vfx.sparks(x, terrainH(x, z) + 0.6, z, i % 2 ? 0xd8c8ff : 0x8a60c0, 2, 2.4);

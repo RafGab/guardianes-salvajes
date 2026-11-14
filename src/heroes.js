@@ -63,13 +63,13 @@ export const HEROES = [
     bio: 'Zorro ártico valiente, curiosa, amigable, leal, inteligente y resistente. Su hacha de hielo cristalino puede crear o manipular el hielo. "El hielo también tiene un corazón."',
   },
   {
-    id: 'halley', name: 'Halley', species: 'Fénec', element: 'arena',
+    id: 'halley', name: 'Bada', species: 'Fénec', element: 'arena',
     power: { type: 'surf', icon: '⏳', name: 'Remolino de Arena', cd: 6, desc: 'Inclina el cuerpo y gira mientras corre: se vuelve arena en parte y deja un remolino que se deshace como en un reloj de arena. Sobre el agua o las dunas corre sin hundirse.' },
     stats: { speed: 7.8, jump: 8.6, swim: 3.0, carry: 1 },
     bio: 'Fénec siniestra, inteligente, manipuladora, ambiciosa y vengativa. Controla la arena a su alrededor y lee el terreno del desierto. "Pequeña en tamaño… gigante en espíritu."',
   },
   {
-    id: 'lira', name: 'Lira', species: 'Lince', element: 'tierra',
+    id: 'lira', name: 'Dona', species: 'Lince', element: 'tierra',
     power: { type: 'pillar', icon: '🌱', name: 'Raíces Impulsoras', cd: 5, desc: 'Corriendo, sus piernas hacen brotar raíces que la impulsan hacia delante. Quieta, la tierra se alza bajo sus pies: un pilar de roca, una plataforma segura sobre el peligro.' },
     stats: { speed: 7.3, jump: 8.8, swim: 4.6, carry: 2 },
     bio: 'Lince valiente, fuerte, ágil y leal. Su guadaña de energía manipula el terreno, crea barreras y aumenta su fuerza en combate. "La fuerza de la tierra también habita en la agilidad."',
@@ -1422,6 +1422,8 @@ class GLBHero {
         idle, run: pick(/run|sprint/i) || pick(/walk/i) || idle, walk: pick(/walk/i) || pick(/run/i) || idle,
         swim: pick(/swim/i), jump: pick(/jump|fall|air/i), cele: pick(/cele|dance|victory|win/i), power: pick(/power|cast|attack|spell/i),
       };
+      // NADO: flotar en el sitio y avanzar vadeando (se generan con el mismo rig si el modelo no las trae)
+      try { const wc = waterClips(model); for (const k in wc) if (!this.clips[k]) this.clips[k] = wc[k]; } catch (e) { console.warn('animaciones de agua', e); }
       this.action = null;
       this.actionName = '';
     }
@@ -1484,9 +1486,16 @@ class GLBHero {
       // Las animaciones extra (caída, aterrizaje, esquiva, escudo, especial, ataque, impacto, sprint) solo se usan
       // si el modelo las tiene (Lira H3.1); para el resto de héroes la elección es la de siempre.
       const C = this.clips;
-      let name = 'idle', sp = 1;
+      let name = 'idle', sp = 1, fade = 0.22;
+      const wade = !swim && s.wading && (s.depth || 0) > 0.55 && s.grounded;
+      if (swim !== this._wasSwim || wade !== this._wasWade) fade = 0.4; // entrar y salir del agua: transición más suave
+      this._wasSwim = swim; this._wasWade = wade;
       if (s.celebrate && C.cele) name = 'cele';
-      else if (swim && C.swim) name = 'swim';
+      else if (swim && C.swim) {
+        // NADANDO: brazadas al desplazarse; quieto, flota en el sitio moviendo brazos y piernas
+        if (run > 0.12 || !C.tread) { name = 'swim'; sp = clamp(0.55 + run * 0.75, 0.55, 1.4); } else name = 'tread';
+      }
+      else if (wade && run > 0.15 && C.wade && !s.dashing && !(s.power > 0.2)) { name = 'wade'; sp = clamp(run * 1.2, 0.6, 1.4); }
       else if (s.hurt && C.hit) name = 'hit';
       else if (air && (C.jump || C.fall)) name = (s.vy < -1.5 && C.fall) || !C.jump ? 'fall' : 'jump';
       else if (this.landT > 0 && C.land) name = 'land';
@@ -1499,7 +1508,7 @@ class GLBHero {
       // patinaje (velocidad de la Zorra Ártica): zancadas más largas y lentas, se desliza entre impulso e impulso
       if (this.skate > 0 && (name === 'run' || name === 'walk' || name === 'sprint')) sp *= 1 - 0.5 * this.skate;
       this.skate = Math.max(0, (this.skate || 0) - dt * 2.5);
-      this.play(name, 0.22, sp);
+      this.play(name, fade, sp);
       // los huesos que movió una habilidad vuelven a su reposo antes de animar (así no se acumulan giros)
       for (const bn of this._touched) { bn.quaternion.copy(bn.userData.q0); bn.scale.copy(bn.userData.s0); }
       this._touched.clear();
@@ -1514,7 +1523,10 @@ class GLBHero {
     const bob = this.mixer ? 0 : Math.abs(Math.sin(this.phase)) * 0.07 * Math.min(run, 1.3);
     let lean = 0.14 * run;
     let y = bob;
-    if (swim) { lean = 1.2; y = -0.25; }
+    // en el agua: tumbado al nadar, vertical y meciéndose al flotar quieto, algo inclinado al vadear
+    const swimMove = swim && (run > 0.12 || !this.clips.tread);
+    if (swim) { lean = swimMove ? 1.2 : 0.12; y = swimMove ? -0.25 : -0.32 + Math.sin(this.t * 2.2) * 0.04; }
+    else if (this._wasWade && run > 0.15) lean = 0.22;
     else if (s.flying) lean = 0.12 + (s.flyLean || 0);
     else if (s.gliding) lean = 0.9;
     else if (s.dashing) lean = 1.0;
@@ -1522,9 +1534,10 @@ class GLBHero {
     if (s.rescue > 0) { y -= Math.sin(clamp(s.rescue, 0, 1) * Math.PI) * 0.35; lean += 0.3 * Math.sin(clamp(s.rescue, 0, 1) * Math.PI); }
     if (s.celebrate) { y += Math.abs(Math.sin(this.t * 6)) * 0.15; this.spin += dt * 3.2; }
     else this.spin = damp(this.spin, Math.round(this.spin / TAU) * TAU, 6, dt);
-    b.rotation.x = damp(b.rotation.x, lean, 12, dt);
+    const inWater = swim || this._wasWade;
+    b.rotation.x = damp(b.rotation.x, lean, inWater ? 5 : 12, dt); // en el agua el cuerpo gira despacio (sin saltos)
     b.rotation.y = this.spin;
-    b.position.y = damp(b.position.y, y, 14, dt);
+    b.position.y = damp(b.position.y, y, inWater ? 6 : 14, dt);
     if (s.power > 0) this.glowPulse = Math.max(this.glowPulse, Math.sin(clamp(s.power, 0, 1) * Math.PI));
     this.glowPulse = damp(this.glowPulse, 0, 3, dt);
     this.light.intensity = 0.35 + this.glowPulse * 5;
@@ -1532,6 +1545,66 @@ class GLBHero {
   anchorFor(i) {
     return this.rig.anchors[i] || this.rig.anchors[0];
   }
+}
+
+/* ------------------------------------------------------------------ */
+/*  ANIMACIONES DE AGUA generadas en el juego (mismo rig "Claude rig")   */
+/*  · tread: flotar en el sitio (cuerpo vertical, brazos que reman de    */
+/*    lado a lado y piernas en "batidora")                              */
+/*  · wade: avanzar con el agua por la cintura (rodillas altas, brazos   */
+/*    abiertos por encima del agua, cuerpo inclinado)                    */
+/*  Convención del rig: rotaciones locales absolutas (Euler XYZ), el      */
+/*  personaje mira a +Z, reposo con los brazos abajo.                    */
+/* ------------------------------------------------------------------ */
+function waterClips(model) {
+  const bones = {};
+  model.traverse((o) => { if (o.isBone) bones[o.name] = o; });
+  if (!bones.upper_arm_L || !bones.thigh_L) return {};
+  const tails = Object.keys(bones).filter((n) => /^tail(?:_[a-z]+)?_\d+$/.test(n));
+  const S = Math.sin, C = Math.cos, FPS = 30;
+  const e = new THREE.Euler(), q = new THREE.Quaternion();
+  const make = (name, dur, pose) => {
+    const frames = Math.round(dur * FPS), times = [], rot = {}, rootP = [];
+    const base = bones.root ? bones.root.position.clone() : null;
+    for (let f = 0; f <= frames; f++) {
+      const t = f / frames, a = t * Math.PI * 2;
+      times.push(f / FPS);
+      const p = pose(a);
+      tails.forEach((n, i) => { p.bones[n] = [0.05, S(a + i * 0.6) * 0.18, 0]; });
+      for (const [b, v] of Object.entries(p.bones)) {
+        if (!bones[b]) continue;
+        q.setFromEuler(e.set(v[0] || 0, v[1] || 0, v[2] || 0, 'XYZ'));
+        (rot[b] = rot[b] || []).push(q.x, q.y, q.z, q.w);
+      }
+      if (base) rootP.push(base.x, base.y + (p.dy || 0), base.z);
+    }
+    const tracks = Object.entries(rot).map(([b, v]) => new THREE.QuaternionKeyframeTrack(`${bones[b].name}.quaternion`, times, v));
+    if (base) tracks.push(new THREE.VectorKeyframeTrack(`${bones.root.name}.position`, times, rootP));
+    return new THREE.AnimationClip(name, dur, tracks);
+  };
+  const tread = make('tread', 1.5, (a) => ({
+    dy: S(a * 2) * 0.012,
+    bones: {
+      upper_arm_L: [-1.25, S(a) * 0.35, -0.65 + S(a) * 0.25], upper_arm_R: [-1.25, -S(a) * 0.35, 0.65 - S(a) * 0.25],
+      forearm_L: [-0.45 + S(a + 1) * 0.2, 0, 0], forearm_R: [-0.45 - S(a + 1) * 0.2, 0, 0],
+      thigh_L: [-0.55 + S(a * 2) * 0.4, 0, 0.12], thigh_R: [-0.55 - S(a * 2) * 0.4, 0, -0.12],
+      shin_L: [0.95 + S(a * 2 + 1) * 0.35, 0, 0], shin_R: [0.95 - S(a * 2 + 1) * 0.35, 0, 0],
+      foot_L: [0.25, 0, 0], foot_R: [0.25, 0, 0],
+      spine: [0.06, S(a) * 0.05, 0], chest: [0, -S(a) * 0.04, 0], head: [-0.12, S(a * 0.5) * 0.1, 0],
+    },
+  }));
+  const wade = make('wade', 1.3, (a) => ({
+    dy: S(a * 2) * 0.015,
+    bones: {
+      thigh_L: [S(a) * 0.55 - 0.2, 0, 0], thigh_R: [-S(a) * 0.55 - 0.2, 0, 0],
+      shin_L: [0.25 + Math.max(0, C(a)) * 0.75, 0, 0], shin_R: [0.25 + Math.max(0, -C(a)) * 0.75, 0, 0],
+      foot_L: [0.15, 0, 0], foot_R: [0.15, 0, 0],
+      upper_arm_L: [-0.55 - S(a) * 0.35, 0, -0.95], upper_arm_R: [-0.55 + S(a) * 0.35, 0, 0.95],
+      forearm_L: [-0.55, 0, 0], forearm_R: [-0.55, 0, 0],
+      spine: [0.16, S(a) * 0.12, 0], chest: [0.04, -S(a) * 0.06, 0], head: [-0.15, 0, 0],
+    },
+  }));
+  return { tread, wade };
 }
 
 const cache = {};

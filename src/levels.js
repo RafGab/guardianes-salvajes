@@ -82,7 +82,7 @@ export const LEVELS = [
   },
   {
     n: 10, id: 'extreme', scenario: 'extreme', icon: '☄️', kicker: 'NIVEL 10 · APOCALIA', name: 'Apocalia: la Catástrofe Final', place: 'Valle Titán: río, volcán lejano y ciudad en ladera',
-    desc: 'Todos los elementos se desequilibran a la vez: terremotos, crecida del río, ceniza y viento. Al rescatar a todos, el propio Cataclismo se manifiesta — y Voya acude a protegeros.',
+    desc: 'Todos los elementos se desequilibran a la vez: terremotos, crecida del río, ceniza y viento. Al rescatar a todos, el propio Cataclismo se manifiesta para el duelo final.',
     time: 460, victims: 14, animalRatio: 0.45, minSep: 22, minStart: 44, hz: 2.3, obstacles: 7, best: ['aire', 'agua', 'tierra', 'fuego', 'hielo'],
     gauge: 'PELIGRO', intro: '☄️ ¡APOCALIA!', introSub: 'Terremoto, crecida, ceniza y viento: ¡todo a la vez!',
     failTitle: 'La catástrofe ha sido demasiado grande', reward: 'star',

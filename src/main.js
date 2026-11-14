@@ -6,6 +6,8 @@ import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { SMAAPass } from 'three/examples/jsm/postprocessing/SMAAPass.js';
 import { HEROES, ELEMENTS, getHeroModel, preloadGLBHeroes } from './heroes.js';
+import { preloadVictimModels } from './npcs.js';
+import { preloadProps } from './props.js';
 import { createWorld } from './world.js';
 import { CFG, terrainH } from './city.js';
 import { Player, ChaseCam } from './player.js';
@@ -502,7 +504,7 @@ async function boot() {
   await nextFrame();
   await buildGame('flood');
   ui.loadingMsg('Buscando modelos 3D realistas…');
-  await preloadGLBHeroes();
+  await Promise.all([preloadGLBHeroes(), preloadVictimModels(), preloadProps()]);
   for (const h of HEROES) {
     ui.loadingMsg(`Creando a ${h.name}…`);
     await nextFrame();

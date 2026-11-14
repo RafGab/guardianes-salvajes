@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { WEAPONS } from './models.js';
 import { ui } from '../ui.js';
+import { flashBurst, glintSprite } from '../skills/impactfx.js';
 
 /* ======================================================================
    SISTEMA DE ARMAS
@@ -24,8 +25,8 @@ const easeBack = (k) => { const c = 1.9; return 1 + (c + 1) * Math.pow(k - 1, 3)
 
 /* Estela luminosa: cinta entre la base y la punta del arma en los últimos fotogramas */
 export class Trail {
-  constructor(scene, color, color2, n = 22) {
-    this.n = n; this.pts = []; this.k = 0; this.scene = scene;
+  constructor(scene, color, color2, n = 22, gain = 1) {
+    this.n = n; this.pts = []; this.k = 0; this.scene = scene; this.gain = gain;
     this.c1 = new THREE.Color(color); this.c2 = new THREE.Color(color2 ?? color);
     const geo = new THREE.BufferGeometry();
     geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(n * 2 * 3), 3));
@@ -53,7 +54,7 @@ export class Trail {
     const L = this.pts.length;
     for (let i = 0; i < this.n; i++) {
       const p = this.pts[Math.min(i, L - 1)];
-      const f = i < L ? Math.pow(1 - i / (L - 1 || 1), 1.4) * this.k : 0;
+      const f = i < L ? Math.pow(1 - i / (L - 1 || 1), 1.4) * this.k * this.gain : 0;
       P.setXYZ(i * 2, p[0].x, p[0].y, p[0].z);
       P.setXYZ(i * 2 + 1, p[1].x, p[1].y, p[1].z);
       // la base (cerca de la mano) apenas brilla; la punta, a tope
@@ -184,6 +185,9 @@ export class WeaponSystem {
     restore();
     model.root.updateMatrixWorld(true);
     const inst = { heroId, model, W, parts, k: 0, arm: { x: 0, y: 0, f: 0, w: 0 }, grip: 0, trails: parts.map((p) => new Trail(this.g.scene, p.w.trail.color, p.w.trail.color2)) };
+    // ENERGÍA DEL ARMA AL ATACAR: aura ancha que envuelve la estela y destello en estrella en el filo
+    inst.auras = parts.map((p) => new Trail(this.g.scene, p.w.trail.color2 ?? p.w.trail.color, p.w.trail.color, 16, 0.5));
+    inst.glints = parts.map((p) => { const gs = glintSprite(p.w.trail.color); this.g.scene.add(gs); return gs; });
     this.inst.set(model, inst);
     // capa del brazo: se aplica en cada fotograma después de la animación del modelo
     model.armFx = (bones, dt, t, fx) => this.applyArm(inst, dt, fx);
@@ -429,16 +433,75 @@ export class WeaponSystem {
       }
     }
   }
-  // destello en el punto de impacto (con los colores del arma)
+  // Durante el golpe: aura de energía alrededor de la estela, destello en estrella en el filo y chispas a lo largo del arma
+  swingFx(inst, i, w, dt) {
+    const on = this.swingT > 0;
+    const aura = inst.auras && inst.auras[i], gs = inst.glints && inst.glints[i];
+    if (!aura) return;
+    w.trail.base.getWorldPosition(_a); w.trail.tip.getWorldPosition(_b);
+    if (on) { _c.copy(_b).sub(_a).multiplyScalar(0.28).add(_b); aura.push(_a, _c); }
+    aura.update(dt, on);
+    if (gs && (on || this.boost > 0.9)) {
+      gs.visible = true;
+      gs.position.copy(_b);
+      const fl = 0.75 + 0.25 * Math.sin(this.t * 60);
+      gs.scale.setScalar((0.55 + 0.5 * Math.min(1.5, this.boost)) * fl);
+      gs.material.opacity = on ? 1 : Math.min(1, (this.boost - 0.9) * 2);
+      gs.material.rotation = this.t * 3;
+    }
+    if (on) {
+      const fx = this.g.fx, W = inst.W;
+      for (let k = 0; k < 2; k++) { _c.copy(_a).lerp(_b, 0.35 + Math.random() * 0.65); fx.sparkle(_c.x, _c.y, _c.z, Math.random() < 0.6 ? W.color : W.color2, 1.6 + this.boost); }
+    }
+  }
+  // destello en el punto de impacto (con los colores del arma): estallido de luz, onda, rayos, chispas,
+  // un efecto propio de cada arma y un instante de "peso" (sacudida y cámara lenta) para que el golpe se sienta
   impact(x, y, z, k = 1) {
     const W = this.def;
     if (!W) return;
-    const vfx = this.g.vfx;
-    vfx.orb(new THREE.Vector3(x, y, z), { r: 0.2 * k, color: W.color, opacity: 0.8, life: 0.16, grow: 1.6 });
-    vfx.orb(new THREE.Vector3(x, y, z), { r: 0.16 * k, color: 0xffffff, life: 0.12, grow: 1.5 });
+    const vfx = this.g.vfx, fx = this.g.fx, P = new THREE.Vector3(x, y, z);
+    vfx.orb(P.clone(), { r: 0.2 * k, color: W.color, opacity: 0.6, life: 0.16, grow: 1.6 });
+    vfx.orb(P.clone(), { r: 0.14 * k, color: 0xffffff, opacity: 0.7, life: 0.12, grow: 1.5 });
     vfx.ring(x, y, z, { r0: 0.1, r1: 1.3 * k, dur: 0.28, color: W.color2, opacity: 0.8 });
-    for (let i = 0; i < 10 * k; i++) this.g.fx.sparkle(x, y, z, i % 3 ? W.color : W.color2, 3.2);
-    this.boost = Math.max(this.boost, 1.1);
+    for (let i = 0; i < 10 * k; i++) fx.sparkle(x, y, z, i % 3 ? W.color : W.color2, 3.2);
+    const now = this.t;
+    if (now - (this.lastBurst || -9) > 0.06) flashBurst(this.g, P, { color: W.color, color2: W.color2, k: 0.6 * k, streaks: 5, glow: false });
+    this.lastBurst = now; // (el impacto sobre el enemigo ya añade su propio destello)
+    switch (W.id) {
+      case 'katana': // filo ardiente: llamas, brasas y arcos eléctricos azules
+        for (let i = 0; i < 8 * k; i++) { fx.flame(x + (Math.random() - 0.5) * 0.6, y, z + (Math.random() - 0.5) * 0.6, 0.7, 0.2); fx.ember(x, y, z, 1.6); }
+        for (let i = 0; i < 2; i++) vfx.bolt(P.clone(), P.clone().add(new THREE.Vector3((Math.random() - 0.5) * 2.4, Math.random() * 1.6, (Math.random() - 0.5) * 2.4)), { color: 0x6ac8ff, life: 0.14, jag: 0.3, segs: 6 });
+        break;
+      case 'scythe': // guadaña de rayo: relámpagos que saltan del corte
+        for (let i = 0; i < 3; i++) vfx.bolt(P.clone(), P.clone().add(new THREE.Vector3((Math.random() - 0.5) * 3, Math.random() * 2.2, (Math.random() - 0.5) * 3)), { color: i % 2 ? 0xbfeeff : 0x8ad8ff, life: 0.16, jag: 0.35, segs: 7 });
+        vfx.ring(x, y, z, { r0: 0.2, r1: 2 * k, dur: 0.35, color: 0xbfeeff, opacity: 0.7 });
+        break;
+      case 'axe': // hacha de hielo: esquirlas, escarcha y nieve
+        for (let i = 0; i < 8 * k; i++) fx.iceShard(x, y, z, 1.4);
+        for (let i = 0; i < 6; i++) fx.snow(x + (Math.random() - 0.5), y + Math.random(), z + (Math.random() - 0.5));
+        vfx.ring(x, null, z, { r0: 0.3, r1: 2.4 * k, dur: 0.45, color: 0xcff4ff, opacity: 0.7 });
+        break;
+      case 'hammer': // martillo: gemas, rocas y onda en el suelo
+        for (let i = 0; i < 8 * k; i++) fx.gem(x, y, z);
+        for (let i = 0; i < 3; i++) fx.rock(x, y, z);
+        vfx.ring(x, null, z, { r0: 0.4, r1: 2.8 * k, dur: 0.45, color: 0xffc040, opacity: 0.6 });
+        break;
+      case 'spear': // lanza morada: orbe violeta y gemas
+        vfx.orb(P.clone(), { r: 0.35 * k, color: 0xd890ff, life: 0.25, grow: 2.2 });
+        for (let i = 0; i < 6 * k; i++) fx.gem(x, y, z);
+        break;
+      case 'boomerang': // agua: salpicadura y espuma
+        fx.splash(x, y, z, Math.round(12 * k), 1);
+        vfx.ring(x, y, z, { r0: 0.2, r1: 1.8 * k, dur: 0.35, color: 0xbfeaff, opacity: 0.7 });
+        break;
+      case 'disc':
+        vfx.ring(x, y, z, { r0: 0.3, r1: 1.8 * k, dur: 0.3, color: 0xfff0a0, opacity: 0.8 });
+        break;
+    }
+    const g = this.g;
+    if (g.chase) g.chase.shake(0.12 + 0.1 * k);
+    g.slowT = Math.max(g.slowT || 0, 0.045 * k); // "parón" del golpe: se siente el peso del arma
+    this.boost = Math.max(this.boost, 1.4);
   }
   // centro (mundo) de una parte del arma
   partCenter(pt, out = new THREE.Vector3()) {
@@ -494,6 +557,7 @@ export class WeaponSystem {
   /* ---------------- fotograma ---------------- */
   update(dt) {
     this.t += dt;
+    for (const ins of this.inst.values()) for (const gs of ins.glints || []) gs.visible = false; // se encienden solo al atacar
     const p = this.g.player;
     const model = p && p.model;
     // cambio de héroe: el arma del anterior desaparece al instante
@@ -562,6 +626,7 @@ export class WeaponSystem {
       // estela durante los ataques
       if (this.swingT > 0) { w.trail.base.getWorldPosition(_a); w.trail.tip.getWorldPosition(_b); inst.trails[i].push(_a, _b); }
       inst.trails[i].update(dt, this.swingT > 0);
+      this.swingFx(inst, i, w, dt);
       // chispas de energía que se desprenden del arma
       this.sparkT -= dt;
       if (this.sparkT <= 0 && w.glows.length) {
