@@ -4,6 +4,7 @@ import { Skill, DEG, ease, lerp, clamp, V } from './base.js';
 import { terrainH } from '../terrain.js';
 import { ui } from '../ui.js';
 import { douseFires, propsNear, captureProp, dropFlung, wetGround } from './envreact.js';
+import { MirageWard, TsunamiWave, WaterVortex, FoamPool } from './fx4.js';
 
 // PODERES ESPECIALES NUEVOS (3 por héroe; la Zorra Ártica tiene 4).
 // Cada poder es una lista de etapas PREPARACIÓN → EJECUCIÓN → RECUPERACIÓN (como skills/hero.js).
@@ -460,54 +461,70 @@ export class MirageSkill extends Skill {
   build() {
     const d = this.def, pose = this.pose;
     return [
-      { name: 'calor', dur: d.prep, enter: () => this.sfx('shimmer'), tick: (dt, k) => {
+      // ACTIVACIÓN: Halley vibra con el calor, el aire se distorsiona y la arena gira hacia ella
+      { name: 'calor', dur: d.prep, enter: this.enterHeat, tick: (dt, k) => {
         pose.sy = 1 + 0.06 * Math.sin(this.t * 40) * k; pose.rz = 0.05 * Math.sin(this.t * 33) * k; // tiembla con el calor
-        const c = this.center(0.3);
-        this.vfx.sparks(c.x, c.y, c.z, 0xffd890, 2, 1.6);
+        const p = this.p.pos, a = this.t * 14, r = 2.4 * (1 - k) + 0.4;
+        for (let i = 0; i < 2; i++) { const b = a + i * Math.PI; this.g.fx.sparkle(p.x + Math.sin(b) * r, p.y + 0.3 + k * this.p.H * 0.6, p.z + Math.cos(b) * r, i ? 0xc89aff : 0xffd890, 0.6); }
       }, exit: this.spawn },
+      // PROTECCIÓN: los espejismos orbitan a su alrededor y absorben los golpes
       { name: 'espejismos', dur: d.life, tick: this.tickLive },
+      // DESACTIVACIÓN: los espejismos vuelven a ella y se desvanecen
+      { name: 'disipar', dur: 0.5, enter: () => { if (this.ward) this.ward.end(); this.sfx('shimmer'); }, tick: (dt) => { if (this.ward) this.ward.update(dt); }, exit: this.fadeOut },
     ];
+  }
+  enterHeat() {
+    const p = this.p.pos;
+    this.sfx('shimmer');
+    this.vfx.ring(p.x, null, p.z, { r0: 3.2, r1: 0.6, dur: this.def.prep, color: 0xc89aff, opacity: 0.6 });
+    this.vfx.ring(p.x, null, p.z, { r0: 2.4, r1: 0.4, dur: this.def.prep, color: 0xffd890, opacity: 0.5 });
   }
   spawn() {
     const d = this.def, p = this.p;
-    this.copies = [];
-    for (let i = 0; i < d.copies; i++) {
-      const a = p.facing + (d.copies > 1 ? lerp(-d.spread, d.spread, i / (d.copies - 1)) : 0) * DEG;
-      let x = p.pos.x + Math.sin(a) * d.dist, z = p.pos.z + Math.cos(a) * d.dist;
-      const y = p.floorY(x, z, p.pos.y + 2);
-      const m = this.v2.mirage(p.model, V(x, y, z), p.facing, { life: d.life });
-      this.track(m);
-      this.copies.push(m);
-      this.vfx.sand(x, y + 0.3, z, 3);
-      this.vfx.ring(x, null, z, { r0: 0.2, r1: 1.8, dur: 0.5, color: 0xffd890 });
-    }
-    ui.banner('find', '🪞', 'Vuelve a pulsar para saltar a un espejismo');
+    this.ward = new MirageWard(this.g, p, { n: d.copies, radius: d.radius, life: d.life });
+    this.track({ kill: () => { if (this.ward) { this.ward.dispose(); this.ward = null; } } });
+    p.mirageGuard = this;
+    const q = p.pos;
+    this.sfx('warp');
+    this.vfx.sand(q.x, q.y + 0.3, q.z, 4);
+    this.vfx.ring(q.x, null, q.z, { r0: 0.4, r1: d.radius + 1.2, dur: 0.5, color: 0xffd890 });
+    this.vfx.ring(q.x, null, q.z, { r0: 0.3, r1: d.radius + 0.6, dur: 0.4, color: 0xc89aff });
+    if (this.v2) this.v2.shell(new THREE.Vector3(q.x, q.y + p.H * 0.5, q.z), { r: d.radius, color: 0xc89aff, rim: 0xffe6b0, opacity: 0.5, life: 0.35 });
+    ui.banner('find', '🪞', `Los espejismos absorben ${d.copies} golpes · vuelve a pulsar para saltar a uno`);
   }
   tickLive(dt) {
-    for (const m of this.copies) {
-      if (!m.alive) continue;
-      const q = m.pos;
-      if (Math.random() < 0.5) this.vfx.sparks(q.x + rnd(-0.4, 0.4), q.y + rnd(0, 0.8), q.z + rnd(-0.4, 0.4), 0xffe0a0, 1, 0.8); // arena brillante
-      if (Math.random() < 0.12) this.vfx.ring(q.x, null, q.z, { r0: 0.3, r1: 1.4, dur: 0.6, color: 0xffd890, opacity: 0.45 }); // ondas de calor
-      if (Math.random() < 0.15) this.g.fx.mist(q.x + rnd(-0.3, 0.3), q.y + 0.2, q.z + rnd(-0.3, 0.3), 0xffe6b0, 0.5);
-    }
-    if (!this.copies.some((m) => m.alive)) this.endStage();
+    const w = this.ward;
+    if (!w) { this.endStage(); return; }
+    w.update(dt);
+    if (w.alive.length) this.p.evadeT = Math.max(this.p.evadeT, 0.15); // ESCUDO: mientras quede un espejismo, Halley no recibe daño
+    else this.endStage();
   }
-  get canRecast() { return this.stageName === 'espejismos' && this.copies && this.copies.some((m) => m.alive); }
+  // El juego avisa de un golpe bloqueado: un espejismo se interpone, lo absorbe y estalla
+  absorb(from) {
+    if (this.stageName !== 'espejismos' || !this.ward) return false;
+    if (!this.ward.absorb(from)) return false;
+    this.sfx('warp');
+    return true;
+  }
+  fadeOut() {
+    const q = this.p.pos;
+    this.vfx.ring(q.x, null, q.z, { r0: 0.3, r1: 2.2, dur: 0.4, color: 0xffd890, opacity: 0.6 });
+    this.vfx.sparks(q.x, q.y + this.p.H * 0.5, q.z, 0xe8c8ff, 10, 2);
+  }
+  get canRecast() { return this.stageName === 'espejismos' && this.ward && this.ward.alive.length > 0; }
   // teletransporte: el héroe desaparece en una distorsión y aparece en el espejismo, que estalla en arena
   recast() {
     const d = this.def, p = this.p;
-    const m = this.copies.find((c) => c.alive);
-    if (!m) return false;
+    const tgt = this.ward && this.ward.takeForBlink();
+    if (!tgt) return false;
     const from = p.pos.clone();
     this.vfx.sand(from.x, from.y + 0.3, from.z, 4);
     this.vfx.ring(from.x, null, from.z, { r0: 0.3, r1: 2.4, dur: 0.4, color: 0xffd890 });
-    this.vfx.strip(from, m.pos, { width: 0.6, color: 0xffe0a0, opacity: 0.35, life: 0.5 });
-    p.pos.copy(m.pos);
-    p.facing = m.group.rotation.y;
+    this.vfx.strip(from, tgt.pos, { width: 0.6, color: 0xffe0a0, opacity: 0.35, life: 0.5 });
+    p.pos.copy(tgt.pos);
+    p.facing = tgt.facing;
     p.vx = p.vz = 0; p.vy = 0;
     p.evadeT = Math.max(p.evadeT, 0.8); // ESCUDO: al saltar al espejismo esquiva los golpes
-    m.kill();
     this.sfx('warp');
     const q = p.pos;
     this.vfx.sand(q.x, q.y + 0.3, q.z, 8);
@@ -515,6 +532,9 @@ export class MirageSkill extends Skill {
     this.vfx.sparks(q.x, q.y + 0.5, q.z, 0xfff0c0, 14, 3);
     for (const t of this.combat.inCircle(q.x, q.z, d.burstRadius)) { this.combat.blind(t, d.blindT); this.hit(t, d.damage); }
     return true;
+  }
+  cleanup() {
+    if (this.p.mirageGuard === this) this.p.mirageGuard = null;
   }
 }
 
@@ -944,6 +964,7 @@ export class TsunamiSkill extends Skill {
     if (tgt) this.face(tgt.pos.x, tgt.pos.z);
     this.dir = this.fwd;
     this.o = V(p.pos.x - this.dir.x * 3.5, 0, p.pos.z - this.dir.z * 3.5); // la ola nace DETRÁS de la nutria
+    this.vh = d.visH || d.height; // altura visual de la ola (la zona de impacto sigue usando d.height)
     this.start();
     return true;
   }
@@ -951,10 +972,10 @@ export class TsunamiSkill extends Skill {
     const d = this.def, pose = this.pose;
     return [
       { name: 'acumulacion', dur: d.gatherT, enter: this.enterGather, tick: this.tickGather },
-      { name: 'formacion', dur: d.formT, tick: this.tickForm },
+      { name: 'formacion', dur: d.formT, enter: this.enterForm, tick: this.tickForm },
       { name: 'avance', dur: d.travelT, enter: this.enterTravel, tick: this.tickTravel },
       { name: 'rompiente', dur: d.crashT, enter: this.enterCrash, tick: this.tickCrash },
-      { name: 'recuperacion', dur: d.recover, enter: () => this.lock(false), tick: (dt, k) => { pose.dy = lerp(pose.dy, 0, k); pose.rx = lerp(pose.rx, 0, k); pose.spin = 0; } },
+      { name: 'recuperacion', dur: d.recover, enter: () => this.lock(false), tick: (dt, k) => { pose.dy = lerp(pose.dy, 0, k); pose.rx = lerp(pose.rx, 0, k); pose.rz = 0; pose.spin = 0; } },
     ];
   }
   enterGather() {
@@ -962,7 +983,14 @@ export class TsunamiSkill extends Skill {
     this.lock(true);
     this.cam0 = { dist: ch.distTarget, pitch: ch.pitch };
     ch.distTarget = Math.max(ch.distTarget, 13); // la cámara se eleva para ver formarse la ola detrás de la nutria
-    this.wave = this.track(this.v2.wave(this.o, this.dir, { width: d.width, life: d.gatherT + d.formT + d.travelT + d.crashT + 0.5 }));
+    // la ola (cuerpo de agua con volumen, cortina de espuma y lengua de espuma)
+    const wv = this.wave = new TsunamiWave(this.o, this.dir, { width: d.width });
+    this.vfx.group.add(wv.group);
+    this.track({ kill: () => { this.vfx.group.remove(wv.group); wv.dispose(); } });
+    // columna de agua que gira alrededor de la nutria mientras acumula energía
+    const vx = this.vortex = new WaterVortex(1.5, Math.max(2.6, this.p.H * 2.2));
+    this.vfx.group.add(vx.group);
+    this.vortexH = this.track({ kill: () => { if (this.vortex) { this.vfx.group.remove(vx.group); vx.dispose(); this.vortex = null; } } });
     this.sfx('wave');
     this.hitSet = new Set();
   }
@@ -972,31 +1000,57 @@ export class TsunamiSkill extends Skill {
     if (this.carried && this.carried.length) { dropFlung(this.g, this.carried, 6); this.carried = []; } // si se interrumpe, lo arrastrado cae donde esté
     super.dispose();
   }
+  // PREPARACIÓN: la nutria se agacha y alza los brazos; el agua gira a su alrededor y corre hacia atrás, donde la ola empieza a crecer
   tickGather(dt, k) {
-    const d = this.def, pose = this.pose;
+    const d = this.def, pose = this.pose, p = this.p, vh = this.vh;
     this.liftCam(dt);
-    pose.rx = -0.35 * k; pose.dy = 0.3 * k; // alza los brazos, el agua se acumula detrás
-    this.wave.shape(d.height * 0.35 * ease(k), 0, 0);
+    pose.rx = -0.35 * k; pose.dy = -0.12 * Math.sin(Math.PI * Math.min(1, k * 1.6)) + 0.3 * k * k; // se agacha y luego se eleva
+    pose.rz = 0.035 * Math.sin(this.t * 38) * k; // tiembla de pura fuerza
+    this.wave.shape(vh * 0.3 * ease(k), 0, 0, 0.3 * k);
+    this.wave.update(dt, { foam: 0.6 + 0.4 * k });
+    if (this.vortex) this.vortex.update(dt, k, p.pos.x, p.pos.y, p.pos.z);
     if (Math.random() < 0.8) { const s = rnd(-0.5, 0.5) * d.width; this.vfx.splash(this.o.x - this.dir.z * s, terrainH(this.o.x, this.o.z) + 0.2, this.o.z + this.dir.x * s, 2, 0.6); }
+    // gotas y destellos que suben en espiral alrededor de la nutria
+    for (let i = 0; i < 2; i++) {
+      const a = this.t * 9 + i * Math.PI, r = lerp(2.6, 1.1, k);
+      this.g.fx.spray(p.pos.x + Math.cos(a) * r, p.pos.y + 0.1, p.pos.z + Math.sin(a) * r, -Math.cos(a) * 2, 3 + k * 3, -Math.sin(a) * 2, 0.9);
+    }
+    if (Math.random() < 0.5) this.g.fx.sparkle(p.pos.x + rnd(-1, 1), p.pos.y + rnd(0.3, p.H * 1.6), p.pos.z + rnd(-1, 1), 0x9ff0ff, 1.2);
     // el agua corre por el suelo hacia la ola
-    if (Math.random() < 0.5) { const p = this.p; this.g.fx.spray(p.pos.x + rnd(-2, 2), p.pos.y + 0.1, p.pos.z + rnd(-2, 2), -this.dir.x * 4, 0.5, -this.dir.z * 4, 1); }
+    if (Math.random() < 0.6) this.g.fx.spray(p.pos.x + rnd(-2, 2), p.pos.y + 0.1, p.pos.z + rnd(-2, 2), -this.dir.x * 5, 0.5, -this.dir.z * 5, 1);
+    this.shake(0.03 * k);
   }
+  enterForm() {
+    const p = this.p.pos;
+    this.shake(0.15);
+    this.vfx.ring(p.x, null, p.z, { r0: 0.6, r1: 4.5, dur: 0.45, color: 0x8ae8ff });
+    this.vfx.splash(p.x, p.y + 0.4, p.z, 18, 1.2);
+  }
+  // FORMACIÓN: la columna estalla hacia atrás y la ola se alza enorme detrás de la nutria
   tickForm(dt, k) {
-    const d = this.def;
-    this.pose.rx = -0.35; this.pose.dy = 0.3 + 0.2 * k;
+    const vh = this.vh, p = this.p;
+    this.pose.rx = -0.35; this.pose.dy = 0.3 + 0.2 * k; this.pose.rz = 0.02 * Math.sin(this.t * 40);
     this.liftCam(dt);
-    this.wave.shape(d.height * lerp(0.35, 1, back(k)), 0.4 * k, 0);
+    if (this.vortex) { this.vortex.update(dt, 1 - k, p.pos.x, p.pos.y, p.pos.z); this.vortex.group.scale.set(1 + k * 1.5, 1 - k * 0.6, 1 + k * 1.5); }
+    this.wave.shape(vh * lerp(0.3, 1, back(k)), 0.45 * k, 0, k);
+    this.wave.update(dt, { foam: 1 });
+    // chorros que saltan de la nutria a la ola
+    for (let i = 0; i < 3; i++) this.g.fx.spray(p.pos.x + rnd(-0.8, 0.8), p.pos.y + rnd(0.5, 1.5), p.pos.z + rnd(-0.8, 0.8), -this.dir.x * rnd(5, 9), rnd(4, 7), -this.dir.z * rnd(5, 9), 1.2);
     this.crest(0.6);
   }
   enterTravel() {
-    this.shake(0.2); this.pose.spin = 0;
-    this.carried = []; this.doused = 0; this.lastWet = 0; this.ringT = 0;
+    this.shake(0.25); this.pose.spin = 0;
+    this.sfx('boom');
+    this.vortexH.kill();
+    this.carried = []; this.doused = 0; this.lastWet = 0; this.ringT = 0; this.mistT = 0;
   }
+  // AVANCE: la ola arrasa hacia delante; la nutria cabalga los primeros metros
   tickTravel(dt, k) {
-    const d = this.def, pose = this.pose;
-    pose.rx = 0.25; pose.dy = 0.5;
+    const d = this.def, pose = this.pose, vh = this.vh;
+    pose.rx = 0.25; pose.dy = 0.5; pose.rz = 0;
     const dist = d.length * ease(k);
-    this.wave.shape(d.height * (1 + 0.05 * Math.sin(this.t * 6)), 0.4 + 0.5 * k, dist);
+    this.wave.shape(vh * (1 + 0.05 * Math.sin(this.t * 6)), 0.45 + 0.5 * k, dist, 1);
+    this.wave.update(dt, { foam: 1 });
     this.crest(1);
     // la nutria cabalga la ola los primeros metros
     if (k < 0.35) { const f = this.wave.front; this.p.pos.x = lerp(this.p.pos.x, f.x - this.dir.x * 1.2, 0.15); this.p.pos.z = lerp(this.p.pos.z, f.z - this.dir.z * 1.2, 0.15); }
@@ -1005,16 +1059,27 @@ export class TsunamiSkill extends Skill {
     for (const t of this.combat.targets()) {
       const px = t.pos.x - f.x, pz = t.pos.z - f.z, along = px * ux + pz * uz, side = Math.abs(-px * uz + pz * ux);
       if (along < 1.5 && along > -d.height * 1.5 && side < d.width * 0.5 + t.radius) {
-        if (!this.hitSet.has(t)) { this.hitSet.add(t); this.hit(t, d.damage); this.vfx.splash(t.pos.x, t.pos.y + 1, t.pos.z, 16, 1.4); this.sfx('stick'); }
+        if (!this.hitSet.has(t)) { this.hitSet.add(t); this.hit(t, d.damage); this.impact(t); }
         this.shove(t, ux, uz, d.carry, dt);
       }
     }
-    this.shake(0.06);
+    this.shake(0.05);
     this.worldTick(dt, dist);
+  }
+  // IMPACTO: el agua revienta contra el enemigo
+  impact(t) {
+    const q = t.pos, ux = this.dir.x, uz = this.dir.z;
+    this.vfx.splash(q.x, q.y + 1, q.z, 22, 1.6);
+    for (let i = 0; i < 10; i++) this.g.fx.spray(q.x, q.y + rnd(0.5, 2), q.z, ux * rnd(3, 8) + rnd(-2, 2), rnd(3, 7), uz * rnd(3, 8) + rnd(-2, 2), 1.3);
+    for (let i = 0; i < 4; i++) this.g.fx.mist(q.x + rnd(-1, 1), q.y + rnd(0.5, 2), q.z + rnd(-1, 1), 0xffffff, 1.6);
+    this.vfx.ring(q.x, null, q.z, { r0: 0.5, r1: 3.2, dur: 0.4, color: 0xcfefff });
+    if (this.v2) this.v2.shell(new THREE.Vector3(q.x, q.y + 1, q.z), { r: 1.4, color: 0x6ad0ff, rim: 0xffffff, opacity: 0.6, life: 0.25 });
+    this.shake(0.14);
+    this.sfx('stick');
   }
   // LA OLA EN EL ESCENARIO: apaga los incendios que cruza, arrastra escombros y troncos, y deja el suelo mojado
   worldTick(dt, dist) {
-    const d = this.def, f = this.wave.front, ux = this.dir.x, uz = this.dir.z, g = this.g;
+    const d = this.def, f = this.wave.front, ux = this.dir.x, uz = this.dir.z, g = this.g, vh = this.vh;
     this.doused += douseFires(g, f.x, f.z, d.width * 0.55);
     for (const pr of propsNear(g, f.x, f.z, d.width * 0.5)) {
       const it = captureProp(g, pr);
@@ -1027,7 +1092,7 @@ export class TsunamiSkill extends Skill {
     }
     for (const it of this.carried) { // los objetos ruedan dentro de la ola, a su misma velocidad
       const m = it.mesh, x = f.x - uz * it.side - ux * 0.8, z = f.z + ux * it.side - uz * 0.8;
-      m.position.set(x, terrainH(x, z) + d.height * it.h + Math.sin(this.t * 5 + it.side) * 0.3, z);
+      m.position.set(x, terrainH(x, z) + vh * it.h + Math.sin(this.t * 5 + it.side) * 0.3, z);
       m.rotation.x += it.spin.x * dt; m.rotation.z += it.spin.z * dt;
     }
     if (dist - this.lastWet > 3.5) { // estela mojada que se seca poco a poco
@@ -1035,17 +1100,21 @@ export class TsunamiSkill extends Skill {
       for (const s of [-0.22, 0.22]) { const x = f.x - uz * (s + rnd(-0.08, 0.08)) * d.width - ux * 2, z = f.z + ux * (s + rnd(-0.08, 0.08)) * d.width - uz * 2; wetGround(g, x, z, d.width * rnd(0.32, 0.4), rnd(8, 11)); }
     }
     this.ringT -= dt;
-    if (this.ringT <= 0) { this.ringT = 0.22; this.vfx.ring(f.x, null, f.z, { r0: 0.6, r1: d.width * 0.45, dur: 0.45, color: 0xa8e4ff }); } // onda expansiva a ras de suelo
+    if (this.ringT <= 0) { this.ringT = 0.22; this.vfx.ring(f.x + ux * 1.5, null, f.z + uz * 1.5, { r0: 0.6, r1: d.width * 0.45, dur: 0.45, color: 0xa8e4ff }); } // onda expansiva a ras de suelo
+    // bruma que queda flotando detrás de la cresta
+    this.mistT -= dt;
+    if (this.mistT <= 0) { this.mistT = 0.09; const s = rnd(-0.45, 0.45) * d.width, x = f.x - uz * s - ux * vh * 0.8, z = f.z + ux * s - uz * vh * 0.8; g.fx.mist(x, terrainH(x, z) + vh * rnd(0.5, 1.1), z, 0xeaf8ff, 1.6); }
   }
   crest(k) { // espuma, salpicaduras y burbujas en la cresta
-    const d = this.def, f = this.wave.front, ux = this.dir.x, uz = this.dir.z;
-    for (let i = 0; i < 4; i++) {
-      const s = rnd(-0.5, 0.5) * d.width, x = f.x - uz * s, z = f.z + ux * s, y = terrainH(x, z) + d.height * rnd(0.7, 1);
-      this.g.fx.spray(x, y, z, ux * 4 * k, rnd(1, 3), uz * 4 * k, 1.4);
-      if (Math.random() < 0.3) this.g.fx.mist(x, y, z, 0xffffff, 1.2);
-      if (Math.random() < 0.3) this.g.fx.sparkle(x - ux * 2, y - d.height * 0.5, z - uz * 2, 0xbfeaff, 0.6); // burbujas
+    const ux = this.dir.x, uz = this.dir.z, vh = this.vh, c = this._c || (this._c = new THREE.Vector3());
+    for (let i = 0; i < 6; i++) {
+      this.wave.crestAt(rnd(-0.48, 0.48), c);
+      this.g.fx.spray(c.x, c.y, c.z, ux * rnd(3, 6) * k, rnd(1.5, 4), uz * rnd(3, 6) * k, 1.5);
+      if (Math.random() < 0.35) this.g.fx.mist(c.x, c.y + 0.3, c.z, 0xffffff, 1.5);
+      if (Math.random() < 0.3) this.g.fx.sparkle(c.x - ux * 2, c.y - vh * 0.5, c.z - uz * 2, 0xbfeaff, 0.6); // burbujas
     }
   }
+  // ROMPIENTE: la ola se curva, cae y estalla en espuma
   enterCrash() {
     this.sfx('boom'); this.shake(0.35);
     const f = this.wave.front, ux = this.dir.x, uz = this.dir.z, g = this.g, d = this.def;
@@ -1059,11 +1128,17 @@ export class TsunamiSkill extends Skill {
       ui.banner('good', `💧 ¡El tsunami apaga ${this.doused} ${this.doused > 1 ? 'focos' : 'foco'}!`, `+${30 * this.doused} puntos`);
       this.sfx('chime');
     }
+    // charco de espuma que se queda en el suelo y se deshace poco a poco
+    const pool = new FoamPool(f.x + ux * 2, f.z + uz * 2, d.width * 0.55, this.dir), life = 3;
+    pool.mesh.userData.own = true;
+    this.vfx.add(pool.mesh, life, (it, dt) => { pool.update(dt, it.t / life); if (it.t + dt >= life) pool.geo.dispose(); });
+    for (let i = 0; i < 10; i++) { const s = rnd(-0.5, 0.5) * d.width, x = f.x - uz * s + ux * 1.5, z = f.z + ux * s + uz * 1.5; g.fx.mist(x, terrainH(x, z) + rnd(0.5, 2.5), z, 0xffffff, 2.6); }
   }
   tickCrash(dt, k) { // la ola cae y se deshace en espuma
-    const d = this.def;
-    this.wave.shape(d.height * (1 - ease(k)) + 0.01, 0.9 + 0.3 * k, d.length);
-    this.wave.mat.opacity = 0.88 * (1 - k);
+    const d = this.def, vh = this.vh;
+    this.wave.shape(vh * (1 - ease(k)) + 0.01, 0.95 + 0.45 * k, d.length + k * 2, 1 - k);
+    this.wave.setOpacity(1 - k);
+    this.wave.update(dt, { foam: 1 + k });
     const f = this.wave.front;
     for (let i = 0; i < 6; i++) { const s = rnd(-0.5, 0.5) * d.width; this.vfx.splash(f.x - this.dir.z * s, terrainH(f.x, f.z) + 0.3, f.z + this.dir.x * s, 3, 1.4); }
     if (k < 0.1) this.vfx.ring(f.x, null, f.z, { r0: 1, r1: d.width * 0.7, dur: 0.6, color: 0xcfefff });

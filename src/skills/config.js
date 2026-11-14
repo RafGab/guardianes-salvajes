@@ -57,10 +57,11 @@ export const HERO_SKILLS = {
       earShake: 0.22,               // exageración del movimiento de las orejas (rad)
       clearsObstacles: true,        // despeja obstáculos ligeros como el viento
     },
-    // ESPEJISMOS: crea copias de calor; vuelve a pulsar para teletransportarte a la siguiente (la copia estalla en arena)
+    // ESPEJISMOS (escudo): copias ilusorias que orbitan alrededor de Halley; cada una absorbe un golpe y estalla.
+    // Vuelve a pulsar para teletransportarte a una (la copia estalla en arena y ciega)
     mirage: {
       id: 'mirage', name: 'Espejismos', icon: '🪞', cd: 11,
-      prep: 0.35, copies: 3, dist: 7.5, spread: 55, life: 6.5, // número, distancia, abanico (grados) y vida de las copias
+      prep: 0.45, copies: 3, radius: 2.3, life: 6.5, // número de copias (= golpes que absorbe), radio de la órbita y duración
       burstRadius: 3.6, blindT: 2.6, damage: 6,                // estallido de arena al usar una copia
     },
     // VUELO DE OREJAS: despega con sus enormes orejas, vuela un tiempo limitado
@@ -188,7 +189,8 @@ export const HERO_SKILLS = {
     tsunami: {
       id: 'tsunami', name: 'Tsunami', icon: '🌊', cd: 16,
       gatherT: 1.0, formT: 0.6, travelT: 2.3, crashT: 0.6, recover: 0.4,
-      length: 22, width: 12, height: 5,    // recorrido, anchura y altura de la ola
+      length: 22, width: 12, height: 5,    // recorrido, anchura y altura de la ola (zona de impacto)
+      visH: 6.5,                           // altura visual de la ola
       damage: 18, carry: 13,               // daño (una vez por enemigo) y arrastre (m/s)
     },
     // MAELSTROM: remolino gigante con núcleo oscuro que absorbe a los enemigos

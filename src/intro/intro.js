@@ -22,11 +22,11 @@ const IMG = '/img/intro/';
 const HERO = {
   lira: { face: [0.5, 0.235], s: 0.95 },
   nilo: { face: [0.5, 0.21], s: 0.9 },
-  halley: { face: [0.5, 0.27], s: 0.84 },
+  halley: { face: [0.5, 0.25], s: 0.84 },
   ambar: { face: [0.44, 0.15], s: 1.02 },
   kyra: { face: [0.5, 0.2], s: 0.97 },
   jago: { face: [0.49, 0.155], s: 1.0 },
-  kairo: { face: [0.575, 0.1], s: 1.05 },
+  kairo: { face: [0.5, 0.19], s: 1.05 },
 };
 const ORDER = ['nilo', 'halley', 'ambar', 'kyra', 'jago', 'kairo', 'lira'];
 const ease = (k) => k * k * (3 - 2 * k);
@@ -548,7 +548,7 @@ export class CinematicIntro {
         const kk = easeOut(clamp01(lt / 1.2));
         set([-10, 5.4, 13], [-4, 6.5, 0], [0.8, 6.2, 12.5], [0.3, 6.8, 0], kk); // barrido rápido que se frena sobre Kairo
         set([P.x, P.y, P.z], [L.x, L.y, L.z], [0.6, 6.6, 10.5], [0.3, 7.2, 0], easeInOut(clamp01((lt - 1.2) / (len - 1.2))) * 0.6);
-        const u = heroU('kairo'); u.uExp.value = inOut(0.15, 0.25); card('kairo').refl.u.uExp.value = u.uExp.value;
+        const u = heroU('kairo'); u.uExp.value = inOut(0.15, 0.25) * 0.8; card('kairo').refl.u.uExp.value = u.uExp.value; // sus llamas ya son muy luminosas
         u.uRim.value = 0.55 + 0.25 * Math.sin(t * 23) * Math.sin(t * 7); u.uSweep.value = 1.6 - clamp01(lt / 1.6) * 2.2; u.uSweepCol.value.set('#ffd080');
         focus = 12;
         break;

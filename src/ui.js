@@ -12,7 +12,7 @@ import { hpTier } from './health.js';
 const $ = (id) => document.getElementById(id);
 export const HERO_ICON = { jago: '🐆', kairo: '🦎', lira: '🐈', halley: '🦊', nilo: '🦦', kyra: '❄️', ambar: '🦅' };
 const fmtH = (id) => `${HERO_SCALE[id].height.toFixed(2).replace('.', ',')} m`;
-export const HERO_FACE = (id) => `/img/heroes/${id}.jpg?v=h25`; // ?v: los retratos nuevos sustituyen a los guardados en caché
+export const HERO_FACE = (id) => `/img/heroes/${id}.jpg?v=h26`; // ?v: los retratos nuevos sustituyen a los guardados en caché
 
 const SCREENS = ['loading', 'title', 'missions', 'select', 'team', 'pause', 'how', 'end', 'reveal', 'inventory', 'levelintro'];
 

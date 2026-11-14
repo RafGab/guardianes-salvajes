@@ -301,8 +301,7 @@ export class Player {
 
     // velocidad objetivo
     let maxSpeed = st.speed * (inp.sprint ? 1.3 : 1);
-    if (this.swimming) maxSpeed = st.swim * (inp.sprint ? 1.25 : 1);
-    else if (this.wading) maxSpeed *= 0.72;
+    // el agua no frena: nadando o vadeando, cada héroe conserva su velocidad propia (st.speed)
     if (surfing) maxSpeed = st.speed * (this.hero.id === 'halley' ? 1.8 : 1.55);
     if (this.carrying.length) maxSpeed *= 1 - Math.min(0.08 * this.carrying.length, 0.2);
     maxSpeed *= this.env.speedMul * (1 + (this.boostMax - 1) * this.boostK) * (this.slowT > 0 ? this.slowF : 1) * this.speedBuff;
@@ -315,7 +314,7 @@ export class Player {
     const tvx = dx * maxSpeed + this.driftX, tvz = dz * maxSpeed + this.driftZ; // drift: tirón externo (remolino, viento) que se aplica cada fotograma
     this.driftX = this.driftZ = 0;
     const slip = this.grip || this.climbT > 0 ? 1 : this.env.slip;
-    const accel = this.dashT > 0 ? 0 : fly ? 5.5 : this.grounded ? 16 * slip : this.swimming ? 5 : 4.5;
+    const accel = this.dashT > 0 ? 0 : fly ? 5.5 : this.grounded ? 16 * slip : this.swimming ? 14 : 4.5;
     if (this.dashT <= 0) {
       this.vx = damp(this.vx, tvx, accel, dt);
       this.vz = damp(this.vz, tvz, accel, dt);
@@ -370,9 +369,10 @@ export class Player {
     if (this.vy < -40) this.vy = -40;
 
     // deriva por corriente
-    if (this.depth > 0.25 && !surfing) {
+    // solo en agua profunda la corriente arrastra un poco (suave); vadeando no altera el movimiento
+    if (this.swimming && !surfing) {
       const f = w.flowAt(pos.x, pos.z);
-      const k = smoothstep(0.25, 1.4, this.depth) * (this.swimming ? 1 : 0.8);
+      const k = 0.5;
       this.flow.set(f.x * k, 0, f.z * k);
       dx += 0;
       pos.x += this.flow.x * dt;
