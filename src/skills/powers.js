@@ -1146,66 +1146,125 @@ export class TsunamiSkill extends Skill {
 }
 
 /* ====================================================================== */
-/*  NUTRIA — MAELSTROM (escudo de agua en remolino)                        */
+/*  NUTRIA — MAELSTROM (escudo de agua + remolino de absorción)            */
 /* ====================================================================== */
 export class MaelstromSkill extends Skill {
-  static background = true; // escudo: la Nutria puede moverse y atacar dentro de él
+  static background = true;
   begin() {
+    const p = this.p;
+    this.at = V(p.pos.x, 0, p.pos.z);
+    this.at.y = p.floorY(this.at.x, this.at.z, p.pos.y + 1);
     this.start();
     return true;
   }
   build() {
     const d = this.def, pose = this.pose;
     return [
-      // ACTIVACIÓN: la Nutria gira sobre sí misma y el agua sube del suelo en espiral hasta cerrar la cúpula
+      // ACTIVACIÓN: se abre el remolino bajo la Nutria, que se eleva girando mientras el agua cierra la cúpula
       { name: 'formar', dur: d.prep, enter: this.enterForm, tick: (dt, k) => {
         pose.spin = back(k) * TAU; pose.rx = -0.15 * Math.sin(k * Math.PI);
+        this.hover(dt, back(k));
         if (this.shield) this.shield.update(dt, { grow: back(k) });
         this.p.evadeT = Math.max(this.p.evadeT, 0.15);
       }, exit: this.closeDome },
-      // PROTECCIÓN: la cúpula la sigue, bloquea los golpes, desvía proyectiles y empuja a quien se acerca
+      // PROTECCIÓN: la Nutria flota sobre el remolino dentro de la cúpula; el remolino absorbe todo hacia su centro
       { name: 'escudo', dur: d.exec, enter: () => { this.pose.spin = 0; this.pose.rx = 0; }, tick: this.tickShield },
-      // RUPTURA: el agua cae desde arriba y sale en una ola que empuja a los enemigos
-      { name: 'romper', dur: d.recover, enter: this.enterBreak, tick: (dt, k) => { if (this.shield) this.shield.update(dt, { fall: back(k) }); } },
+      // RUPTURA: la cúpula cae, el remolino colapsa y lo absorbido sale despedido
+      { name: 'romper', dur: d.recover, enter: this.enterBreak, tick: (dt, k) => {
+        this.hover(dt, 1 - back(k));
+        if (this.shield) this.shield.update(dt, { fall: back(k) });
+      } },
     ];
   }
+  // la Nutria queda suspendida en el aire sobre el centro del remolino, sostenida por su energía
+  hover(dt, k) {
+    const p = this.p, d = this.def;
+    p.pos.x = this.at.x; p.pos.z = this.at.z;
+    p.pos.y = this.at.y + d.hover * k + 0.12 * k * Math.sin((this.tt = (this.tt || 0) + dt) * 3);
+    p.vx = p.vz = p.vy = 0;
+  }
   enterForm() {
-    const p = this.p, q = p.pos, d = this.def;
+    const p = this.p, d = this.def, at = this.at;
+    this.script(true);
+    // EL REMOLINO ORIGINAL: embudo en espiral con paredes de agua y núcleo oscuro bajo la Nutria
+    this.wp = this.v2.whirlpool(at.x, at.z, { r: d.radius, life: d.prep + d.exec + d.recover, y: at.y });
+    this.track({ kill: () => this.vfx.kill(this.wp.it) });
     this.shield = new WaterShield(this.g, p, { radius: d.shieldR, height: Math.max(2.3, p.H * d.shieldH) });
     this.track({ kill: () => { if (this.shield) { this.shield.dispose(); this.shield = null; } } });
     p.waterGuard = this;
     this.sfx('vortex');
-    this.vfx.ring(q.x, null, q.z, { r0: d.shieldR * 2.2, r1: d.shieldR * 0.9, dur: d.prep, color: 0x5ac8ff, opacity: 0.6 });
-    this.vfx.splash(q.x, q.y + 0.2, q.z, 16, 1.1);
+    this.vfx.splash(at.x, at.y + 0.3, at.z, 20, 1.4);
+    this.vfx.ring(at.x, null, at.z, { r0: 0.5, r1: d.radius, dur: 0.6, color: 0x5ac8ff });
   }
   closeDome() {
     const p = this.p, q = p.pos, d = this.def;
     this.sfx('chime');
-    this.vfx.ring(q.x, null, q.z, { r0: d.shieldR * 0.8, r1: d.shieldR * 2.4, dur: 0.45, color: 0xbfeaff });
+    this.vfx.ring(this.at.x, null, this.at.z, { r0: d.shieldR * 0.8, r1: d.shieldR * 2.4, dur: 0.45, color: 0xbfeaff });
     if (this.v2) this.v2.shell(new THREE.Vector3(q.x, q.y + p.H * 0.6, q.z), { r: d.shieldR * 1.05, color: 0x8ad8ff, rim: 0xffffff, opacity: 0.5, life: 0.3 });
-    ui.banner('find', '🌀', 'Escudo de agua: bloquea los golpes y aparta a los enemigos');
+    ui.banner('find', '🌀', 'Maelstrom: el escudo bloquea los golpes y el remolino lo absorbe todo');
   }
   tickShield(dt) {
-    const d = this.def, p = this.p, q = p.pos, c = this.combat, sh = this.shield;
+    const d = this.def, p = this.p, c = this.combat, sh = this.shield, at = this.at;
     if (!sh) { this.endStage(); return; }
+    this.hover(dt, 1);
     const left = d.exec - this.t;
     sh.update(dt, { grow: 1, warn: left < 1 ? 1 - left : 0 });
     p.evadeT = Math.max(p.evadeT, 0.15);           // ESCUDO: los golpes no le hacen daño
-    c.deflect(q.x, q.z, d.shieldR + 0.4);          // los proyectiles rebotan en la cúpula
-    // el agua aparta a los enemigos que tocan la cúpula (los esbirros salen despedidos)
+    c.deflect(p.pos.x, p.pos.z, d.shieldR + 0.4);  // los proyectiles rebotan en la cúpula
+    this.absorbWorld(dt);
+    // SUCCIÓN: los enemigos giran en espiral hacia el centro; en el núcleo oscuro los esbirros desaparecen
     if (!this.touch) this.touch = new Map();
     for (const t of c.targets()) {
-      const dx = t.pos.x - q.x, dz = t.pos.z - q.z, dist = Math.hypot(dx, dz);
-      if (dist > d.shieldR + t.radius + 0.2) continue;
-      if (t.heavy) c.push(t, dx || 0.1, dz, d.repel * dt * 1.5);
-      else this.shove(t, dx || 0.1, dz, d.repel, dt);
+      const dx = at.x - t.pos.x, dz = at.z - t.pos.z, dist = Math.hypot(dx, dz);
+      if (dist > d.radius + t.radius) continue;
+      const k = 1 - dist / (d.radius + t.radius);
+      const tx = dx - dz * 0.9, tz = dz + dx * 0.9;
+      if (t.heavy) c.push(t, tx, tz, d.pull * (0.5 + k) * dt * 2);
+      else this.shove(t, tx, tz, d.pull * (0.6 + 1.6 * k), dt);
       this.dot(t, d.dps, dt);
       c.slow(t, 0.6, 0.4);
-      const last = this.touch.get(t) || 0;
-      if (this.t - last > 0.5) { this.touch.set(t, this.t); sh.impact(t.pos); }
+      if (dist < d.shieldR + t.radius) { const last = this.touch.get(t) || 0; if (this.t - last > 0.5) { this.touch.set(t, this.t); sh.impact(t.pos); } }
+      if (dist < d.coreRadius + t.radius && !t.heavy) { this.vfx.splash(t.pos.x, t.pos.y + 0.5, t.pos.z, 10, 1); c.damage(t, 99); }
     }
-    // el escudo apaga los fuegos que toca
-    this.doused = (this.doused || 0) + douseFires(this.g, q.x, q.z, d.shieldR + 0.6);
+    // los proyectiles enemigos también caen al remolino
+    for (const pr of c.projectiles) if (!pr.dead && pr.owner === 'boss' && Math.hypot(pr.pos.x - at.x, pr.pos.z - at.z) < d.radius) { pr.vel.x += (at.x - pr.pos.x) * dt * 3; pr.vel.z += (at.z - pr.pos.z) * dt * 3; }
+    // corrientes circulares: espuma y burbujas que giran hacia el centro
+    for (let i = 0; i < 3; i++) {
+      const a = this.t * 4 + rnd(0, TAU), r = rnd(1, d.radius);
+      const x = at.x + Math.cos(a) * r, z = at.z + Math.sin(a) * r;
+      this.g.fx.spray(x, at.y + 0.2, z, -Math.sin(a) * 5 - Math.cos(a) * 2, 0.4, Math.cos(a) * 5 - Math.sin(a) * 2, 1);
+    }
+    if (Math.random() < 0.4) this.g.fx.sparkle(at.x + rnd(-1, 1), at.y + rnd(0.2, 2), at.z + rnd(-1, 1), 0x9ad8ff, 0.8);
+    if (Math.random() < 0.3) this.g.fx.mist(at.x + rnd(-2, 2), at.y + 0.6, at.z + rnd(-2, 2), 0x9ac8e8, 1.2);
+    this.shake(0.03);
+  }
+  // EL REMOLINO EN EL ESCENARIO: absorbe escombros, rocas y troncos cercanos, que giran en espiral y suben
+  // por el embudo; también apaga los fuegos que alcanza
+  absorbWorld(dt) {
+    const d = this.def, at = this.at, g = this.g;
+    if (!this.orbit) { this.orbit = []; this.doused = 0; }
+    this.doused += douseFires(g, at.x, at.z, d.radius);
+    for (const pr of propsNear(g, at.x, at.z, d.radius * 1.35)) {
+      const it = captureProp(g, pr);
+      if (!it) continue;
+      it.a = Math.atan2(pr.pos.z - at.z, pr.pos.x - at.x);
+      it.r = Math.hypot(pr.pos.x - at.x, pr.pos.z - at.z);
+      it.h = 0.2;
+      this.orbit.push(it);
+      this.vfx.splash(pr.pos.x, pr.pos.y + 0.5, pr.pos.z, 12, 1.2);
+    }
+    for (const it of this.orbit) {
+      const R = d.radius, k = 1 - Math.min(1, it.r / R);
+      it.a += dt * (2.2 + 5 * k);
+      it.r = Math.max(d.shieldR + 0.4, it.r - dt * (1.2 + 1.5 * k)); // giran alrededor de la cúpula
+      it.h = Math.min(4, it.h + dt * (0.4 + 1.6 * k));
+      const m = it.mesh;
+      m.position.set(at.x + Math.cos(it.a) * it.r, at.y + it.h, at.z + Math.sin(it.a) * it.r);
+      m.rotation.x += it.spin.x * dt; m.rotation.y += it.spin.y * dt * 2; m.rotation.z += it.spin.z * dt;
+      m.scale.copy(it.s0).multiplyScalar(1 - 0.35 * k);
+      if (Math.random() < dt * 6) g.fx.spray(m.position.x, m.position.y, m.position.z, rnd(-1, 1), 1, rnd(-1, 1), 0.8);
+    }
+    for (let i = 0; i < 2; i++) { const a = this.t * 7 + i * Math.PI, r = 0.6 + Math.random() * 0.6; g.fx.spray(at.x + Math.cos(a) * r, at.y + 0.3, at.z + Math.sin(a) * r, -Math.sin(a) * 2, rnd(4, 7), Math.cos(a) * 2, 1.1); }
   }
   // El juego avisa de un golpe bloqueado: la onda recorre la cúpula desde el impacto
   absorb(from) {
@@ -1215,23 +1274,33 @@ export class MaelstromSkill extends Skill {
     return true;
   }
   enterBreak() {
-    const d = this.def, p = this.p, q = p.pos, g = this.g;
+    const d = this.def, p = this.p, at = this.at, g = this.g;
     if (p.waterGuard === this) p.waterGuard = null;
-    this.sfx('boom'); this.shake(0.25);
-    this.vfx.splash(q.x, q.y + 0.5, q.z, 30, 1.8);
-    this.vfx.ring(q.x, null, q.z, { r0: d.shieldR, r1: d.collapseRadius * 1.4, dur: 0.7, color: 0x5ac8ff });
-    this.vfx.ring(q.x, null, q.z, { r0: d.shieldR * 0.6, r1: d.collapseRadius, dur: 0.5, color: 0xbfeaff });
-    for (let i = 0; i < 24; i++) { const a = i / 24 * TAU; g.fx.spray(q.x + Math.cos(a) * d.shieldR, q.y + rnd(0.3, 2), q.z + Math.sin(a) * d.shieldR, Math.cos(a) * rnd(4, 7), rnd(1, 4), Math.sin(a) * rnd(4, 7), 1.2); }
-    wetGround(g, q.x, q.z, d.shieldR * 1.3, 8);
-    for (const t of this.combat.inCircle(q.x, q.z, d.collapseRadius)) {
+    // lo absorbido sale despedido en todas direcciones y cae alrededor
+    for (const it of this.orbit || []) { const a = it.a + 0.6; it.vel = new THREE.Vector3(Math.cos(a) * rnd(6, 10), rnd(5, 9), Math.sin(a) * rnd(6, 10)); }
+    if (this.orbit && this.orbit.length) dropFlung(g, this.orbit, 8);
+    this.orbit = [];
+    this.sfx('boom'); this.shake(0.35);
+    this.vfx.splash(at.x, at.y + 0.4, at.z, 30, 2);
+    this.vfx.ring(at.x, null, at.z, { r0: d.radius * 0.6, r1: d.radius * 1.8, dur: 0.9, color: 0x5ac8ff });
+    this.vfx.ring(at.x, null, at.z, { r0: 0.5, r1: d.radius * 1.1, dur: 0.6, color: 0xbfeaff });
+    for (let i = 0; i < 24; i++) { const a = i / 24 * TAU; g.fx.spray(p.pos.x + Math.cos(a) * d.shieldR, p.pos.y + rnd(0.3, 2), p.pos.z + Math.sin(a) * d.shieldR, Math.cos(a) * rnd(4, 7), rnd(1, 4), Math.sin(a) * rnd(4, 7), 1.2); }
+    wetGround(g, at.x, at.z, d.radius * 0.8, 10);
+    for (let i = 0; i < 6; i++) { const a = i / 6 * TAU; wetGround(g, at.x + Math.cos(a) * d.radius * 0.9, at.z + Math.sin(a) * d.radius * 0.9, rnd(1.4, 2.2), rnd(7, 10)); }
+    for (const t of this.combat.inCircle(at.x, at.z, d.radius)) {
       this.hit(t, d.collapseDamage);
-      const { dx, dz } = this.awayFrom(t, q.x, q.z);
+      const { dx, dz } = this.awayFrom(t, at.x, at.z);
       this.combat.push(t, dx || 0.1, dz, d.collapseForce);
     }
-    if (this.doused) ui.banner('good', `💧 ¡El escudo apaga ${this.doused} ${this.doused > 1 ? 'focos' : 'foco'}!`, `+${30 * this.doused} puntos`);
+    if (this.doused) ui.banner('good', `💧 ¡El remolino apaga ${this.doused} ${this.doused > 1 ? 'focos' : 'foco'}!`, `+${30 * this.doused} puntos`);
+  }
+  dispose() {
+    if (this.orbit && this.orbit.length) { dropFlung(this.g, this.orbit, 6); this.orbit = []; }
+    super.dispose();
   }
   cleanup() {
     if (this.p.waterGuard === this) this.p.waterGuard = null;
+    if (this._script) { this.script(false); this.p.vy = 0; } // vuelve a caer suavemente al suelo
   }
 }
 
