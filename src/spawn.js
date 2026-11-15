@@ -113,7 +113,7 @@ function clamp01(v, N) {
 /* ------------------------------------------------------------------ */
 /*  Selección aleatoria de puntos de rescate                           */
 /* ------------------------------------------------------------------ */
-const PEOPLE = ['hombre', 'mujer', 'nino', 'anciano'];
+const PEOPLE = ['hombre', 'mujer', 'nino', 'anciano', 'abuela', 'bombero'];
 const ANIMALS = ['perro', 'gato', 'ciervo'];
 const NEW_ANIMALS = ['collie', 'zorro', 'lince']; // Perro (border collie), Fox y Lince pequeño: siempre entre los animales de cada misión
 
@@ -181,7 +181,7 @@ export function generateRescues(world, params) {
   const nAnimals = Math.round(count * animalRatio);
   const animalKinds = Array(nAnimals).fill(0).map((_, i) => ANIMALS[(i + Math.floor(rng.next() * 3)) % 3]);
   shuffle(NEW_ANIMALS.slice(), rng).forEach((k, i) => { if (i < nAnimals) animalKinds[i] = k; });
-  const kinds = shuffle([...Array(count - nAnimals).fill(0).map((_, i) => PEOPLE[(i + Math.floor(rng.next() * 4)) % 4]), ...animalKinds], rng);
+  const kinds = shuffle([...Array(count - nAnimals).fill(0).map((_, i) => PEOPLE[(i + Math.floor(rng.next() * PEOPLE.length)) % PEOPLE.length]), ...animalKinds], rng);
 
   const chosen = [];
   let sep = minSep;

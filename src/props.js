@@ -15,6 +15,10 @@ const FILES = {
   // árbol de lava, cristal de magma y el soldado que acompaña a Kerberos (Cervero)
   templo: 'props/templo.glb', puente: 'props/puente.glb', camion: 'props/camion.glb', autofuego: 'props/autofuego.glb',
   arbolava: 'props/arbolava.glb', cristal: 'props/cristal.glb', soldado: 'props/soldado.glb',
+  // más objetos de Cenizara: hospital abandonado, ambulancia, helicóptero de rescate, árbol seco, árbol de fuego,
+  // troncos, rocas de lava con llamas y montaña de lava
+  hospital: 'props/hospital.glb', ambulancia: 'props/ambulancia.glb', helicoptero: 'props/helicoptero.glb', arbolseco: 'props/arbolseco.glb',
+  arbolfuego: 'props/arbolfuego.glb', troncos: 'props/troncos.glb', rocas: 'props/rocas.glb', montana: 'props/montana.glb',
 };
 
 export function preloadProps() {

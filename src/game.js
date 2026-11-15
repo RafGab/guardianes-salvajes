@@ -736,7 +736,7 @@ export class Game {
     ui.setCarry(player.carrying, player.capacity);
     ui.banner('good', '🐾 ¡Te sigo!', `${v.info.label} a salvo contigo. ¡Al refugio!`);
     if (v.kind === 'nino') this.tip('kid');
-    if (v.kind === 'anciano') this.tip('elder');
+    if (v.kind === 'anciano' || v.kind === 'abuela') this.tip('elder');
     if (v.info.animal) this.tip('pets');
     this.score += 10;
   }

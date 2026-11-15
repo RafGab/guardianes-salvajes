@@ -701,6 +701,66 @@ export function build(K, { scene }) {
   }
   placeSigns(K, [[5, 96], [5, 46], [5, -2], [-17, -20], [17, -24], [20, -40]]);
 
+  /* ================= OBJETOS DE TRIPO AÑADIDOS: HOSPITAL, AMBULANCIA, HELICÓPTERO, ÁRBOLES, TRONCOS, ROCAS Y MONTAÑAS ================= */
+  // Se colocan al final y sin usar el generador aleatorio, así no cambia nada de lo que ya estaba en el mapa.
+  // Cada objeto busca su sitio libre más cercano (sin lava, sin otros sólidos, lejos de caminos, arena, inicio y portal).
+  {
+    const TRY = [[0, 0], [2, 0], [-2, 0], [0, 2], [0, -2], [3, 3], [-3, -3], [3, -3], [-3, 3], [5, 0], [-5, 0], [0, 5], [0, -5]];
+    const spot = (x, z, w, d, { pad = 1, road = 4 } = {}) => {
+      for (const [ox, oz] of TRY) {
+        const px = x + ox, pz = z + oz;
+        if (lavaNear(px, pz, pad) || roadD(px, pz) < road + Math.max(w, d) / 2 || !arenaFree(px, pz, Math.max(w, d) / 2 + 1) || nearSafe(px, pz, 14 + Math.max(w, d) / 2) || nearStart(px, pz, 12 + Math.max(w, d) / 2) || !free(px, pz, w, d)) continue;
+        return [px, pz];
+      }
+      return null;
+    };
+    // árbol seco y árbol de lava: tronco sólido
+    const treeAt = (name, x, z, h, ry) => { const p = spot(x, z, 2.6, 2.6); if (!p) return; const g = G(p[0], p[1]); if (prop(name, h, p[0], g - 0.12, p[1], ry)) K.solid(p[0] - 0.55, p[0] + 0.55, g - 1, g + h * 0.6, p[1] - 0.55, p[1] + 0.55, 'tree'); };
+    for (const [x, z, h, ry] of [[34, 95, 6.5, 0.4], [-34, 94, 6, 2.2], [89, 70, 7, 4.1], [-98, 38, 6.5, 1.1], [-70, 3, 6, 5.2], [82, 2, 6.5, 0.9], [-62, -58, 7, 3.3], [70, -90, 6.5, 1.7]]) treeAt('arbolseco', x, z, h, ry);
+    for (const [x, z, h, ry] of [[-56, -24, 6.5, 0.7], [92, -22, 7, 2.6], [-58, -82, 7.5, 4.4], [74, -58, 7, 1.2], [-98, 82, 6.5, 5.6], [-90, -40, 7, 3.1]]) treeAt('arbolfuego', x, z, h, ry);
+    // troncos cortados y caídos (bajos, se pasan por encima)
+    for (const [x, z, ry] of [[8, 75, 0.3], [-88, 76, 1.9], [62, -9, 4.2], [-24, -46, 2.6], [-76, -6, 5.1]]) { const p = spot(x, z, 4.4, 4.4, { road: 3 }); if (p) prop('troncos', 1.0, p[0], G(p[0], p[1]) - 0.08, p[1], ry); }
+    // rocas de lava con llamas: en las orillas del río, junto a los cráteres y en las faldas del volcán
+    for (const [x, z, h, ry] of [[-20, riverZ(-20) + BANK + 3, 2.4, 0.5], [32, riverZ(32) + BANK + 3, 2.2, 2.1], [-88, riverZ(-88) + BANK + 3, 2.6, 4.0], [-28, -8.5, 2.0, 1.4], [32, 1.5, 2.2, 3.6], [-26, -92, 2.8, 0.2], [26, -94, 2.6, 5.0], [86, -30, 2.4, 2.8]]) {
+      const p = spot(x, z, 2.6, 2.6, { pad: 0.4, road: 3 });
+      if (!p) continue;
+      const g = G(p[0], p[1]);
+      if (prop('rocas', h, p[0], g - 0.15, p[1], ry)) { K.solid(p[0] - h * 0.42, p[0] + h * 0.42, g - 1, g + h * 0.38, p[1] - h * 0.42, p[1] + h * 0.42, 'rock'); extra.lights.push([p[0], g + h * 0.7, p[1], 0xff6a20, 7, 10]); }
+    }
+    // montañas de lava: grandes peñascos medio hundidos en las faldas del volcán (la parte de abajo queda enterrada)
+    // (en los bordes del mapa, donde el terreno ya empieza a subir hacia las montañas que lo cierran)
+    for (const [x, z, h, ry] of [[-100, -64, 14, 0.6], [101, -44, 15, 2.4], [-101, -2, 11, 4.2]]) {
+      const p = spot(x, z, 0.7 * h, 0.7 * h, { pad: 1.5, road: 6 });
+      if (!p) continue;
+      let g = G(p[0], p[1]);
+      for (let k = 0; k < 12; k++) { const a = k / 12 * 6.283; g = Math.min(g, G(p[0] + Math.cos(a) * 0.8 * h, p[1] + Math.sin(a) * 0.8 * h)); } // el punto más bajo de su borde: así no queda ningún lado al aire
+      const base = g - 0.5 * h, top = base + 0.69 * h;
+      if (prop('montana', h, p[0], base, p[1], ry)) K.solid(p[0] - 0.62 * h, p[0] + 0.62 * h, g - 1, top, p[1] - 0.6 * h, p[1] + 0.6 * h, 'rock');
+    }
+    // el hospital abandonado al fondo de la ciudad, mirando a las calles; en su azotea, el helicóptero de rescate
+    {
+      const x = 61, z = 97, H = 9, g = G(x, z);
+      if (prop('hospital', H, x, g - 0.1, z, Math.PI)) {
+        const roof = g - 0.1 + 0.78 * H;
+        K.solid(x - 9.4, x + 9.4, g - 1, roof, z - 0.9, z + 4.9, 'building');          // bloque principal (detrás)
+        for (const sx of [-8.6, 8.6]) K.solid(x + sx - 0.9, x + sx + 0.9, g - 1, roof, z - 4.6, z - 0.9, 'building'); // alas delanteras
+        K.buildings.push({ x, z: z + 2, w: 18.8, d: 5.8, h: roof - g, roofY: roof, kind: 'hospital abandonado', solid: null });
+        if (prop('helicoptero', 3.2, x + 1, roof - 0.05, z + 2.2, Math.PI / 2)) K.solid(x - 2.5, x + 4.5, roof - 0.2, roof + 2.2, z + 0.9, z + 3.5, 'heli');
+        extra.flames.push([x - 6, g + 0.4, z - 3.4, 1.0]);
+        extra.fumaroles.push([x + 7, roof, z + 3, 0x6a6662]);
+      }
+      // ambulancia aparcada de cualquier manera delante del hospital, con las luces de emergencia encendidas
+      const ax = 58, az = 87.6, ary = 2.75, ag = G(ax, az);
+      if (free(ax, az, 5.4, 5.4) && prop('ambulancia', 2.5, ax, ag - 0.03, az, ary)) {
+        const c = Math.abs(Math.cos(ary)), s = Math.abs(Math.sin(ary)), ex = (2.8 * c + 5.1 * s) / 2, ez = (2.8 * s + 5.1 * c) / 2;
+        K.solid(ax - ex, ax + ex, ag - 0.5, ag + 2.4, az - ez, az + ez, 'car');
+        cand('roof', ax, ag + 2.45, az, { zone: 'ambulancia' });
+        const fx = Math.sin(ary) * 1.6, fz = Math.cos(ary) * 1.6, lx = Math.cos(ary) * 0.6, lz = -Math.sin(ary) * 0.6;
+        extra.beacons.push([ax + fx + lx, ag + 2.45, az + fz + lz], [ax + fx - lx, ag + 2.45, az + fz - lz]);
+      }
+    }
+  }
+
   /* ================= PINTURA DEL SUELO ================= */
   const paint = () => K.paintGround({
     colorAt: (x, z, h, sl) => {

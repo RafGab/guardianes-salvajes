@@ -29,6 +29,9 @@ export const VICTIM_KINDS = {
   mujer: { label: 'Mujer', animal: false, scale: 1.2, icon: '👩' },
   nino: { label: 'Niño', animal: false, scale: 0.95, icon: '👧' },
   anciano: { label: 'Anciano', animal: false, scale: 1.15, icon: '👴' },
+  // rescatables nuevos con modelo 3D propio
+  abuela: { label: 'Abuela', animal: false, scale: 1, icon: '👵' },
+  bombero: { label: 'Bombero', animal: false, scale: 1, icon: '🧑‍🚒' },
 };
 
 const SKINS = [0xf1c9a5, 0xd9a27a, 0xb87a55, 0x8a5a3c, 0xf6d5b8];
@@ -245,9 +248,22 @@ const GLB_ANIMALS = {
   zorro: { file: 'props/zorro.glb', h: 0.6, tail: [0.0, 0.1, -0.12], head: 0.5 },
   lince: { file: 'props/lince.glb', h: 0.6, tail: [0.0, 0.1, -0.2], head: 0.48 },
 };
-export const GLB_VICTIMS = Object.keys(GLB_ANIMALS);
+/*  RESCATABLES CON MODELO 3D (personas y cervatillo): sustituyen en TODO el juego al modelo hecho con piezas.
+    · nino: el niño o la niña (mitad y mitad, como antes)   · anciano: el abuelo en su silla de ruedas
+    · ciervo: el cervatillo                                  · abuela y bombero: rescatables nuevos
+    Sin esqueleto: se animan moviendo el cuerpo entero (saltitos, balanceo, giros); el de la silla rueda adelante y atrás.
+    ry: giro para que miren a +Z como los demás; seated: va sentado (no salta). */
+const GLB_PEOPLE = {
+  nino: [{ file: 'props/nino.glb', h: 1.1 }, { file: 'props/nina.glb', h: 1.1 }],
+  anciano: [{ file: 'props/silla.glb', h: 1.35, seated: true }],
+  abuela: [{ file: 'props/abuela.glb', h: 1.5 }],
+  bombero: [{ file: 'props/bombero.glb', h: 1.75 }],
+  ciervo: [{ file: 'props/cervatillo.glb', h: 1.1, ry: -Math.PI / 2, animal: true }],
+};
+export const GLB_VICTIMS = [...Object.keys(GLB_ANIMALS), ...Object.keys(GLB_PEOPLE)];
 export function preloadVictimModels() {
-  return Promise.all(Object.values(GLB_ANIMALS).map((a) => loadGLB(modelUrl(a.file)).catch(() => null)));
+  const files = [...Object.values(GLB_ANIMALS).map((a) => a.file), ...Object.values(GLB_PEOPLE).flat().map((a) => a.file)];
+  return Promise.all(files.map((f) => loadGLB(modelUrl(f)).catch(() => null)));
 }
 
 function wiggleMaterial(src, toModel, cfg) {
@@ -312,8 +328,42 @@ function glbAnimal(kind, seed) {
   return { root, inner, legs: [], head: null, tail: null, animal: true, type: kind, glb: true, uniforms, ph: r.range(0, TAU) };
 }
 
+function glbPerson(kind, seed) {
+  const r = makeRng(seed);
+  const list = GLB_PEOPLE[kind];
+  const cfg = list[Math.floor(r.next() * list.length) % list.length];
+  const gltf = cachedGLB(modelUrl(cfg.file));
+  if (!gltf) return null;
+  const { root: norm } = normalizeModel(gltf.scene.clone(true));
+  norm.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  const holder = new THREE.Group();
+  holder.add(norm);
+  holder.rotation.y = cfg.ry || 0;
+  const h = cfg.h * r.range(0.96, 1.04);
+  holder.scale.setScalar(h);
+  const root = new THREE.Group();
+  const inner = new THREE.Group();
+  root.add(inner);
+  inner.add(holder);
+  return { root, inner, legs: [], head: null, tail: null, animal: !!cfg.animal, type: kind, glb: true, person: !cfg.animal, seated: !!cfg.seated, uniforms: [], ph: r.range(0, TAU), h };
+}
+
 // animación de los rescatables con modelo 3D (sin esqueleto)
 function animateGLB(p, mode, t, dt) {
+  if (p.seated) { // en la silla de ruedas: rueda un poco adelante y atrás, se inclina y gira para llamar la atención
+    const inner = p.inner, ph = p.ph;
+    const k = mode === 'wave' ? 1 : mode === 'carried' ? 0.25 : mode === 'happy' ? 1.4 : 0.8;
+    inner.position.set(0, 0, Math.sin(t * 2.2 + ph) * 0.12 * k);
+    inner.rotation.x = Math.sin(t * 2.2 + ph + 1.2) * 0.05 * k;
+    inner.rotation.z = Math.sin(t * 1.6 + ph) * 0.03 * k;
+    inner.rotation.y = lerp(inner.rotation.y, mode === 'happy' ? Math.sin(t * 3) * 0.5 : Math.sin(t * 0.7 + ph) * 0.3 * k, Math.min(1, dt * 4));
+    return;
+  }
+  if (p.person) {
+    // personas: el mismo ritmo que los animales (saltitos al pedir ayuda, brincos de alegría) más un balanceo de lado a lado
+    const sway = mode === 'wave' ? Math.sin(t * 4.5 + p.ph) * 0.07 : mode === 'walk' ? Math.sin(t * 8) * 0.05 : mode === 'happy' ? Math.sin(t * 6) * 0.06 : Math.sin(t * 1.5) * 0.02;
+    p.inner.rotation.z = sway;
+  }
   const inner = p.inner;
   let head = 0, nod = 0, tail = 0, hop = 0, yaw = 0, lean = 0;
   const ph = p.ph;
@@ -347,14 +397,15 @@ function animateGLB(p, mode, t, dt) {
 
 export function createVictim(kind, seed = 1) {
   const info = VICTIM_KINDS[kind];
-  const parts = GLB_ANIMALS[kind] ? (glbAnimal(kind, seed) || dog(seed)) : kind === 'perro' ? dog(seed) : kind === 'gato' ? cat(seed) : kind === 'ciervo' ? deer(seed) : human(kind, seed);
+  const gp = GLB_PEOPLE[kind] ? glbPerson(kind, seed) : null; // si el modelo no ha cargado, se usa el de piezas de antes
+  const parts = GLB_ANIMALS[kind] ? (glbAnimal(kind, seed) || dog(seed)) : gp ? gp : kind === 'ciervo' ? deer(seed) : kind === 'abuela' || kind === 'bombero' ? human(kind === 'abuela' ? 'anciano' : 'hombre', seed) : kind === 'perro' ? dog(seed) : kind === 'gato' ? cat(seed) : kind === 'ciervo' ? deer(seed) : human(kind, seed);
   const root = new THREE.Group();
   root.add(parts.root);
-  parts.root.scale.setScalar(info.scale);
+  parts.root.scale.setScalar(parts.glb && parts.h ? 1 : info.scale); // los modelos 3D ya vienen a su altura
   const victim = {
     kind, info, seed, root, parts,
     mode: 'wave', t: Math.random() * 10,
-    height: kind === 'ciervo' ? 1.2 : kind === 'perro' ? 0.7 : GLB_ANIMALS[kind] ? GLB_ANIMALS[kind].h : kind === 'gato' ? 0.5 : 1.35 * (kind === 'nino' ? 0.78 : 1),
+    height: parts.glb && parts.h ? parts.h : kind === 'ciervo' ? 1.2 : kind === 'perro' ? 0.7 : GLB_ANIMALS[kind] ? GLB_ANIMALS[kind].h : kind === 'gato' ? 0.5 : 1.35 * (kind === 'nino' ? 0.78 : 1),
     state: 'waiting', found: false, rescued: false, marker: null,
     setMode(m) { this.mode = m; },
     update(dt) {
