@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { terrainH } from './terrain.js';
 import { newStatus, tickStatus } from './combat.js';
+import { propModel } from './props.js';
 
 /* ======================================================================
    SOLDADOS DEL JEFE DE ZONA
@@ -63,7 +64,7 @@ function buildRig(color, accent) {
 }
 
 export class Soldier {
-  constructor(combat, x, z, cat, { color = 0xb070ff, accent = 0xff3a5a, kind = 'esbirro' } = {}) {
+  constructor(combat, x, z, cat, { color = 0xb070ff, accent = 0xff3a5a, kind = 'esbirro', glb = null } = {}) {
     this.combat = combat;
     this.heavy = false; this.npc = true; this.soldier = true;
     this.kind = kind; this.cat = cat;
@@ -81,6 +82,7 @@ export class Soldier {
     this.slot = Math.random() * TAU; // ángulo propio alrededor del objetivo: así no se amontonan
     this.color = color;
     this.rig = buildRig(color, accent);
+    if (glb) this.useModel(glb);
     this.group = new THREE.Group();
     this.group.add(this.rig.root);
     // anillo rojo bajo los pies: enemigo activo (y amarillo si está marcado)
@@ -170,10 +172,31 @@ export class Soldier {
     const am = this.rig.mats[0], dm = this.rig.mats[2];
     if (am && am.emissive) am.emissive.setRGB(fl * 0.9, fl * 0.8, fl * 0.7);
     if (dm && dm.emissive) dm.emissive.setRGB(fl * 0.7, fl * 0.6, fl * 0.5);
+    if (this.glbMats) for (const m of this.glbMats) m.emissive.setRGB(fl * 0.85, fl * 0.75, fl * 0.65);
     this.ring.material.color.setHex(this.st.mark > 0 ? 0xffd24a : 0xff3a3a);
     this.ring.material.opacity = 0.45 + 0.3 * Math.sin(this.t * 5);
   }
   setState(s) { this.state = s; this.stateT = 0; }
+
+  // MODELO 3D PROPIO (el soldado de Tripo que acompaña a Kerberos): sustituye a las piezas del cuerpo y va unido a la
+  // columna del esqueleto, así hereda las mismas animaciones (balanceo, inclinación, giro del ataque, caída...).
+  useModel(name) {
+    const m = propModel(name);
+    if (!m) return;
+    this.rig.root.traverse((o) => { if (o.isMesh) o.visible = false; });
+    m.scale.setScalar(1.4);
+    m.position.set(0, -0.74, 0); // la columna está a 0,74 m del suelo en reposo
+    this.glbMats = [];
+    m.traverse((o) => {
+      if (!o.isMesh) return;
+      o.userData.shared = true; // geometría compartida con la caché: no se libera al morir
+      o.material = o.material.clone();
+      if (o.material.emissive) this.glbMats.push(o.material);
+      this.rig.mats.push(o.material);
+    });
+    this.rig.B.spine.add(m);
+    this.glbM = m;
+  }
 
   // ANIMACIÓN POR HUESOS (rotaciones locales de cada hueso)
   animate(dt) {
@@ -205,6 +228,8 @@ export class Soldier {
     B.sh[0].rotation.x = armL; B.sh[0].rotation.z = 0.15;
     B.sh[1].rotation.x = armR; B.sh[1].rotation.z = -0.15;
     B.arm[0].rotation.x = foreL; B.arm[1].rotation.x = foreR;
+    // modelo propio: contoneo al andar y la alabarda acompaña el golpe
+    if (this.glbM) { this.glbM.rotation.z = s * 0.07 * k; this.glbM.rotation.y = (armR + 0.5) * -0.35; }
   }
 
   hurt(n) {
@@ -244,7 +269,7 @@ export class Soldier {
       const fade = t > 0.7 ? 1 - (t - 0.7) / 0.5 : 1;
       for (const m of mats) m.opacity = Math.max(0, fade);
       g.position.y = base - Math.max(0, t - 0.8) * 0.6;
-      if (t >= life - 0.001) { g.traverse((o) => { if (o.geometry) o.geometry.dispose(); }); for (const m of mats) m.dispose(); }
+      if (t >= life - 0.001) { g.traverse((o) => { if (o.geometry && !o.userData.shared) o.geometry.dispose(); }); for (const m of mats) m.dispose(); }
     });
     if (c.game.onNpcDefeated) c.game.onNpcDefeated(this);
   }

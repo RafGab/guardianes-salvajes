@@ -1,5 +1,5 @@
 import * as flood from './flood.js';
-import * as fire from './forest.js';
+import * as fire from './cenizara.js'; // Cenizara rediseñada (el bosque anterior sigue en forest.js)
 import * as campfire from './campfire.js';
 import * as quake from './town.js';
 import * as volcano from './volcano.js';

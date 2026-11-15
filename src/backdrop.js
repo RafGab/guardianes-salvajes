@@ -9,7 +9,7 @@ import { makeRng } from './utils.js';
 const THEMES = {
   flood:     { shape: 'round', col: [0x4fb866, 0x78c9a2, 0xa8dcd2], cloud: 0xffffff },
   campfire:  { shape: 'round', col: [0x4f9a52, 0x86b86a, 0xe6b48a], cloud: 0xffe2c4 },
-  fire:      { shape: 'round', col: [0x8a8f3a, 0xd08a3c, 0xeab88a], cloud: 0xffe6cc },
+  fire:      { shape: 'cone',  col: [0x2a1e20, 0x4a2e2c, 0x6e4038], cloud: 0x8a6a64, glow: true }, // Cenizara: volcanes humeantes
   quake:     { shape: 'round', col: [0x6cbc68, 0xa4d49c, 0xd0e8d4], cloud: 0xffffff },
   volcano:   { shape: 'cone',  col: [0x7a5a7c, 0x9a6f92, 0xcfa0ae], cloud: 0xffd8d0, glow: true },
   hurricane: { shape: 'round', col: [0x3a9f9c, 0x66bfc2, 0xa6e0e4], cloud: 0xeaf6ff },

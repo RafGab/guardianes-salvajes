@@ -237,7 +237,7 @@ export class Combat {
     for (let i = 0; i < n && this.minions.filter((m) => !m.dead).length < MINIONS.max; i++) {
       const a = (b ? b.facing : 0) + (i - (n - 1) / 2) * 1.1 + Math.PI * 0.5 * (i % 2 ? 1 : -1) * 0.4, r = (b ? b.radius : 0) + 2.4 + i * 0.6;
       const k = kind || (i === n - 1 && n >= 3 ? 'bruto' : 'esbirro'); // el tercero es un bruto (más vida, más fuerte)
-      const m = new Soldier(this, c.x + Math.sin(a) * r, c.z + Math.cos(a) * r, NPC_KINDS[k] || NPC_KINDS.esbirro, { color, accent: 0xff4a3a, kind: k });
+      const m = new Soldier(this, c.x + Math.sin(a) * r, c.z + Math.cos(a) * r, NPC_KINDS[k] || NPC_KINDS.esbirro, { color, accent: 0xff4a3a, kind: k, glb: b && b.kind === 'kerberos' ? 'soldado' : null }); // los soldados de Kerberos usan el modelo del soldado
       // soldados del jefe: más resistentes que un NPC suelto (+10 % por zona), para que el combate dure
       if (b) { const k2 = 3 * (1 + ((this.game.mission && this.game.mission.n) || 1) * 0.1); m.hp = m.hpMax = Math.round(m.hpMax * k2); }
       this.minions.push(m);

@@ -140,6 +140,7 @@ export class CampFireRuntime {
   /* ---------- cascada y arroyo ---------- */
   buildWater() {
     const wf = this.cfg.waterfall, st = this.cfg.stream;
+    if (!wf || !st) return; // escenarios sin cascada (Cenizara usa solo coleccionables y secretos)
     this.fallU = { uT: { value: 0 }, uFlow: { value: -2.2 } };
     const fall = new THREE.Mesh(new THREE.PlaneGeometry(wf.z1 - wf.z0, wf.y1 - wf.y0), new THREE.ShaderMaterial({ uniforms: this.fallU, vertexShader: WATER_VS, fragmentShader: FALL_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
     fall.rotation.y = Math.PI / 2;
@@ -222,10 +223,10 @@ export class CampFireRuntime {
       if (Math.abs(p.x - nx) < 3 && Math.abs(p.z - L.z) < 2 && Math.random() < dt * 3) g.fx.splash(nx + Math.sign(s.dx) * 1.6, g.world.waterY, L.z, 3, 0.4);
     }
     // cascada: agua que cae y bruma en la poza
-    this.fallU.uT.value = t;
     const wf = this.cfg.waterfall;
+    if (this.fallU) this.fallU.uT.value = t;
     this.mistAcc += dt;
-    if (this.mistAcc > 0.12 && Math.hypot(p.x - wf.x, p.z - (wf.z0 + wf.z1) / 2) < 70) {
+    if (wf && this.mistAcc > 0.12 && Math.hypot(p.x - wf.x, p.z - (wf.z0 + wf.z1) / 2) < 70) {
       this.mistAcc = 0;
       const z = wf.z0 + Math.random() * (wf.z1 - wf.z0);
       g.fx.mist(wf.x + 0.6 + Math.random() * 2, g.world.waterY + 0.3, z, 0xeaf8ff, 2.2);

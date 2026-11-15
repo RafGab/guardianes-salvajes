@@ -30,6 +30,7 @@ import { SEE, enableSeeThrough } from './seethrough.js';
 const HERO_SKILLS_CD = (id) => (HERO_SKILLS[id] && HERO_SKILLS[id].flight ? HERO_SKILLS[id].flight.cd : 4);
 import { IS_TOUCH } from './platform.js';
 import { CampFireRuntime } from './scenarios/campfire_rt.js';
+import { CenizaraRuntime } from './scenarios/cenizara_rt.js';
 const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
 
 export const TIPS = {
@@ -551,6 +552,9 @@ export class Game {
     if (this.levelRt) this.levelRt.dispose();
     this.levelRt = world.sc.campfire ? new CampFireRuntime(this, world.sc.campfire) : null;
     if (!this.levelRt) { const el = document.getElementById('cf-hud'); if (el) el.style.display = 'none'; }
+    // CENIZARA: lava, plataformas móviles, aspas, cuerdas, géiseres y obstáculos destructibles
+    if (this.levelRt2) this.levelRt2.dispose();
+    this.levelRt2 = world.sc.cenizara ? new CenizaraRuntime(this, world.sc.cenizara) : null;
     this.buildAbilities();
     // portal de rescate único del nivel, con la variante del héroe elegido
     this.portal.mount(world.sc.safeObj, def.element);
@@ -1460,6 +1464,7 @@ export class Game {
     player.events.length = 0;
     if (this.hazards && (this.state === 'playing' || this.state === 'ending')) this.hazards.update(envDt, this.t);
     if (this.levelRt) this.levelRt.update(envDt, this.state === 'playing' && !this.boss);
+    if (this.levelRt2) this.levelRt2.update(envDt, this.state === 'playing' && !this.boss);
     if (this.playerHitT > 0) this.playerHitT = Math.max(0, this.playerHitT - real);
     if (this.boss && this.state === 'playing') {
       this.team.update(dtg);

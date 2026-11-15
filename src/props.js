@@ -9,7 +9,13 @@ import { modelUrl } from './scale.js';
    · casa: casa de entramado de madera integrada en el pueblo de Camp Fire.
    Se cargan al arrancar (como los héroes) para que el escenario los tenga listos al construirse.
    ====================================================================== */
-const FILES = { porsche: 'props/porsche.glb', casa: 'props/casa.glb' };
+const FILES = {
+  porsche: 'props/porsche.glb', casa: 'props/casa.glb',
+  // Cenizara (modelos de Tripo): templo de lava, puente de lava, camión de bomberos, deportivo volcado,
+  // árbol de lava, cristal de magma y el soldado que acompaña a Kerberos (Cervero)
+  templo: 'props/templo.glb', puente: 'props/puente.glb', camion: 'props/camion.glb', autofuego: 'props/autofuego.glb',
+  arbolava: 'props/arbolava.glb', cristal: 'props/cristal.glb', soldado: 'props/soldado.glb',
+};
 
 export function preloadProps() {
   return Promise.all(Object.values(FILES).map((f) => loadGLB(modelUrl(f)).catch(() => null)));
@@ -23,6 +29,16 @@ export function propModel(name) {
   prepareMeshes(root);
   root.traverse((o) => { if (o.isMesh) o.frustumCulled = true; });
   return root;
+}
+
+// Modelo de `h` metros de alto con los pies en y=0 (o null si no está cargado)
+export function propAt(name, h, x = 0, y = 0, z = 0, ry = 0) {
+  const m = propModel(name);
+  if (!m) return null;
+  m.scale.setScalar(h);
+  m.position.set(x, y, z);
+  m.rotation.y = ry;
+  return m;
 }
 
 // colores de carrocería: [tono 0..1, saturación, brillo] (el original es rojo)
