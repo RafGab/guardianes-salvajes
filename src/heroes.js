@@ -58,7 +58,7 @@ export const HEROES = [
   },
   {
     id: 'kyra', name: 'Kyra', species: 'Zorro ártico', element: 'hielo',
-    power: { type: 'ice', icon: '❄️', name: 'Deslizamiento sobre Hielo', cd: 6, desc: 'Crea hielo bajo sus pies y se desliza como una esquiadora, con giros y saltos y una estela de nieve en polvo. Sobre la inundación congela el agua y crea una plataforma.' },
+    power: { type: 'ice', icon: '❄️', name: 'Corriente de Nieve', cd: 6, desc: 'Una corriente mágica de nieve se forma bajo sus pies y la lanza a toda velocidad, con remolinos, copos, curvas y pequeños saltos. Sobre la inundación congela el agua y crea una plataforma.' },
     stats: { speed: 7.0, jump: 8.8, swim: 3.8, carry: 2 },
     bio: 'Zorro ártico valiente, curiosa, amigable, leal, inteligente y resistente. Su hacha de hielo cristalino puede crear o manipular el hielo. "El hielo también tiene un corazón."',
   },
@@ -70,7 +70,7 @@ export const HEROES = [
   },
   {
     id: 'lira', name: 'Dona', species: 'Lince', element: 'tierra',
-    power: { type: 'pillar', icon: '🌱', name: 'Raíces Impulsoras', cd: 5, desc: 'Corriendo, sus piernas hacen brotar raíces que la impulsan hacia delante. Quieta, la tierra se alza bajo sus pies: un pilar de roca, una plataforma segura sobre el peligro.' },
+    power: { type: 'pillar', icon: '🌱', name: 'Túnel de Tierra', cd: 5, desc: 'Corriendo, se zambulle bajo tierra, avanza por debajo levantando el terreno y emerge varios metros más adelante con una explosión de tierra y rocas. Quieta, la tierra se alza bajo sus pies: un pilar de roca, una plataforma segura sobre el peligro.' },
     stats: { speed: 7.3, jump: 8.8, swim: 4.6, carry: 2 },
     bio: 'Lince valiente, fuerte, ágil y leal. Su guadaña de energía manipula el terreno, crea barreras y aumenta su fuerza en combate. "La fuerza de la tierra también habita en la agilidad."',
   },

@@ -5,6 +5,7 @@ import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPa
 import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
 import { Score } from './score.js';
+import { RELIEF_VS_HEAD, RELIEF_VS_BODY, RELIEF_FS_HEAD, reliefUniforms } from '../relief.js';
 
 /* ======================================================================
    CATAC 7 · INTRO CINEMATOGRÁFICA
@@ -65,8 +66,13 @@ float snoise(vec3 v){
 }
 float fbm(vec3 p){ float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * (0.5 + 0.5 * snoise(p)); p *= 2.02; a *= 0.5; } return s; }`;
 
-// personaje: imagen original + luz de contorno, barrido de luz y aparición (sin deformar ni recolorear)
-const HERO_FS = `uniform sampler2D map; uniform vec2 uTexel; uniform float uExp; uniform float uAlpha; uniform float uRim; uniform vec3 uRimCol;
+// personaje: la imagen original sobre una malla con RELIEVE 3D (volumen según su silueta, luz y sombra propias:
+// relief.js) + luz de contorno, barrido de luz y aparición (sin cambiar el diseño ni recolorear)
+const HERO_VS = `${RELIEF_VS_HEAD}
+varying vec2 vUv;
+void main(){ vUv = uv; ${RELIEF_VS_BODY} gl_Position = projectionMatrix * modelViewMatrix * vec4(rp, 1.0); }`;
+const HERO_FS = `${RELIEF_FS_HEAD}
+uniform sampler2D map; uniform vec2 uTexel; uniform float uExp; uniform float uAlpha; uniform float uRim; uniform vec3 uRimCol;
 uniform float uSweep; uniform vec3 uSweepCol; uniform float uFlash; uniform float uRefl; uniform float uReveal; uniform float uRevealOn; uniform float uGlint; varying vec2 vUv;
 void main(){
   vec4 tx = texture2D(map, vUv);
@@ -77,7 +83,8 @@ void main(){
   s += texture2D(map, vUv + o).a; s += texture2D(map, vUv - o).a;
   s += texture2D(map, vUv + vec2(o.x, -o.y)).a; s += texture2D(map, vUv + vec2(-o.x, o.y)).a;
   float edge = clamp(a * (1.0 - s / 8.0) * 3.0, 0.0, 1.0);
-  vec3 col = tx.rgb;
+  vec3 col = tx.rgb * reliefLight();
+  col += uRimCol * reliefRim() * 0.25 * a;
   col += uRimCol * edge * uRim;
   float d = vUv.x * 0.62 + (1.0 - vUv.y) * 0.38 - uSweep;
   col += uSweepCol * exp(-d * d * 500.0) * 0.32 * a;
@@ -339,8 +346,10 @@ export class CinematicIntro {
       const mk = (refl) => {
         const u = { map: { value: t }, uTexel: { value: new THREE.Vector2(1 / t.image.width, 1 / t.image.height) }, uExp: { value: 0 }, uAlpha: { value: 1 }, uRim: { value: 0 }, uRimCol: { value: C('#fff') }, uSweep: { value: -2 }, uSweepCol: { value: C('#fff') }, uFlash: { value: 0 }, uRefl: { value: refl ? 0.22 : 0 }, uReveal: { value: 0 }, uRevealOn: { value: 0 }, uGlint: { value: -2 } };
         const w = n === 'logo' ? 18 : H * aspect, h = n === 'logo' ? 18 / aspect : H;
-        const geo = new THREE.PlaneGeometry(w, h); geo.translate(0, h / 2, 0);
-        const m = new THREE.Mesh(geo, new THREE.ShaderMaterial({ uniforms: u, vertexShader: VS, fragmentShader: HERO_FS, transparent: true, depthWrite: false }));
+        // relieve 3D: la imagen se abomba según su silueta y recibe luz y sombra (el reflejo usa el mismo relieve)
+        Object.assign(u, reliefUniforms(t, w, h, n === 'logo' ? 0.45 : 1.1, { size: 128, light: [-0.5, 0.55, 0.7], relief: 0.9 }));
+        const geo = new THREE.PlaneGeometry(w, h, 110, 110); geo.translate(0, h / 2, 0);
+        const m = new THREE.Mesh(geo, new THREE.ShaderMaterial({ uniforms: u, vertexShader: HERO_VS, fragmentShader: HERO_FS, transparent: true, depthWrite: false }));
         if (refl) { m.scale.y = -1; m.renderOrder = 0; } else m.renderOrder = 2;
         m.visible = false; this.scene.add(m);
         return { m, u };

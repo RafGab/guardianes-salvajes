@@ -524,6 +524,31 @@ class IceHazard {
     this.slideTip = false;
     this.wind = { x: 0, z: 0 };
     this.acc = 0;
+    this.gustI = 0; this.slideT = 4; this.crackT = 2; this.wasGround = true; this.lastVy = 0;
+    if (this.streaks) for (const q of this.streaks) { q.life = 0; q.m.visible = false; }
+    if (this.slides) this.slides.length = 0;
+    if (this.cracks) for (const c of this.cracks) { c.life = 0; c.m.visible = false; }
+  }
+
+  // ráfagas de viento visibles: trazos blancos que cruzan cerca del jugador en la dirección del viento
+  ensureFx() {
+    if (this.streaks) return;
+    const geo = new THREE.PlaneGeometry(1, 0.035); geo.translate(0.5, 0, 0);
+    this.streaks = Array.from({ length: 40 }, () => {
+      const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+      m.visible = false; m.rotation.order = 'YXZ'; m.frustumCulled = false; this.group.add(m);
+      return { m, life: 0, t: 0, x: 0, y: 0, z: 0, len: 1 };
+    });
+    // grietas que aparecen en el hielo del lago (líneas quebradas oscuras que se abren y se cierran)
+    const cmat = new THREE.MeshBasicMaterial({ color: 0x2a5a80, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 });
+    this.cracks = Array.from({ length: 6 }, () => {
+      const pos = new Float32Array(6 * 2 * 3), g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const idx = []; for (let i = 0; i < 5; i++) { const a = i * 2; idx.push(a, a + 1, a + 2, a + 2, a + 1, a + 3); } g.setIndex(idx);
+      const m = new THREE.Mesh(g, cmat.clone()); m.visible = false; m.frustumCulled = false; this.group.add(m);
+      return { m, pos, g, life: 0, t: 0 };
+    });
+    this.slides = [];
   }
 
   urgentAt() {
@@ -545,17 +570,23 @@ class IceHazard {
   update(dt, t) {
     const { ctx } = this;
     const { player, fx, world, ui, hero } = ctx;
-    // rachas de viento y nevadas intensas
-    const gust = clamp(Math.sin(t * 0.21) * 0.6 + Math.sin(t * 0.83 + 1) * 0.35 + 0.45, 0, 1);
+    this.ensureFx();
+    // VIENTO JUGABLE: ciclos de calma y rachas. Casi siempre sopla suave (el jugador avanza con normalidad);
+    // cada ~16 s llega una racha de unos 4 s más fuerte, que se nota y se ve pero no impide avanzar ni saltar.
+    const cyc = (t % 16) / 16;
+    const burst = smoothstep(0.55, 0.68, cyc) * (1 - smoothstep(0.84, 0.96, cyc));
+    const gust = clamp(0.22 + 0.08 * Math.sin(t * 0.9) + 0.7 * burst, 0, 1);
+    this.gustI = gust;
     const whiteout = Math.pow((Math.sin(t * 0.11 + 4.0) + 1) / 2, 3);
-    world.setFog(world.fogBase + 0.019 * whiteout);
-    const ang = 0.6;
-    this.wind.x = Math.cos(ang) * gust * 4.6;
-    this.wind.z = Math.sin(ang) * gust * 4.6;
+    world.setFog(world.fogBase + 0.005 * whiteout); // la ventisca se nota, pero el tablero sigue viéndose
+    const ang = 0.6 + Math.sin(t * 0.05) * 0.25;
+    this.wind.x = Math.cos(ang) * gust * 2.1;
+    this.wind.z = Math.sin(ang) * gust * 2.1;
     player.env.wind = this.wind;
-    if (world.rain) world.rain.uniforms.uWind.value.set(6 + gust * 14, 0, 2 + gust * 5);
+    if (world.rain) world.rain.uniforms.uWind.value.set(5 + gust * 12, 0, 2 + gust * 4);
     const icy = hero.element !== 'hielo' && !(player.climbT > 0);
-    player.env.slip = icy ? 0.32 : 1;
+    player.env.slip = icy ? 0.55 : 1; // el hielo resbala, pero el jugador controla sus movimientos
+    this.effects(dt, t, gust, ang);
     const hz = ctx.hz || 1;
     if (icy && !this.slideTip && t > 20) {
       this.slideTip = true;
@@ -594,6 +625,86 @@ class IceHazard {
     }
     // copos brillantes cerca
     if (Math.random() < dt * 18) fx.snow(player.pos.x, player.pos.y + 1, player.pos.z);
+  }
+
+  // efectos de ambiente del glaciar (ligeros): ráfagas visibles, nieve en movimiento, pequeños aludes de nieve,
+  // hielo que se agrieta en el lago y nubes de nieve al caer de un salto
+  effects(dt, t, gust, ang) {
+    const { player, fx } = this.ctx, P = player.pos, wx = Math.cos(ang), wz = Math.sin(ang);
+    // ráfagas visibles (más cuanto más fuerte sopla)
+    for (const q of this.streaks) {
+      if (q.life <= 0) {
+        if (Math.random() < dt * 22 * gust * gust) {
+          q.life = 0.5 + Math.random() * 0.4; q.t = 0; q.len = 1.5 + 3 * gust + Math.random() * 1.5;
+          const a = Math.random() * TAU, r = 3 + Math.random() * 14;
+          q.x = P.x + Math.cos(a) * r - wx * 6; q.z = P.z + Math.sin(a) * r - wz * 6; q.y = terrainH(q.x, q.z) + 0.4 + Math.random() * 3;
+          q.m.rotation.set(Math.random() * Math.PI, -ang, 0); q.m.visible = true;
+        }
+        continue;
+      }
+      q.t += dt; const u = q.t / q.life;
+      if (u >= 1) { q.life = 0; q.m.visible = false; continue; }
+      const sp = 9 + 8 * gust;
+      q.m.position.set(q.x + wx * sp * q.t, q.y + Math.sin(q.t * 6) * 0.08, q.z + wz * sp * q.t);
+      q.m.scale.set(q.len * (0.4 + 0.6 * Math.min(1, u * 3)), 1, 1);
+      q.m.material.opacity = 0.45 * Math.sin(u * Math.PI) * (0.4 + 0.6 * gust);
+    }
+    // nieve arrastrada por el viento a ras de suelo
+    if (Math.random() < dt * (6 + 20 * gust)) { const a = Math.random() * TAU, r = 2 + Math.random() * 10, x = P.x + Math.cos(a) * r, z = P.z + Math.sin(a) * r; fx.spray(x, terrainH(x, z) + 0.1, z, wx * (3 + 5 * gust), 0.4 + Math.random(), wz * (3 + 5 * gust), 0.5); }
+    // pequeños desprendimientos de nieve en las laderas cercanas
+    this.slideT -= dt;
+    if (this.slideT <= 0) {
+      this.slideT = 5 + Math.random() * 6;
+      let best = null;
+      for (let i = 0; i < 10; i++) {
+        const a = Math.random() * TAU, r = 10 + Math.random() * 16, x = P.x + Math.cos(a) * r, z = P.z + Math.sin(a) * r, h = terrainH(x, z);
+        const gx = terrainH(x + 1, z) - terrainH(x - 1, z), gz = terrainH(x, z + 1) - terrainH(x, z - 1), sl = Math.hypot(gx, gz);
+        if (sl > 0.5 && (!best || sl > best.sl)) best = { x, z, h, sl, dx: -gx / sl, dz: -gz / sl };
+      }
+      if (best) this.slides.push({ ...best, t: 0 });
+    }
+    this.slides = this.slides.filter((s) => {
+      s.t += dt;
+      if (s.t > 1.8) return false;
+      const x = s.x + s.dx * s.t * 4, z = s.z + s.dz * s.t * 4, y = terrainH(x, z);
+      for (let i = 0; i < 2; i++) fx.mist(x + rnd(-0.8, 0.8), y + 0.2, z + rnd(-0.8, 0.8), 0xffffff, 1.2);
+      if (Math.random() < 0.5) fx.spray(x, y + 0.2, z, s.dx * 3 + rnd(-1, 1), rnd(0.5, 2), s.dz * 3 + rnd(-1, 1), 0.8);
+      return true;
+    });
+    // el hielo del lago se agrieta cerca del jugador (aviso de hielo fino)
+    const lake = this.ctx.sc && this.ctx.sc.lake;
+    if (lake) {
+      const ld = Math.hypot(P.x - lake.x, P.z - lake.z);
+      this.crackT -= dt;
+      if (ld < lake.r - 2 && this.crackT <= 0) {
+        this.crackT = 1.6 + Math.random() * 2;
+        const c = this.cracks.find((q) => q.life <= 0);
+        if (c) {
+          const a0 = Math.random() * TAU, cx = P.x + Math.cos(a0) * 2.5, cz = P.z + Math.sin(a0) * 2.5, y = terrainH(cx, cz) + 0.05;
+          let x = cx, z = cz, a = Math.random() * TAU;
+          for (let i = 0; i < 6; i++) {
+            const w = 0.06 * (1 - i / 6) + 0.015, nx = -Math.sin(a) * w, nz = Math.cos(a) * w;
+            c.pos.set([x - nx, y, z - nz, x + nx, y, z + nz], i * 6);
+            a += rnd(-0.7, 0.7); x += Math.cos(a) * 0.7; z += Math.sin(a) * 0.7;
+          }
+          c.g.attributes.position.needsUpdate = true; c.g.computeBoundingSphere();
+          c.life = 2.4; c.t = 0; c.m.visible = true;
+          for (let i = 0; i < 4; i++) fx.iceShard(cx, y + 0.1, cz, 0.5);
+        }
+      }
+      for (const c of this.cracks) {
+        if (c.life <= 0) continue;
+        c.t += dt;
+        if (c.t >= c.life) { c.life = 0; c.m.visible = false; continue; }
+        c.m.material.opacity = 0.75 * Math.min(1, c.t / 0.15) * Math.min(1, (c.life - c.t) / 0.6);
+      }
+    }
+    // nube de nieve al caer de un salto
+    if (player.grounded && !this.wasGround && this.lastVy < -5) {
+      for (let i = 0; i < 10; i++) { const a = (i / 10) * TAU; fx.spray(P.x, P.y + 0.1, P.z, Math.cos(a) * 2.5, 0.6 + Math.random(), Math.sin(a) * 2.5, 0.7); }
+      for (let i = 0; i < 4; i++) fx.mist(P.x + rnd(-0.6, 0.6), P.y + 0.15, P.z + rnd(-0.6, 0.6), 0xffffff, 1.3);
+    }
+    this.wasGround = player.grounded; this.lastVy = player.vy;
   }
 
   dispose() {

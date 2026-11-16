@@ -33,7 +33,7 @@ export const HERO_SKILLS = {
     // OBSIDIANA — AVALANCHA: oleada de fragmentos de obsidiana que avanza por el escenario
     obsidian: {
       id: 'obsidian', name: 'Obsidiana: Avalancha', icon: '🖤', cd: 18,
-      prep: 0.8, exec: 2.4, recover: 0.5,
+      prep: 1.25, exec: 2.4, recover: 0.5, // prep: postura de combate y armadura de roca en los brazos
       length: 22, width: 8,         // recorrido y anchura de la avalancha
       shards: 110,                  // fragmentos
       damage: 24, force: 16, rootT: 0.8,

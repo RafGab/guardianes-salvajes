@@ -227,13 +227,13 @@ export class WorldSelect {
       const base = center ? new THREE.Vector3(0, 0.9, 0) : new THREE.Vector3(Math.cos(ang) * R, 0.3 + (k % 2) * 0.5, -Math.sin(ang) * R);
       const isl = buildIsland(L);
       isl.g.position.copy(base);
-      isl.g.scale.setScalar(center ? 1.25 : 1);
+      isl.g.scale.setScalar(center ? 1.5 : 1);
       isl.hit.userData.i = i;
       // partículas de su color en órbita
       const PN = center ? 140 : 70, pph = new Float32Array(PN), ppos = new Float32Array(PN * 3);
       for (let j = 0; j < PN; j++) pph[j] = Math.random();
       const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(ppos, 3)); pg.setAttribute('aPh', new THREE.BufferAttribute(pph, 1));
-      const pu = { uT: { value: 0 }, uR: { value: center ? 3.2 : 2.0 }, uPR: { value: this.pr }, uBoost: { value: 0 }, uCol: { value: isl.col } };
+      const pu = { uT: { value: 0 }, uR: { value: center ? 2.6 : 1.95 }, uPR: { value: this.pr }, uBoost: { value: 0 }, uCol: { value: isl.col } };
       const parts = new THREE.Points(pg, new THREE.ShaderMaterial({ uniforms: pu, vertexShader: RING_VS, fragmentShader: RING_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
       parts.frustumCulled = false; parts.rotation.x = -Math.PI / 2; parts.position.y = 0.2;
       isl.g.add(parts);
@@ -404,10 +404,10 @@ export class WorldSelect {
       if (!p.center) { const a = p.ang + this.ringYaw, R = 9.2; p.g.position.set(Math.cos(a) * R, p.base.y + Math.sin(t * 0.8 + p.ph) * 0.25, -Math.sin(a) * R); }
       else p.g.position.y = p.base.y + Math.sin(t * 0.6) * 0.18;
       p.isl.body.rotation.y += dt * (p.center ? 0.12 : 0.18) * (1 + p.h);
-      p.s = damp(p.s, (p.center ? 1.55 : 1.35) * (1 + p.h * 0.1), 8, dt);
+      p.s = damp(p.s, (p.center ? 1.6 : 1.15) * (1 + p.h * 0.1), 8, dt);
       p.g.scale.setScalar(p.s);
       const I = p.isl;
-      I.anim(t, dt, p.h);
+      I.anim(t, dt, p.h); I.setDim(p.dim);
       I.ringM.opacity = (0.35 + p.h * 0.55 + Math.sin(t * 2 + p.ph) * 0.08) * (1 - p.dim * 0.6);
       I.ring2.material.opacity = I.ringM.opacity * 0.8; I.ring2.rotation.z += dt * (0.4 + p.h);
       I.beamM.opacity = damp(I.beamM.opacity, isS ? 0.16 : isH ? 0.06 : 0, 5, dt);
@@ -453,9 +453,9 @@ export class WorldSelect {
       wantPos.set(wantLook.x, P.y + 5.2 * d, P.z + 8.2 * d);
       wantFov = 48;
     } else {
-      wantPos.set(0, 12.2 * f, 13.6 * f);
-      wantLook.set(0, -0.9, 0.9);
-      wantFov = 50;
+      wantPos.set(0, 19 * f, 18.5 * f);
+      wantLook.set(0, -0.4, 0.9);
+      wantFov = 44;
     }
     if (this.phase !== 'entering') {
       this.camPos.lerp(wantPos, 1 - Math.exp(-3 * dt));

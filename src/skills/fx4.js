@@ -946,8 +946,44 @@ export class MagmaGeyser {
 }
 
 /* ================================================================== */
-/*  JAGLION — ESTALACTITAS DE OBSIDIANA                                */
+/*  JAGLION — ESTALACTITAS DE ROCA Y OBSIDIANA                         */
 /* ================================================================== */
+// Estalactita maciza: pirámide de 7 caras con aristas irregulares (roca tallada), base de piedra parda que
+// se oscurece hasta una punta de obsidiana (colores por vértice).
+let ROCK_SPIKE = null, RUBBLE = null;
+function rockSpikeGeo() {
+  if (ROCK_SPIKE) return ROCK_SPIKE;
+  const g = new THREE.ConeGeometry(1, 1, 7, 5); g.translate(0, 0.5, 0);
+  const p = g.attributes.position, col = new Float32Array(p.count * 3), v = new THREE.Vector3();
+  const base = new THREE.Color(0x6a5a4a), mid = new THREE.Color(0x3a3036), tip = new THREE.Color(0x0c0a12), c = new THREE.Color();
+  const key = (x, y, z) => `${x.toFixed(3)},${y.toFixed(3)},${z.toFixed(3)}`, off = new Map();
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const k = key(v.x, v.y, v.z);
+    if (!off.has(k)) { const h = Math.sin(v.x * 91.7 + v.y * 37.3 + v.z * 53.1) * 43758.5; off.set(k, (h - Math.floor(h)) - 0.5); }
+    const j = off.get(k), r = Math.hypot(v.x, v.z);
+    if (r > 1e-4) { const f = 1 + j * 0.35 * (1 - v.y * 0.6); v.x *= f; v.z *= f; }
+    v.y += j * 0.04 * (1 - v.y);
+    p.setXYZ(i, v.x, v.y, v.z);
+    const t = v.y;
+    if (t < 0.45) c.copy(base).lerp(mid, t / 0.45); else c.copy(mid).lerp(tip, (t - 0.45) / 0.55);
+    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  g.computeVertexNormals();
+  ROCK_SPIKE = g;
+  return g;
+}
+const rockSpikeMat = () => {
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.55, metalness: 0.25, emissive: 0x140a20, emissiveIntensity: 0.25, envMapIntensity: 1.6, flatShading: true });
+  m.userData.own = true;
+  return m;
+};
+const rubbleMat = () => {
+  const m = new THREE.MeshStandardMaterial({ color: 0x5e5044, roughness: 1, flatShading: true });
+  m.userData.own = true;
+  return m;
+};
 const obsidianMat = () => {
   const m = new THREE.MeshStandardMaterial({ color: 0x07060c, roughness: 0.06, metalness: 0.55, emissive: 0x1a0a2e, emissiveIntensity: 0.35, envMapIntensity: 2.4, flatShading: true });
   m.userData.own = true;
@@ -959,12 +995,18 @@ const obsidianMat = () => {
 export class ObsidianSpikes {
   constructor(g, n = 72, life = 5) {
     this.g = g; this.n = n; this.count = 0;
-    this.mesh = new THREE.InstancedMesh(shared().spike, obsidianMat(), n);
+    this.mesh = new THREE.InstancedMesh(rockSpikeGeo(), rockSpikeMat(), n);
     this.mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
     this.mesh.castShadow = true; this.mesh.frustumCulled = false;
+    // collar de roca partida al pie de cada estalactita (el suelo se rompe al brotar)
+    if (!RUBBLE) RUBBLE = new THREE.DodecahedronGeometry(1, 0);
+    this.rub = new THREE.InstancedMesh(RUBBLE, rubbleMat(), n * 3);
+    this.rub.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    this.rub.castShadow = true; this.rub.frustumCulled = false;
+    this.mesh.add(this.rub);
     this.list = [];
     this.dummy = new THREE.Object3D();
-    for (let i = 0; i < n; i++) { this.dummy.scale.setScalar(0); this.dummy.updateMatrix(); this.mesh.setMatrixAt(i, this.dummy.matrix); }
+    for (let i = 0; i < n; i++) { this.dummy.scale.setScalar(0); this.dummy.updateMatrix(); this.mesh.setMatrixAt(i, this.dummy.matrix); for (let j = 0; j < 3; j++) this.rub.setMatrixAt(i * 3 + j, this.dummy.matrix); }
     this.it = g.vfx.add(this.mesh, life, (it, dt) => this.tick(dt || 1 / 60));
   }
   add(x, z, { h = 1.5, w = 0.35, tiltX = 0, tiltZ = 0 } = {}) {
@@ -1000,8 +1042,18 @@ export class ObsidianSpikes {
       dm.rotation.set(s.tiltX + jit, s.yaw, s.tiltZ - jit, 'ZXY'); // primero gira sobre su eje, luego se inclina
       dm.scale.set(s.w * (0.8 + 0.2 * hk), Math.max(0.0001, s.h * hk), s.w * (0.8 + 0.2 * hk));
       dm.updateMatrix(); this.mesh.setMatrixAt(s.i, dm.matrix);
+      // tres bloques de roca alrededor de la base
+      const rk = Math.min(1, s.age / 0.12) * (s.dying ? hk : 1);
+      for (let j = 0; j < 3; j++) {
+        const a = s.yaw + j * 2.094, r = s.w * 0.95;
+        dm.position.set(s.x + Math.cos(a) * r, s.y + 0.12, s.z + Math.sin(a) * r);
+        dm.rotation.set(s.yaw + j, j * 1.3, s.yaw * 0.5);
+        dm.scale.set(s.w * 0.55, s.w * 0.35, s.w * 0.5).multiplyScalar(Math.max(0.0001, rk) * (0.8 + 0.25 * j));
+        dm.updateMatrix(); this.rub.setMatrixAt(s.i * 3 + j, dm.matrix);
+      }
     }
     this.mesh.instanceMatrix.needsUpdate = true;
+    this.rub.instanceMatrix.needsUpdate = true;
   }
   kill() { this.g.vfx.kill(this.it); }
 }

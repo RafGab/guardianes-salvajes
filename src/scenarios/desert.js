@@ -1,4 +1,5 @@
 import { CFG, terrainH, setTerrain, smoothstep, lerp, n2, pathDist, pathPoint, refugeHeight, startFlat, setStartSafe, makeDescriptor, placeSigns, paintRefugeAndStart } from './common.js';
+import { createDesertFX } from './desert_fx.js';
 
 export const seed = 6606;
 
@@ -10,6 +11,23 @@ const look = {
 
 const OASIS = { x: 8, z: -18 };
 const TRACK = [[0, 66], [-16, 40], [-4, 12], [10, -20], [30, -50], [58, -78], [70, -88]];
+// ríos secos que cruzan el desierto (cauces poco hondos que se pueden atravesar); cerca del borde del mapa
+// se hunden y forman un cañón profundo con paredes de roca
+const RIVERS = [
+  { pts: [[-120, 26], [-80, 14], [-50, -6], [-34, -34], [-44, -70], [-36, -100], [-30, -126]] },
+  { pts: [[124, 40], [92, 22], [64, 30], [42, 44], [46, 78], [34, 104], [28, 128]] },
+];
+const canyonK = (x, z) => smoothstep(80, 106, Math.hypot(x, z)); // 0 en el centro del mapa → 1 en el borde
+function riverCut(x, z) {
+  let cut = 0;
+  for (const R of RIVERS) {
+    const d = pathDist(x, z, R.pts).d;
+    if (d > 9) continue;
+    const deep = 0.85 + 7 * canyonK(x, z);
+    cut = Math.max(cut, deep * smoothstep(5.5 + 1.5 * canyonK(x, z), 2.2, d));
+  }
+  return cut;
+}
 
 function desertTerrain(x, z) {
   let h = 1.4 + 2.2 * n2(x, z, 0.02);
@@ -19,6 +37,11 @@ function desertTerrain(x, z) {
   const od = Math.hypot(x - OASIS.x, z - OASIS.z);
   h = lerp(h, -0.4, smoothstep(13, 6, od));
   h += smoothstep(96, 138, Math.hypot(x, z)) * 12;
+  // dunas gigantes en el anillo exterior (fuera de las rutas principales)
+  const dune2 = Math.sin((x * 0.9 - z * 0.45) * 0.05 + 2.2 * n2(x + 70, z, 0.015, 2)) * 0.5 + 0.5;
+  h += smoothstep(66, 98, Math.hypot(x, z)) * Math.pow(dune2, 1.5) * 9;
+  // cauces secos (y el cañón en el borde)
+  h -= riverCut(x, z);
   const pd = pathDist(x, z, TRACK);
   h = lerp(h, 1.2 + 0.4 * n2(x, z, 0.05), smoothstep(6, 2, pd.d) * 0.75);
   h = refugeHeight(h, x, z);
@@ -91,8 +114,14 @@ export function build(K, { scene }) {
       if (od < 13) return [162, 150, 90];
       const pd = pathDist(x, z, TRACK);
       if (pd.d < 2.6) return [186, 150, 96];
-      if (h > 6) return [172, 130, 88];
-      return [210 + 14 * n2(x, z, 0.06), 168 + 12 * n2(x, z, 0.06), 108 + 10 * n2(x, z, 0.09)];
+      const rc = riverCut(x, z);
+      if (rc > 0.55) { const v = n2(x, z, 0.25); return rc > 2.5 ? [150 + 12 * v, 104 + 10 * v, 70] : [168 + 14 * v, 132 + 10 * v, 92 + 8 * v]; } // cauce seco de barro cuarteado
+      if (rc > 0.15) return [196, 156, 104];
+      if (sl > 1.1) return [176, 122, 80];                                    // ladera de duna en sombra
+      if (h > 6) return [178, 134, 88];
+      const zone = n2(x, z, 0.022), v = n2(x, z, 0.06);                       // arena oscura y arena clara por zonas
+      const dark = smoothstep(0.35, 0.65, zone);
+      return [lerp(226, 192, dark) + 12 * v, lerp(190, 146, dark) + 10 * v, lerp(128, 92, dark) + 8 * n2(x, z, 0.09)];
     },
     draw: (g, px, sz) => {
       g.strokeStyle = 'rgba(150,100,60,.22)';
@@ -104,9 +133,31 @@ export function build(K, { scene }) {
         g.quadraticCurveTo(px(x + 8), px(z + rr(-3, 3)), px(x + 16), px(z + rr(-6, 6)));
         g.stroke();
       }
+      // barro cuarteado en los cauces secos
+      g.strokeStyle = 'rgba(110,74,46,.45)';
+      g.lineWidth = sz(0.16);
+      for (const R of RIVERS) for (let i = 0; i < 260; i++) {
+        const p = pathPoint(R.pts, rr(0, 1)), x = p[0] + rr(-3.5, 3.5), z = p[1] + rr(-3.5, 3.5);
+        g.beginPath(); g.moveTo(px(x), px(z));
+        for (let k = 0; k < 3; k++) g.lineTo(px(x + rr(-1.4, 1.4)), px(z + rr(-1.4, 1.4)));
+        g.stroke();
+      }
       paintRefugeAndStart(g, px, sz, '#d8c8a0');
     },
   });
+
+  // ---- elementos 3D del desierto (cactus, vegetación, mesas, formaciones, cañón, oasis y arena en el viento) ----
+  for (const R of RIVERS) { // puntos del cañón (donde el cauce se hunde) para levantar sus paredes de roca
+    R.canyon = [];
+    for (let t = 0; t <= 1; t += 0.012) {
+      const a = pathPoint(R.pts, t), b = pathPoint(R.pts, Math.min(1, t + 0.01));
+      const k = canyonK(a[0], a[1]);
+      if (k < 0.3) continue;
+      const dx = b[0] - a[0], dz = b[1] - a[1], l = Math.hypot(dx, dz) || 1;
+      R.canyon.push([a[0], a[1], -dz / l, dx / l, 0.85 + 7 * k]);
+    }
+  }
+  createDesertFX(scene, K, { OASIS, TRACK, RIVERS, free, pathDist, rng, houses: pts });
 
   return makeDescriptor(K, scene, {
     id: 'sandstorm', look, paint, refugeStyle: 'oasis', mapView: { cx: 0, cz: -15, half: 105 }, windAmp: 2.2, windCover: true, coverKind: 'sand',

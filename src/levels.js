@@ -20,7 +20,7 @@ export const LEVELS = [
     boss: 'basilisco', bossName: 'Basilisco', bossTitle: 'Señor de la Arena',
   },
   {
-    n: 3, id: 'quake', scenario: 'quake', icon: '🏚️', kicker: 'MUNDO 3 · EARTHQUAKE IMPACT', name: 'Earthquake Impact', place: 'Sismara: pueblo histórico dañado con canal y puente', color: '#2ECC40', d: 2,
+    n: 3, id: 'quake', scenario: 'quake', icon: '🏚️', kicker: 'MUNDO 3 · EARTHQUAKE IMPACT', name: 'Earthquake Impact', place: 'Sismara: pueblo histórico dañado con canal y puente', color: '#795548', d: 2,
     desc: 'La tierra tiembla. Edificios dañados, grietas, escombros y calles bloqueadas alrededor de una plaza con iglesia.',
     time: 360, victims: 8, animalRatio: 0.35, minSep: 12, minStart: 22, hz: 1.0, obstacles: 0, best: ['aire', 'tierra'],
     gauge: 'SISMO', intro: '🏚️ ¡EARTHQUAKE IMPACT EN SISMARA!', introSub: 'Cuidado con los escombros y las réplicas',
@@ -29,7 +29,7 @@ export const LEVELS = [
     boss: 'minotauro', bossName: 'Minotauro', bossTitle: 'Guardián de la Tierra',
   },
   {
-    n: 4, id: 'rockslide', scenario: 'rockslide', icon: '🪨', kicker: 'MUNDO 4 · ROCKSLIDE', name: 'Rockslide', place: 'Pedregal: valle minero entre paredes de roca', color: '#6B6C76', d: 4,
+    n: 4, id: 'rockslide', scenario: 'rockslide', icon: '🪨', kicker: 'MUNDO 4 · ROCKSLIDE', name: 'Rockslide', place: 'Pedregal: valle minero entre paredes de roca', color: '#606C76', d: 4,
     desc: 'La montaña se viene abajo. Las rocas bajan rodando por las pedreras hasta el pueblo minero del fondo del valle: casas aplastadas, la mina, redes de contención reventadas y caminos cortados por los bloques.',
     time: 340, victims: 10, animalRatio: 0.4, minSep: 15, minStart: 28, hz: 1.3, obstacles: 3, best: ['tierra', 'aire'],
     gauge: 'ROCAS', intro: '🪨 ¡ROCKSLIDE EN PEDREGAL!', introSub: 'Las rocas bajan rodando por los canales: crúzalos rápido y no te quedes en su camino',
@@ -38,7 +38,7 @@ export const LEVELS = [
     boss: 'medusa', bossName: 'Medusa', bossTitle: 'Guardiana de la Roca',
   },
   {
-    n: 5, id: 'hurricane', scenario: 'hurricane', icon: '🌀', kicker: 'MUNDO 5 · HURRICANE FORCE', name: 'Hurricane Force', place: 'Huravela: ciudad costera tropical con muelle y faro', color: '#F5A623', d: 9,
+    n: 5, id: 'hurricane', scenario: 'hurricane', icon: '🌀', kicker: 'MUNDO 5 · HURRICANE FORCE', name: 'Hurricane Force', place: 'Huravela: ciudad costera tropical con muelle y faro', color: '#1565C0', d: 9,
     desc: 'Vientos brutales, olas enormes, palmeras que caen y objetos volando. La marejada inunda la costa.',
     time: 380, victims: 12, animalRatio: 0.4, minSep: 20, minStart: 40, hz: 2.0, obstacles: 6, best: ['aire', 'tierra', 'agua'],
     gauge: 'VIENTO', intro: '🌀 ¡HURRICANE FORCE EN HURAVELA!', introSub: 'El viento te empuja y la marejada sube',
@@ -64,7 +64,7 @@ export const LEVELS = [
     boss: 'kerberos', bossName: 'Kerberos', bossTitle: 'Guardián del Inframundo',
   },
   {
-    n: 8, id: 'ice', scenario: 'ice', icon: '🧊', kicker: 'MUNDO 8 · GLACIER COLLAPSE', name: 'Glacier Collapse', place: 'Nivoria: montañas nevadas, lago helado y refugio', color: '#E0F7FF', d: 8,
+    n: 8, id: 'ice', scenario: 'ice', icon: '🧊', kicker: 'MUNDO 8 · GLACIER COLLAPSE', name: 'Glacier Collapse', place: 'Nivoria: montañas nevadas, lago helado y refugio', color: '#9575CD', d: 8,
     desc: 'Nieve, viento y frío extremo en una estación de montaña con lago helado, bosque nevado y carreteras congeladas.',
     time: 365, victims: 12, animalRatio: 0.45, minSep: 19, minStart: 38, hz: 1.9, obstacles: 5, best: ['fuego', 'hielo'],
     gauge: 'FRÍO', intro: '🧊 ¡GLACIER COLLAPSE EN NIVORIA!', introSub: 'Calienta junto a las hogueras y rescata a todos',
@@ -73,7 +73,7 @@ export const LEVELS = [
     boss: 'fenrir', bossName: 'Fenrir', bossTitle: 'Hielo Eterno',
   },
   {
-    n: 9, id: 'extreme', scenario: 'extreme', icon: '☄️', kicker: 'MUNDO 9 · APOCALIA', name: 'Apocalia', place: 'Valle Titán: río, volcán lejano y ciudad en ladera', color: '#8A2BE2', d: 10,
+    n: 9, id: 'extreme', scenario: 'extreme', icon: '☄️', kicker: 'MUNDO 9 · APOCALIA', name: 'Apocalia', place: 'Valle Titán: río, volcán lejano y ciudad en ladera', color: '#212121', d: 10,
     desc: 'Todos los elementos se desequilibran a la vez: terremotos, crecida del río, ceniza y viento. Al rescatar a todos, el propio Cataclismo se manifiesta para el duelo final.',
     time: 460, victims: 14, animalRatio: 0.45, minSep: 22, minStart: 44, hz: 2.3, obstacles: 7, best: ['aire', 'agua', 'tierra', 'fuego', 'hielo'],
     gauge: 'PELIGRO', intro: '☄️ ¡APOCALIA!', introSub: 'Terremoto, crecida, ceniza y viento: ¡todo a la vez!',

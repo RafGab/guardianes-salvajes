@@ -871,26 +871,115 @@ export class ObsidianSkill extends Skill {
     return [
       { name: 'invocar', dur: d.prep, enter: this.enterCall, tick: this.tickCall },
       { name: 'avalancha', dur: d.exec, enter: this.enterRun, tick: this.tickRun },
-      { name: 'recuperacion', dur: d.recover, enter: () => { this.lock(false); this.shatter(); }, tick: (dt, k) => { pose.rx = lerp(0.3, 0, k); pose.sy = lerp(0.92, 1, k); } },
+      { name: 'recuperacion', dur: d.recover, enter: () => { this.lock(false); this.shatter(); this.crumbleArmor(); }, tick: (dt, k) => { pose.rx = lerp(0.3, 0, k); pose.sy = lerp(0.92, 1, k); this.stanceK = 1 - k; this.punchK = 1 - k; } },
     ];
   }
+  // 1) POSTURA DE COMBATE: se agacha, adelanta el cuerpo y sube los puños en guardia
+  // 2) Mientras tanto los brazos se recubren de enormes placas de roca (del hombro al puño)
+  // 3) Cuando la armadura está completa, golpea el suelo y brotan las estalactitas
   enterCall() {
     this.lock(true);
     this.sfx('rumble');
     this.shake(0.15);
     const d = this.def;
+    this.stanceK = 0; this.punchK = 0;
     this.strip = this.track(this.vfx.telegraph('strip', { x: this.o.x, z: this.o.z, x2: this.o.x + this.dir.x * d.length, z2: this.o.z + this.dir.z * d.length, width: d.width, color: 0x6a40a0, opacity: 0.3 }));
+    this.armor = this.buildArmor();
+    this.setBones((B, dt, t, fx) => this.stanceBones(B, fx));
   }
   tickCall(dt, k) {
     const pose = this.pose;
-    pose.rx = -0.4 * k; pose.dy = 0.2 * k; pose.sy = 1 + 0.06 * k; // se alza y golpea el suelo
+    this.stanceK = ease(Math.min(1, k / 0.35));
+    pose.rx = 0.16 * this.stanceK; pose.sy = 1 - 0.08 * this.stanceK; pose.dy = -0.05 * this.stanceK; // postura firme, agachada y adelantada
     this.strip.setProgress(k);
-    this.shake(0.05 + 0.1 * k);
-    if (Math.random() < 0.6) { const s = rnd(-0.5, 0.5) * this.def.width; this.g.fx.rock(this.o.x - this.dir.z * s, terrainH(this.o.x, this.o.z) + 0.2, this.o.z + this.dir.x * s); }
+    this.shake(0.03 + 0.06 * k);
+    // las placas de roca van cubriendo los brazos, del hombro al puño
+    const fx = this.g.fx, a = clamp((k - 0.2) / 0.7, 0, 1);
+    for (const q of this.armor) {
+      const g = clamp((a - q.at) / 0.14, 0, 1), e = g < 1 ? 1 + 0.25 * Math.sin(g * Math.PI) : 1; // crece con un pequeño rebote
+      q.m.scale.copy(q.s).multiplyScalar(Math.max(0.0001, g * e));
+      if (g > 0 && !q.on) { q.on = true; q.m.getWorldPosition(this._wp || (this._wp = new THREE.Vector3())); fx.dustPuff(this._wp.x, this._wp.y - 0.1, this._wp.z, 0.6); if (Math.random() < 0.5) fx.rock(this._wp.x, this._wp.y, this._wp.z); }
+    }
+    if (a > 0 && a < 1 && Math.random() < 0.35) this.sfx('roll');
+    if (Math.random() < 0.4) { const s = rnd(-0.5, 0.5) * this.def.width; this.g.fx.rock(this.o.x - this.dir.z * s, terrainH(this.o.x, this.o.z) + 0.2, this.o.z + this.dir.x * s); }
+  }
+  // huesos: guardia de combate (brazos delante y codos flexionados, rodillas dobladas) y el golpe al suelo
+  stanceBones(B, fx) {
+    const e = this.stanceK || 0, pu = this.punchK || 0;
+    for (const S of ['L', 'R']) {
+      fx.rot(B[`upper_arm_${S}`], 1, 0, 0, -0.95 * e - 0.55 * pu);
+      fx.rot(B[`forearm_${S}`], 1, 0, 0, -1.35 * e * (1 - 0.75 * pu));
+      fx.rot(B[`thigh_${S}`], 1, 0, 0, -0.32 * e);
+      fx.rot(B[`shin_${S}`], 1, 0, 0, 0.5 * e);
+    }
+    fx.rot(B.spine || B.spine_1, 1, 0, 0, 0.12 * e + 0.25 * pu);
+  }
+  // placas de roca pegadas a los huesos de los brazos (siguen cualquier animación) y un guantelete en cada puño
+  buildArmor() {
+    const B = this.p.model && this.p.model.bones, out = [];
+    if (!B) return out;
+    const H = this.p.H || 1.8;
+    const mats = [0x6b5a48, 0x544638, 0x7a6a56].map((c) => { const m = new THREE.MeshStandardMaterial({ color: c, roughness: 0.95, metalness: 0.02, flatShading: true }); m.userData.own = true; return m; });
+    const geo = new THREE.DodecahedronGeometry(1, 0), geo2 = new THREE.IcosahedronGeometry(1, 0);
+    const ws = new THREE.Vector3(), dir = new THREE.Vector3(), up = new THREE.Vector3(), side = new THREE.Vector3();
+    const segs = [['upper_arm', 'forearm', 3, 0.075, 0], ['forearm', 'hand', 4, 0.085, 0.4]];
+    for (const S of ['L', 'R']) {
+      for (const [bn, cn, n, sz, at0] of segs) {
+        const b = B[`${bn}_${S}`], c = B[`${cn}_${S}`];
+        if (!b || !c) continue;
+        b.updateWorldMatrix(true, false); b.getWorldScale(ws);
+        const inv = 1 / (ws.x || 1), len = c.position.length() || 0.1;
+        dir.copy(c.position).normalize();
+        up.set(0, 0, 1); if (Math.abs(dir.dot(up)) > 0.9) up.set(1, 0, 0);
+        side.crossVectors(dir, up).normalize(); up.crossVectors(side, dir).normalize();
+        for (let i = 0; i < n; i++) {
+          const t = (i + 0.5) / n;
+          for (let j = 0; j < 3; j++) { // tres placas alrededor del brazo
+            const a = j * 2.094 + i * 0.6, r = H * 0.05 * inv;
+            const m = new THREE.Mesh(j === 1 ? geo2 : geo, mats[(i + j) % 3]);
+            m.position.copy(dir).multiplyScalar(len * t).addScaledVector(side, Math.cos(a) * r).addScaledVector(up, Math.sin(a) * r);
+            m.rotation.set(i * 1.7 + j, j * 2.1, i * 0.9);
+            const k = H * sz * inv * (0.85 + 0.3 * t);
+            const s = new THREE.Vector3(k, k * 0.6, k * 1.35);
+            m.scale.setScalar(0.0001); m.castShadow = true;
+            b.add(m);
+            out.push({ m, s, at: at0 + (t * 0.4) * (bn === 'forearm' ? 1 : 0.9) + j * 0.03, on: false });
+          }
+        }
+        if (cn === 'hand') { // guantelete: un gran bloque de roca sobre el puño
+          const m = new THREE.Mesh(geo, mats[1]);
+          m.position.copy(c.position).multiplyScalar(1.02);
+          const k = H * 0.1 * inv;
+          b.add(m); m.scale.setScalar(0.0001); m.castShadow = true;
+          out.push({ m, s: new THREE.Vector3(k * 1.1, k * 0.95, k * 1.1), at: 0.86, on: false });
+        }
+      }
+    }
+    for (const q of out) this.track({ kill: () => { if (q.m.parent) q.m.parent.remove(q.m); } });
+    this.track({ kill: () => { mats.forEach((m) => m.dispose()); geo.dispose(); geo2.dispose(); } });
+    return out;
+  }
+  // al terminar, las placas se resquebrajan y caen en pedazos
+  crumbleArmor() {
+    const fx = this.g.fx, wp = new THREE.Vector3();
+    for (const q of this.armor || []) {
+      q.m.getWorldPosition(wp);
+      fx.rock(wp.x, wp.y, wp.z);
+      if (Math.random() < 0.4) fx.dustPuff(wp.x, wp.y - 0.2, wp.z, 0.7);
+      if (q.m.parent) q.m.parent.remove(q.m);
+    }
+    this.armor = [];
+    this.sfx('crack');
   }
   enterRun() {
     const d = this.def;
     this.strip.kill();
+    this.punchK = 0; this.stanceK = 1;
+    // golpe: los puños de roca caen contra el suelo delante de Jaglion
+    const p = this.p, fx = this.g.fx, hx = p.pos.x + this.dir.x * 0.9, hz = p.pos.z + this.dir.z * 0.9, hy = terrainH(hx, hz);
+    for (let i = 0; i < 10; i++) fx.rock(hx, hy + 0.2, hz);
+    for (let i = 0; i < 6; i++) fx.dustPuff(hx + rnd(-0.6, 0.6), hy, hz + rnd(-0.6, 0.6), 1.8);
+    this.vfx.ring(hx, null, hz, { r0: 0.3, r1: 3.5, dur: 0.4, color: 0xb89a70, opacity: 0.6, additive: false });
     this.pose.rx = 0.3; this.pose.dy = 0; this.pose.sy = 0.92;
     this.shake(d.shake);
     this.sfx('avalanche');
@@ -909,6 +998,8 @@ export class ObsidianSkill extends Skill {
   }
   tickRun(dt, k) {
     const d = this.def, ux = this.dir.x, uz = this.dir.z;
+    this.punchK = Math.min(1, this.t / 0.14); this.stanceK = 1;
+    this.pose.rx = 0.3; this.pose.sy = 0.92;
     const front = d.length * ease(k) + 1;
     for (let i = 0; i < this.parts.length; i++) {
       const q = this.parts[i];
@@ -930,7 +1021,7 @@ export class ObsidianSkill extends Skill {
       for (let j = 0; j < n; j++) {
         const s = ((j + rnd(0.15, 0.85)) / n - 0.5) * d.width * 0.95, x = this.o.x + ux * r - uz * s, z = this.o.z + uz * r + ux * s;
         const tilt = rnd(0.25, 0.55), side = rnd(-0.25, 0.25);
-        this.spikes.add(x, z, { h: rnd(0.9, 2.3) * (1 - Math.abs(s) / d.width * 0.6), w: rnd(0.22, 0.42), tiltX: tilt * (uz >= 0 ? 1 : -1) * Math.abs(uz) + side * ux, tiltZ: -tilt * ux + side * uz });
+        this.spikes.add(x, z, { h: rnd(1.3, 2.9) * (1 - Math.abs(s) / d.width * 0.55), w: rnd(0.34, 0.6), tiltX: tilt * (uz >= 0 ? 1 : -1) * Math.abs(uz) + side * ux, tiltZ: -tilt * ux + side * uz });
         this.debris.burst(x, terrainH(x, z) + 0.2, z, 2, 0.8, 0.14);
       }
       this.track(this.v2.crack(this.o.x + ux * (r - 1.1), this.o.z + uz * (r - 1.1), 1.3, Math.atan2(ux, uz) + rnd(-0.3, 0.3), { life: d.exec - this.t + d.recover + 0.4, width: 0.16, color: 0x8a50ff }));
