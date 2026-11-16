@@ -35,8 +35,8 @@ export function toonMat(params = {}) {
 
 // Cielo de cada región: [cénit, horizonte]. Se mezcla con el cielo propio del escenario (SKY_MIX) para conservar su ambiente.
 const SKY = {
-  campfire: [0x4a78c8, 0xffb27a], flood: [0x4a7fc8, 0xbcd8e8], fire: [0x7a3a6a, 0xff9a5a], quake: [0x4f9be0, 0xf7dcb0], volcano: [0x5a2f6e, 0xff8a6a],
-  hurricane: [0x3a6fb0, 0xa8d4e4], sandstorm: [0x6aa8d8, 0xf6d89a], ice: [0x6aa6e8, 0xe4f2ff], drought: [0x5aa0e0, 0xfbe3a8], extreme: [0x5a4fc0, 0xd6a8f0],
+  campfire: [0x4a78c8, 0xffb27a], flood: [0x4a7fc8, 0xbcd8e8], fire: [0x7a3a6a, 0xff9a5a], quake: [0x4f9be0, 0xf7dcb0], rockslide: [0x55667e, 0xc8ccd6],
+  hurricane: [0x3a6fb0, 0xa8d4e4], sandstorm: [0x6aa8d8, 0xf6d89a], ice: [0x6aa6e8, 0xe4f2ff], extreme: [0x5a4fc0, 0xd6a8f0],
 };
 const SKY_MIX = 0.6;
 

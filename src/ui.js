@@ -885,10 +885,12 @@ export const ui = {
     $('li-desc').textContent = level.desc;
     $('li-mech').textContent = `⚠️ ${level.mechanic}`;
     const rw = ITEMS[level.reward];
-    $('li-diff').innerHTML = `Dificultad ${'🔥'.repeat(Math.ceil(level.n / 2))} · Premio del nivel: ${rw ? rw.icon + ' ' + rw.name : ''}`;
+    $('li-diff').innerHTML = `Dificultad ${'🔥'.repeat(Math.ceil((level.d ?? level.n) / 2))} · Premio del nivel: ${rw ? rw.icon + ' ' + rw.name : ''}`;
     $('li-progress').style.width = '4%';
     $('li-msg').textContent = 'Cargando el escenario 3D…';
     $('li-bg').className = 'li-bg ' + level.scenario;
+    // fondo con el color oficial del mundo
+    $('li-bg').style.background = level.color ? `radial-gradient(circle at 50% 30%, color-mix(in srgb, ${level.color} 62%, #000), #06060c)` : '';
     this.showScreen('levelintro');
   },
   levelIntroProgress(p, msg) {

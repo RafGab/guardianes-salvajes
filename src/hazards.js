@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { CFG, terrainH } from './terrain.js';
 import { clamp, damp, smoothstep, makeRng, TAU } from './utils.js';
-import { VolcanoHazard, HurricaneHazard, SandstormHazard, DroughtHazard } from './hazards2.js';
+import { HurricaneHazard, SandstormHazard } from './hazards2.js';
+import { RockslideHazard } from './hazards3.js';
 import { HEALTH, DESTRUCTIBLE } from './skills/config.js';
 
 const rnd = (a, b) => a + Math.random() * (b - a);
@@ -645,10 +646,9 @@ export function createHazards(scenario, ctx) {
     case 'fire': case 'campfire': return new FireHazard(ctx);
     case 'quake': return new QuakeHazard(ctx);
     case 'ice': return new IceHazard(ctx);
-    case 'volcano': return new VolcanoHazard(ctx);
+    case 'rockslide': return new RockslideHazard(ctx);
     case 'hurricane': return new HurricaneHazard(ctx);
     case 'sandstorm': return new SandstormHazard(ctx);
-    case 'drought': return new DroughtHazard(ctx);
     case 'extreme': return new ExtremeHazard(ctx);
     default: return new FloodHazard(ctx);
   }

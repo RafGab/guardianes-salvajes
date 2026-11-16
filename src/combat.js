@@ -239,7 +239,7 @@ export class Combat {
       const k = kind || (i === n - 1 && n >= 3 ? 'bruto' : 'esbirro'); // el tercero es un bruto (más vida, más fuerte)
       const m = new Soldier(this, c.x + Math.sin(a) * r, c.z + Math.cos(a) * r, NPC_KINDS[k] || NPC_KINDS.esbirro, { color, accent: 0xff4a3a, kind: k, glb: b && b.kind === 'kerberos' ? 'soldado' : null }); // los soldados de Kerberos usan el modelo del soldado
       // soldados del jefe: más resistentes que un NPC suelto (+10 % por zona), para que el combate dure
-      if (b) { const k2 = 3 * (1 + ((this.game.mission && this.game.mission.n) || 1) * 0.1); m.hp = m.hpMax = Math.round(m.hpMax * k2); }
+      if (b) { const k2 = 3 * (1 + ((this.game.mission && (this.game.mission.d ?? this.game.mission.n)) || 1) * 0.1); m.hp = m.hpMax = Math.round(m.hpMax * k2); }
       this.minions.push(m);
       this.vfx.sparks(m.pos.x, m.pos.y + 0.5, m.pos.z, color, 12, 2.5);
       if (this.vfx.ring) this.vfx.ring(m.pos.x, null, m.pos.z, { r0: 0.3, r1: 1.8, dur: 0.5, color });

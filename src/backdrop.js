@@ -11,11 +11,10 @@ const THEMES = {
   campfire:  { shape: 'round', col: [0x4f9a52, 0x86b86a, 0xe6b48a], cloud: 0xffe2c4 },
   fire:      { shape: 'cone',  col: [0x2a1e20, 0x4a2e2c, 0x6e4038], cloud: 0x8a6a64, glow: true }, // Cenizara: volcanes humeantes
   quake:     { shape: 'round', col: [0x6cbc68, 0xa4d49c, 0xd0e8d4], cloud: 0xffffff },
-  volcano:   { shape: 'cone',  col: [0x7a5a7c, 0x9a6f92, 0xcfa0ae], cloud: 0xffd8d0, glow: true },
+  rockslide: { shape: 'peak',  col: [0x5a5b64, 0x7a7b86, 0xa4a6b2], cloud: 0xe2e4ea },
   hurricane: { shape: 'round', col: [0x3a9f9c, 0x66bfc2, 0xa6e0e4], cloud: 0xeaf6ff },
   sandstorm: { shape: 'dune',  col: [0xd8a042, 0xe9c476, 0xf4dcaa], cloud: 0xfff2d6 },
   ice:       { shape: 'peak',  col: [0x86b8e0, 0xb4d6f0, 0xe2f1fb], cloud: 0xffffff },
-  drought:   { shape: 'round', col: [0xbf9238, 0xdbb862, 0xeed9a4], cloud: 0xfff4de },
   extreme:   { shape: 'round', col: [0x6a7bd0, 0x9a9ae2, 0xc8c2f2], cloud: 0xf4eeff },
 };
 

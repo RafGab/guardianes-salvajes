@@ -1,24 +1,20 @@
 import * as THREE from 'three';
+import { buildIsland, buildPlatform } from './worldislands.js';
 
 /* ======================================================================
-   SELECCIÓN DE MUNDOS · universo espacial con portales mágicos flotantes
+   SELECCIÓN DE MUNDOS · mundos flotantes alrededor de una plataforma de energía, con APOCALIA en el centro
+   (las islas de cada mundo están en worldislands.js; cada una con su color oficial de levels.js)
    · Fondo: nebulosas animadas, estrellas que titilan, planetas a distintas distancias y polvo de energía
-   · Un portal 3D por cada nivel EXISTENTE (LEVELS), en arco y con profundidad. Dentro de cada portal se ve
-     una vista real de su mundo (capturada del propio escenario 3D: public/img/worlds/<id>.jpg)
-   · Pasar el cursor: el portal se ilumina, crece y lanza una onda de energía. Clic: la cámara se acerca,
-     se muestra la descripción y el botón «ENTRAR AL MUNDO». Entrar: la cámara atraviesa el portal y se abre
-     el mundo real con el sistema de carga de siempre (pickMission → loadLevel).
+   · Una isla flotante por cada mundo (LEVELS) en círculo alrededor de Apocalia, con su fenómeno y su color oficial;
+     el panel enseña capturas reales del mundo (public/img/worlds/<id>_1..3.jpg)
+   · Pasar el cursor: el mundo se ilumina y crece. Clic: el anillo gira para traerlo delante, la plataforma y la luz
+     toman su color, la cámara se acerca y se muestra la descripción con «ENTRAR AL MUNDO». Arrastrar gira el anillo.
+     Entrar: la cámara se zambulle en el mundo y se abre con el sistema de carga de siempre (pickMission → loadLevel).
    ====================================================================== */
 const TAU = Math.PI * 2;
 const lerp = (a, b, t) => a + (b - a) * t;
 const damp = (a, b, k, dt) => lerp(a, b, 1 - Math.exp(-k * dt));
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
-
-// Color de energía de cada mundo (según su catástrofe)
-const WORLD_COL = {
-  campfire: 0xff8a2a, quake: 0xc89a5a, fire: 0xff5a1a, volcano: 0xff3a3a, sandstorm: 0xffc860,
-  flood: 0x3aa8ff, drought: 0xffd23a, ice: 0x8ae8ff, hurricane: 0x2ae0c8, extreme: 0xc66aff,
-};
 
 /* ---------------- shaders ---------------- */
 const NOISE = `
@@ -83,27 +79,6 @@ void main(){ vec3 p = position; p.y = mod(p.y + uT * (0.25 + aPh * 0.4) + 20.0, 
   vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_PointSize = (3.0 + aPh * 5.0) * uPR * (30.0 / -mv.z); gl_Position = projectionMatrix * mv; }`;
 const DUST_FS = `varying vec3 vCol; varying float vA; void main(){ float d = length(gl_PointCoord - 0.5); gl_FragColor = vec4(vCol * smoothstep(0.5, 0.0, d) * vA, 1.0); }`;
 
-const PORTAL_VS = `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
-const PORTAL_FS = `uniform sampler2D uMap; uniform float uT; uniform float uHover; uniform float uLock; uniform float uDim; uniform float uWarp; uniform vec3 uCol; varying vec2 vUv;
-void main(){
-  vec2 c = vUv - 0.5; float r = length(c) * 2.0; float a = atan(c.y, c.x);
-  // remolino suave en el borde, más fuerte al entrar
-  float sw = (1.0 - r) * 0.0 + pow(r, 3.0) * (0.55 + uHover * 0.3) + uWarp * (1.0 - r) * 2.5;
-  float aa = a + sw * sin(uT * 0.7) * 0.6 + uWarp * uT * 2.0;
-  vec2 uv = vec2(cos(aa), sin(aa)) * length(c) * (0.92 - uHover * 0.06 - uWarp * 0.3) + 0.5;
-  uv += vec2(sin(uT * 0.25), cos(uT * 0.2)) * 0.012;
-  vec3 img = texture2D(uMap, uv).rgb;
-  float l = dot(img, vec3(0.299, 0.587, 0.114));
-  img = mix(img, vec3(l) * vec3(0.55, 0.6, 0.75), uLock * 0.85);
-  img *= mix(1.0, 0.45, uLock) * mix(1.0, 0.32, uDim);
-  // velo de energía con ondas
-  float wave = sin(r * 22.0 - uT * 4.0 + a * 3.0) * 0.5 + 0.5;
-  vec3 col = img + uCol * pow(r, 5.0) * (0.7 + uHover * 0.5) + uCol * wave * pow(r, 8.0) * 0.5;
-  col += uCol * (1.0 - r) * uWarp * 1.5;
-  float edge = smoothstep(1.0, 0.94, r);
-  gl_FragColor = vec4(col * 0.9, edge);
-}`;
-
 const RING_VS = `attribute float aPh; uniform float uT; uniform float uR; uniform float uPR; uniform float uBoost; varying float vA;
 void main(){ float ang = aPh * 6.2831 + uT * (0.35 + fract(aPh * 7.0) * 0.6) * (fract(aPh * 13.0) > 0.5 ? 1.0 : -1.0);
   float rr = uR + sin(uT * 1.7 + aPh * 30.0) * 0.18 + fract(aPh * 31.0) * 0.35;
@@ -124,23 +99,6 @@ const glowTex = canvasTex(128, 128, (g) => {
   gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.25, 'rgba(255,255,255,0.45)'); gr.addColorStop(0.6, 'rgba(255,255,255,0.1)'); gr.addColorStop(1, 'rgba(255,255,255,0)');
   g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
 });
-const runeTex = canvasTex(1024, 64, (g, w, h) => {
-  g.clearRect(0, 0, w, h);
-  g.strokeStyle = 'rgba(255,255,255,0.95)'; g.fillStyle = 'rgba(255,255,255,0.95)'; g.lineWidth = 3;
-  for (let i = 0; i < 48; i++) {
-    const x = (i / 48) * w + 6, y = h / 2;
-    const k = (i * 7919) % 5;
-    g.beginPath();
-    if (k === 0) { g.moveTo(x, y - 14); g.lineTo(x + 8, y + 14); g.lineTo(x + 16, y - 14); }
-    else if (k === 1) { g.arc(x + 8, y, 9, 0, TAU); }
-    else if (k === 2) { g.moveTo(x, y); g.lineTo(x + 16, y); g.moveTo(x + 8, y - 14); g.lineTo(x + 8, y + 14); }
-    else if (k === 3) { g.rect(x + 2, y - 8, 12, 16); }
-    else { g.moveTo(x, y + 12); g.lineTo(x + 8, y - 12); g.lineTo(x + 16, y + 12); g.closePath(); }
-    g.stroke();
-  }
-  g.fillRect(0, 2, w, 2); g.fillRect(0, h - 4, w, 2);
-});
-runeTex.wrapS = THREE.RepeatWrapping;
 function planetTex(c1, c2, c3, seed) {
   return canvasTex(512, 256, (g, w, h) => {
     let s = seed;
@@ -246,75 +204,50 @@ export class WorldSelect {
     mk(4, -64, 58, -120, planetTex('#4a4a5a', '#9a9ab0', '#e8e8f0', 71), false, 0.12, 0);
   }
 
-  /* ---------------- portales ---------------- */
+  /* ---------------- mundos flotantes alrededor de la plataforma ---------------- */
+  // Los mundos se reparten en círculo alrededor de APOCALIA, que está siempre en el centro y destaca sobre los demás
   buildPortals(levels, isUnlocked) {
-    for (const p of this.portals) { this.scene.remove(p.g); p.label.remove(); }
+    for (const p of this.portals) { this.ring.remove(p.g); p.label.remove(); }
+    if (!this.ring) {
+      this.ring = new THREE.Group(); this.scene.add(this.ring);
+      this.scene.add(new THREE.HemisphereLight(0xcfd8ff, 0x2a2440, 1.3)); // relleno: los mundos se ven con sus colores
+      this.platform = buildPlatform(); this.platform.mesh.position.y = -1.9; this.scene.add(this.platform.mesh);
+      const cg = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0x6a5aff, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.35 }));
+      cg.scale.setScalar(16); cg.position.y = -1.5; this.scene.add(cg); this.centerGlow = cg;
+    }
     this.portals = [];
-    const n = levels.length;
-    // dos arcos (anfiteatro): delante y abajo los primeros mundos, detrás y arriba los siguientes
-    const rows = n > 6 ? 2 : 1, perRow = Math.ceil(n / rows);
-    this.arc = { cx: 0, cz: 7, R: 15, span: 1.9 };
-    const rowDef = [{ R: 15, span: Math.min(1.9, 0.48 * (perRow - 1)), y: 0 }, { R: 21, span: Math.min(1.5, 0.38 * (perRow - 1)), y: 5.2 }];
     const labels = document.getElementById('ws-labels');
     labels.innerHTML = '';
+    const outer = levels.filter((L) => L.id !== 'extreme');
     levels.forEach((L, i) => {
-      const col = new THREE.Color(WORLD_COL[L.id] || 0x8ab8ff);
-      const row = Math.floor(i / perRow), idx = i - row * perRow, m = Math.min(perRow, n - row * perRow);
-      const rd = rowDef[row];
-      const k = m > 1 ? idx / (m - 1) - 0.5 : 0;
-      const a = k * rd.span;
-      const g = new THREE.Group();
-      const base = new THREE.Vector3(this.arc.cx + Math.sin(a) * rd.R, rd.y + Math.abs(k) * 1.2 + Math.sin(i * 1.7) * 0.3, this.arc.cz - Math.cos(a) * rd.R);
-      g.position.copy(base);
-      g.userData.s0 = 1.3; // portales grandes
-      g.lookAt(this.arc.cx, base.y, this.arc.cz + 6);
-      const locked = !isUnlocked(L.n);
-      const tex = this.texLoader.load(`/img/worlds/${L.id}.jpg`); tex.colorSpace = THREE.SRGBColorSpace;
-      const u = { uMap: { value: tex }, uT: { value: Math.random() * 10 }, uHover: { value: 0 }, uLock: { value: locked ? 1 : 0 }, uDim: { value: 0 }, uWarp: { value: 0 }, uCol: { value: col } };
-      const disc = new THREE.Mesh(new THREE.CircleGeometry(1.55, 72), new THREE.ShaderMaterial({ uniforms: u, vertexShader: PORTAL_VS, fragmentShader: PORTAL_FS, transparent: true, depthWrite: false }));
-      disc.userData.i = i;
-      g.add(disc);
-      // marco de energía: aro principal, aro de runas que gira y aro fino exterior
-      const frameM = new THREE.MeshStandardMaterial({ color: 0x1a1a2a, emissive: col, emissiveIntensity: 1.4, metalness: 0.7, roughness: 0.3 });
-      const frame = new THREE.Mesh(new THREE.TorusGeometry(1.62, 0.085, 16, 96), frameM);
-      g.add(frame);
-      const runesM = new THREE.MeshBasicMaterial({ map: runeTex, color: col, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, opacity: 0.75 });
-      const runeGeo = new THREE.RingGeometry(1.74, 1.98, 96, 1);
-      { const p = runeGeo.attributes.position, uv = runeGeo.attributes.uv; for (let j = 0; j < p.count; j++) { const ang = Math.atan2(p.getY(j), p.getX(j)); const d = Math.hypot(p.getX(j), p.getY(j)); uv.setXY(j, (ang / TAU + 0.5) * 3, (d - 1.74) / 0.24); } }
-      const runes = new THREE.Mesh(runeGeo, runesM);
-      g.add(runes);
-      const outer = new THREE.Mesh(new THREE.TorusGeometry(2.08, 0.022, 8, 120), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending }));
-      g.add(outer);
-      // cristales que flotan en el marco
-      const gems = [];
-      for (let j = 0; j < 4; j++) {
-        const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.13, 0), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: col, emissiveIntensity: 2.2 }));
-        g.add(gem); gems.push(gem);
-      }
-      // halo
-      const glowM = new THREE.SpriteMaterial({ map: glowTex, color: col, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.5 });
-      const glow = new THREE.Sprite(glowM); glow.scale.setScalar(7.5); glow.position.z = -0.15;
-      g.add(glow);
-      // partículas en órbita
-      const PN = 90, pph = new Float32Array(PN), ppos = new Float32Array(PN * 3);
+      const center = L.id === 'extreme';
+      const k = outer.indexOf(L);
+      const ang = center ? 0 : Math.PI * 0.62 - (k / outer.length) * TAU;   // empieza arriba a la izquierda y gira en el sentido del reloj
+      const R = 9.2;
+      const base = center ? new THREE.Vector3(0, 0.9, 0) : new THREE.Vector3(Math.cos(ang) * R, 0.3 + (k % 2) * 0.5, -Math.sin(ang) * R);
+      const isl = buildIsland(L);
+      isl.g.position.copy(base);
+      isl.g.scale.setScalar(center ? 1.25 : 1);
+      isl.hit.userData.i = i;
+      // partículas de su color en órbita
+      const PN = center ? 140 : 70, pph = new Float32Array(PN), ppos = new Float32Array(PN * 3);
       for (let j = 0; j < PN; j++) pph[j] = Math.random();
       const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.BufferAttribute(ppos, 3)); pg.setAttribute('aPh', new THREE.BufferAttribute(pph, 1));
-      const pu = { uT: { value: 0 }, uR: { value: 1.85 }, uPR: { value: this.pr }, uBoost: { value: 0 }, uCol: { value: col } };
+      const pu = { uT: { value: 0 }, uR: { value: center ? 3.2 : 2.0 }, uPR: { value: this.pr }, uBoost: { value: 0 }, uCol: { value: isl.col } };
       const parts = new THREE.Points(pg, new THREE.ShaderMaterial({ uniforms: pu, vertexShader: RING_VS, fragmentShader: RING_FS, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-      parts.frustumCulled = false;
-      g.add(parts);
-      // onda de energía al pasar el cursor
-      const wave = new THREE.Mesh(new THREE.RingGeometry(1.6, 1.75, 96), new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }));
-      g.add(wave);
-      this.scene.add(g);
-      // etiqueta del nombre (HTML, nítida)
+      parts.frustumCulled = false; parts.rotation.x = -Math.PI / 2; parts.position.y = 0.2;
+      isl.g.add(parts);
+      this.ring.add(isl.g);
+      const locked = !isUnlocked(L.n);
+      // cinta con el nombre (HTML, nítida) del color oficial del mundo
       const label = document.createElement('div');
-      label.className = 'ws-label' + (locked ? ' locked' : '');
-      label.innerHTML = `<span class="wl-n">${locked ? '🔒' : L.icon} NIVEL ${L.n}</span><span class="wl-name">${L.name}</span>`;
-      label.style.setProperty('--wc', '#' + col.getHexString());
+      label.className = 'ws-label' + (locked ? ' locked' : '') + (center ? ' center' : '');
+      label.innerHTML = `<span class="wl-n">${locked ? '🔒' : L.icon} ${center ? 'MUNDO CENTRAL' : 'MUNDO ' + L.n}</span><span class="wl-name">${L.name}</span>`;
+      label.style.setProperty('--wc', L.color);
       labels.appendChild(label);
-      this.portals.push({ i, L, g, base, ang: a, disc, u, frame, frameM, runes, runesM, outer, gems, glow, glowM, pu, wave, waveT: 9, label, locked, col, ph: Math.random() * TAU, h: 0, s: 1 });
+      this.portals.push({ i, L, g: isl.g, isl, base, ang, center, pu, label, locked, col: isl.col, ph: Math.random() * TAU, h: 0, s: 1, dim: 0 });
     });
+    this.order = this.portals.filter((p) => !p.center).map((p) => p.i).concat(this.portals.filter((p) => p.center).map((p) => p.i));
   }
 
   /* ---------------- apertura / cierre ---------------- */
@@ -329,8 +262,8 @@ export class WorldSelect {
     this.flash.style.opacity = '';
     this.sel = -1; this.hover = -1; this.phase = 'idle';
     this.focus = clamp(startIndex, 0, levels.length - 1);
-    this.yaw = this.yawT = this.focusYaw(this.focus) * this.panScale();
-    this.camPos.set(0, 9, 34); // entrada: la cámara llega desde lejos
+    this.ringYaw = this.ringYawT = 0;
+    this.camPos.set(0, 30, 40); // entrada: la cámara llega desde lejos
     this.fov = 70;
     this.showInfo(-1);
     this.active = true;
@@ -340,9 +273,6 @@ export class WorldSelect {
     this.active = false;
     this.unbind();
   }
-  focusYaw(i) { return this.portals[i] ? this.portals[i].ang : 0; }
-  // en pantallas estrechas el arco no cabe entero: la cámara gira para seguir al portal elegido
-  panScale() { const asp = this.camera.aspect; return asp >= 1.6 ? 0 : asp >= 1.15 ? 0.45 : 0.85; }
 
   bind() {
     if (this._b) return;
@@ -350,8 +280,9 @@ export class WorldSelect {
     const pt = (e) => { this.mouse.set((e.clientX / window.innerWidth) * 2 - 1, -(e.clientY / window.innerHeight) * 2 + 1); };
     let down = null;
     this._b = {
-      move: (e) => { pt(e); if (down && Math.abs(e.clientX - down.x) > 6) { down.drag = true; this.yawT = clamp(down.yaw - (e.clientX - down.x) * 0.004, -this.arc.span / 2, this.arc.span / 2); } },
-      down: (e) => { if (e.target.closest?.('button, .ws-info')) return; pt(e); down = { x: e.clientX, yaw: this.yawT, drag: false }; },
+      // arrastrar en horizontal hace girar el anillo de mundos alrededor de Apocalia
+      move: (e) => { pt(e); if (down && Math.abs(e.clientX - down.x) > 6) { down.drag = true; this.ringYawT = down.yaw + (e.clientX - down.x) * 0.006; } },
+      down: (e) => { if (e.target.closest?.('button, .ws-info')) return; pt(e); down = { x: e.clientX, yaw: this.ringYawT, drag: false }; },
       up: (e) => {
         if (!down) return;
         const wasDrag = down.drag; down = null;
@@ -361,13 +292,12 @@ export class WorldSelect {
       },
       key: (e) => {
         if (!this.active || this.phase === 'entering') return;
-        const n = this.portals.length;
-        if (e.code === 'ArrowRight' || e.code === 'KeyD') this.select(this.sel < 0 ? this.focus : Math.min(n - 1, this.sel + 1));
-        else if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.select(this.sel < 0 ? this.focus : Math.max(0, this.sel - 1));
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') this.step(1);
+        else if (e.code === 'ArrowLeft' || e.code === 'KeyA') this.step(-1);
         else if ((e.code === 'Enter' || e.code === 'Space') && this.sel >= 0) { e.preventDefault(); this.enter(); }
         else if (e.code === 'Escape' && this.sel >= 0) this.select(-1);
       },
-      wheel: (e) => { if (this.sel < 0) this.yawT = clamp(this.yawT + e.deltaY * 0.0012, -this.arc.span / 2, this.arc.span / 2); },
+      wheel: (e) => { if (this.sel < 0) this.ringYawT += e.deltaY * 0.0015; },
     };
     el.addEventListener('pointermove', this._b.move);
     el.addEventListener('pointerdown', this._b.down);
@@ -375,9 +305,14 @@ export class WorldSelect {
     window.addEventListener('keydown', this._b.key);
     el.addEventListener('wheel', this._b.wheel, { passive: true });
     this.enterBtn.onclick = () => this.enter();
-    const step = (d) => { if (this.phase === 'entering') return; const n = this.portals.length; const base = this.sel < 0 ? this.focus - (d > 0 ? 1 : -1) * 0 : this.sel; this.select(clamp(this.sel < 0 ? base : base + d, 0, n - 1)); };
-    document.getElementById('ws-prev').onclick = () => step(-1);
-    document.getElementById('ws-next').onclick = () => step(1);
+    document.getElementById('ws-prev').onclick = () => this.step(-1);
+    document.getElementById('ws-next').onclick = () => this.step(1);
+  }
+  // recorre los mundos en orden (los del anillo y, al final, Apocalia)
+  step(d) {
+    if (this.phase === 'entering') return;
+    const o = this.order, cur = o.indexOf(this.sel >= 0 ? this.sel : this.focus);
+    this.select(o[(Math.max(0, cur) + d + o.length) % o.length]);
   }
   unbind() {
     if (!this._b) return;
@@ -392,14 +327,19 @@ export class WorldSelect {
 
   pick() {
     this.ray.setFromCamera(this.mouse, this.camera);
-    const hits = this.ray.intersectObjects(this.portals.map((p) => p.disc), false);
+    const hits = this.ray.intersectObjects(this.portals.map((p) => p.isl.hit), false);
     return hits.length ? hits[0].object.userData.i : -1;
   }
 
   select(i) {
     if (this.phase === 'entering') return;
     this.sel = i;
-    if (i >= 0) { this.focus = i; this.yawT = this.focusYaw(i) * this.panScale(); }
+    if (i >= 0) {
+      this.focus = i;
+      // el anillo gira para traer al mundo elegido hacia delante (Apocalia no se mueve del centro)
+      const p = this.portals[i];
+      if (!p.center) { const want = -Math.PI / 2 - p.ang; let dd = want - this.ringYawT; dd = Math.atan2(Math.sin(dd), Math.cos(dd)); this.ringYawT += dd; }
+    }
     this.showInfo(i);
   }
 
@@ -418,8 +358,8 @@ export class WorldSelect {
       <div class="wi-thumbs">${PV.map(([t, k], j) => `<button type="button" class="wi-th${j ? '' : ' on'}" data-k="${j}" title="${t}"><img alt="${t}" src="/img/worlds/${L.id}_${k}.jpg"></button>`).join('')}</div></div>`;
     info.innerHTML = gallery + `<div class="wi-kicker">${L.kicker}</div><div class="wi-name">${L.icon} ${L.name}</div><div class="wi-place">${L.place}</div>
       <p class="wi-desc">${L.desc}</p>
-      <div class="wi-meta"><span>Dificultad ${'🔥'.repeat(Math.ceil(L.n / 2))}</span><span>${[0, 1, 2].map((k) => (k < st ? '⭐' : '☆')).join('')}</span>${rw ? `<span>Premio: ${rw.icon} ${rw.name}</span>` : ''}<span>Ideal: ${this.bestOf(L)}</span></div>
-      ${p.locked ? `<div class="wi-lock">🔒 Completa el nivel ${L.n - 1} para abrir este portal</div>` : ''}`;
+      <div class="wi-meta"><span>Dificultad ${'🔥'.repeat(Math.ceil((L.d ?? L.n) / 2))}</span><span>${[0, 1, 2].map((k) => (k < st ? '⭐' : '☆')).join('')}</span>${rw ? `<span>Premio: ${rw.icon} ${rw.name}</span>` : ''}<span>Ideal: ${this.bestOf(L)}</span></div>
+      ${p.locked ? `<div class="wi-lock">🔒 Completa el mundo anterior para abrir este</div>` : ''}`;
     {
       const main = info.querySelector('.wi-main'), cap = info.querySelector('.wi-cap'), ths = [...info.querySelectorAll('.wi-th')];
       let cur = 0;
@@ -432,7 +372,7 @@ export class WorldSelect {
     this.enterBtn.textContent = p.locked ? '🔒 PORTAL CERRADO' : 'ENTRAR AL MUNDO';
   }
 
-  // Transición: la cámara viaja hacia el portal, lo atraviesa y se abre el mundo real
+  // Transición: la cámara se zambulle en el mundo elegido y se abre el mundo real
   enter() {
     if (this.sel < 0 || this.phase === 'entering') return;
     const p = this.portals[this.sel];
@@ -452,61 +392,52 @@ export class WorldSelect {
     const t = this.t;
     this.skyU.uT.value = t; this.starU.uT.value = t; this.dustU.uT.value = t;
     for (const pl of this.planets) { pl.m.rotation.y += dt * pl.spin; pl.g.position.y += Math.sin(t * 0.1 + pl.spin * 50) * dt * 0.3; }
-    // cursor sobre un portal
+    // giro del anillo de mundos (Apocalia se queda en el centro)
+    this.ringYaw = damp(this.ringYaw, this.ringYawT, 4, dt);
     const h = this.phase === 'entering' ? -1 : this.pick();
-    if (h !== this.hover) {
-      if (h >= 0) { const p = this.portals[h]; p.waveT = 0; }
-      this.hover = h;
-      document.body.style.cursor = h >= 0 ? 'pointer' : '';
-    }
-    // portales
+    if (h !== this.hover) { this.hover = h; document.body.style.cursor = h >= 0 ? 'pointer' : ''; }
+    const P = new THREE.Vector3();
     for (const p of this.portals) {
       const isH = p.i === this.hover, isS = p.i === this.sel;
       p.h = damp(p.h, isH || isS ? 1 : 0, 8, dt);
-      const dim = this.sel >= 0 && !isS ? 1 : 0;
-      p.u.uDim.value = damp(p.u.uDim.value, dim, 5, dt);
-      p.u.uHover.value = p.h; p.u.uT.value += dt;
-      p.s = damp(p.s, 1 + p.h * 0.1, 8, dt);
-      p.g.position.set(p.base.x, p.base.y + Math.sin(t * 0.8 + p.ph) * 0.22, p.base.z);
-      p.g.scale.setScalar(p.s * 1.3);
-      p.runes.rotation.z += dt * (0.25 + p.h * 0.8);
-      p.outer.rotation.z -= dt * 0.15;
-      p.frameM.emissiveIntensity = (p.locked ? 0.4 : 1.2) + p.h * (isS ? 0.5 : 1.2) + Math.sin(t * 2 + p.ph) * 0.2;
-      const dm = 1 - p.u.uDim.value * 0.75;
-      p.frameM.emissiveIntensity *= dm;
-      p.runesM.opacity = ((p.locked ? 0.25 : 0.65) + p.h * 0.35) * dm;
-      p.outer.material.opacity = 0.7 * dm;
-      p.glowM.opacity = ((p.locked ? 0.16 : 0.36) + (isS ? 0.05 : p.h * 0.3)) * (1 - p.u.uDim.value * 0.6);
+      p.dim = damp(p.dim, this.sel >= 0 && !isS ? 1 : 0, 5, dt);
+      if (!p.center) { const a = p.ang + this.ringYaw, R = 9.2; p.g.position.set(Math.cos(a) * R, p.base.y + Math.sin(t * 0.8 + p.ph) * 0.25, -Math.sin(a) * R); }
+      else p.g.position.y = p.base.y + Math.sin(t * 0.6) * 0.18;
+      p.isl.body.rotation.y += dt * (p.center ? 0.12 : 0.18) * (1 + p.h);
+      p.s = damp(p.s, (p.center ? 1.55 : 1.35) * (1 + p.h * 0.1), 8, dt);
+      p.g.scale.setScalar(p.s);
+      const I = p.isl;
+      I.anim(t, dt, p.h);
+      I.ringM.opacity = (0.35 + p.h * 0.55 + Math.sin(t * 2 + p.ph) * 0.08) * (1 - p.dim * 0.6);
+      I.ring2.material.opacity = I.ringM.opacity * 0.8; I.ring2.rotation.z += dt * (0.4 + p.h);
+      I.beamM.opacity = damp(I.beamM.opacity, isS ? 0.16 : isH ? 0.06 : 0, 5, dt);
+      I.light.intensity = p.h * 7 + (p.center ? 2 : 0);
       p.pu.uT.value = t + p.ph * 10; p.pu.uBoost.value = p.h;
-      p.gems.forEach((gm, j) => { const a = t * 0.6 + (j / 4) * TAU + p.ph; gm.position.set(Math.cos(a) * 2.25, Math.sin(a) * 2.25, 0.1); gm.rotation.y += dt * 2; gm.rotation.x += dt; });
-      if (p.waveT < 1.2) {
-        p.waveT += dt;
-        const k = p.waveT / 1.2;
-        p.wave.scale.setScalar(1 + k * 0.9);
-        p.wave.material.opacity = (1 - k) * 0.9;
-      } else p.wave.material.opacity = 0;
     }
+    // la plataforma toma el color del mundo elegido (o del que tiene el cursor encima)
+    const focusP = this.sel >= 0 ? this.portals[this.sel] : this.hover >= 0 ? this.portals[this.hover] : null;
+    const pc = this.platform.u.uCol.value, target = focusP ? focusP.col : this._baseCol || (this._baseCol = new THREE.Color(0x4a7aff));
+    pc.lerp(target, 1 - Math.exp(-4 * dt));
+    this.platform.u.uT.value = t;
+    this.centerGlow.material.color.copy(pc);
+    if (focusP && !focusP.center) { const wp = focusP.g.position; this.platform.u.uSelA.value = Math.atan2(-wp.z, wp.x); this.platform.u.uSel.value = damp(this.platform.u.uSel.value, 1, 5, dt); }
+    else this.platform.u.uSel.value = damp(this.platform.u.uSel.value, 0, 5, dt);
     // cámara
-    this.yaw = damp(this.yaw, this.yawT, 3.5, dt);
-    const A = this.arc;
+    const asp = this.camera.aspect, f = asp >= 1.6 ? 1 : asp >= 1.15 ? 1.18 : 1.75;
     const wantPos = new THREE.Vector3(), wantLook = new THREE.Vector3();
-    let wantFov = 52;
+    let wantFov = 50;
     if (this.phase === 'entering') {
       const p = this.portals[this.sel];
       this.enterT += dt;
-      const k = clamp(this.enterT / 1.6, 0, 1);
-      const n = new THREE.Vector3(0, 0, 1).applyQuaternion(p.g.quaternion); // normal hacia la cámara
-      const from = p.g.position.clone().addScaledVector(n, 5.5);
-      const to = p.g.position.clone().addScaledVector(n, -2.5);
-      const e = k * k * (3 - 2 * k);
-      wantPos.lerpVectors(from, to, Math.pow(e, 1.6));
-      wantLook.copy(p.g.position).addScaledVector(n, -6);
+      const k = clamp(this.enterT / 1.6, 0, 1), e = k * k * (3 - 2 * k);
+      p.g.getWorldPosition(P);
+      wantPos.set(P.x, P.y + lerp(6, 0.8, e), P.z + lerp(8, 0.6, e));
+      wantLook.copy(P);
       wantFov = lerp(48, 105, Math.pow(k, 2.2));
-      p.u.uWarp.value = k;
-      p.runes.rotation.z += dt * k * 6;
+      p.isl.beamM.opacity = 0.2 + k * 0.6;
       this.flash.style.opacity = String(clamp((k - 0.62) / 0.3, 0, 1));
-      this.camPos.lerp(wantPos, 1 - Math.exp(-10 * dt));
-      this.camLook.lerp(wantLook, 1 - Math.exp(-10 * dt));
+      this.camPos.lerp(wantPos, 1 - Math.exp(-8 * dt));
+      this.camLook.lerp(wantLook, 1 - Math.exp(-8 * dt));
       this.fov = damp(this.fov, wantFov, 8, dt);
       if (k >= 1 && !this.done) {
         this.done = true;
@@ -515,23 +446,16 @@ export class WorldSelect {
       }
     } else if (this.sel >= 0) {
       const p = this.portals[this.sel];
-      const n = new THREE.Vector3(0, 0, 1).applyQuaternion(p.g.quaternion);
-      const asp = this.camera.aspect;
-      const d = asp < 1 ? 12 : 8.6;
-      wantPos.copy(p.g.position).addScaledVector(n, d); wantPos.y += 0.5;
-      // deja hueco a la derecha para el panel de información (en pantallas anchas)
-      const side = new THREE.Vector3(n.z, 0, -n.x);
-      if (asp >= 1.15) wantPos.addScaledVector(side, 1.9);
-      wantLook.copy(p.g.position); if (asp >= 1.15) wantLook.addScaledVector(side, 1.9);
-      if (asp < 1.15) wantLook.y -= 1.2;
+      p.g.getWorldPosition(P);
+      const d = (p.center ? 1.7 : 1.25) * (asp < 1.15 ? 1.6 : 1);
+      // en pantallas anchas el mundo queda a la izquierda y el panel de información a la derecha
+      wantLook.copy(P); if (asp >= 1.15) wantLook.x += 2.6 * d; else wantLook.y -= 1.6 * d;
+      wantPos.set(wantLook.x, P.y + 5.2 * d, P.z + 8.2 * d);
       wantFov = 48;
     } else {
-      const asp = this.camera.aspect;
-      const back = asp >= 1.6 ? 7 : asp >= 1.15 ? 6 : 3;
-      const dir = new THREE.Vector3(Math.sin(this.yaw), 0, -Math.cos(this.yaw));
-      wantPos.set(A.cx - dir.x * back, 3.2 + Math.sin(t * 0.25) * 0.3, A.cz - dir.z * back);
-      wantLook.set(A.cx + dir.x * A.R, 2.6, A.cz + dir.z * A.R);
-      wantFov = asp >= 1.6 ? 62 : asp >= 1.15 ? 64 : 66;
+      wantPos.set(0, 12.2 * f, 13.6 * f);
+      wantLook.set(0, -0.9, 0.9);
+      wantFov = 50;
     }
     if (this.phase !== 'entering') {
       this.camPos.lerp(wantPos, 1 - Math.exp(-3 * dt));
@@ -543,15 +467,15 @@ export class WorldSelect {
     cam.position.x += Math.sin(t * 0.21) * 0.15; cam.position.y += Math.sin(t * 0.17) * 0.1;
     cam.lookAt(this.camLook);
     if (Math.abs(cam.fov - this.fov) > 0.01) { cam.fov = this.fov; cam.updateProjectionMatrix(); }
-    // etiquetas bajo cada portal
+    // cintas con el nombre bajo cada mundo
     const v = new THREE.Vector3();
     const W = window.innerWidth, H = window.innerHeight;
     for (const p of this.portals) {
-      v.set(0, -2.4, 0).multiplyScalar(1).applyMatrix4(p.g.matrixWorld);
+      v.set(0, p.center ? -3.6 : -2.8, 0).applyMatrix4(p.g.matrixWorld);
       v.project(cam);
       const vis = v.z < 1 && Math.abs(v.x) < 1.2 && this.phase !== 'entering';
       p.label.style.transform = `translate(-50%, 0) translate(${((v.x + 1) / 2) * W}px, ${((1 - v.y) / 2) * H}px) scale(${0.85 + p.h * 0.25})`;
-      p.label.style.opacity = vis ? String(this.sel >= 0 && this.sel !== p.i ? 0.25 : 1) : '0';
+      p.label.style.opacity = vis ? String(this.sel >= 0 && this.sel !== p.i ? 0.3 : 1) : '0';
       p.label.classList.toggle('hot', p.i === this.hover || p.i === this.sel);
     }
   }

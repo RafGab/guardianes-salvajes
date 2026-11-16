@@ -56,16 +56,15 @@ export const TIPS = {
   tools: 'Las herramientas de rescate solo las usan profesionales entrenados. Tú, avisa siempre a los servicios de emergencia.',
 };
 const SIGN_TIPS = { sign_start: 'n112', sign_1: 'kit', sign_2: 'environment', sign_3: 'climate', sign_4: 'pets', sign_5: 'kit' };
-const AMBIENCE = { flood: [0.5, 0.4], campfire: [0.03, 0.5], fire: [0.03, 0.55], quake: [0.02, 0.3], volcano: [0.06, 0.6], hurricane: [0.95, 1.0], sandstorm: [0.04, 1.0], ice: [0.25, 1.0], drought: [0.02, 0.35], extreme: [0.7, 0.9] };
+const AMBIENCE = { flood: [0.5, 0.4], campfire: [0.03, 0.5], fire: [0.03, 0.55], quake: [0.02, 0.3], rockslide: [0.1, 0.6], hurricane: [0.95, 1.0], sandstorm: [0.04, 1.0], ice: [0.25, 1.0], extreme: [0.7, 0.9] };
 const SCHED = {
   campfire: [[30, 'evac'], [90, 'smoke'], [170, 'wildlife'], [250, 'never'], [330, 'forest']],
   fire: [[35, 'smoke'], [130, 'never'], [180, 'wildlife'], [230, 'forest']],
   quake: [[45, 'elevator'], [120, 'gas'], [180, 'rubble'], [255, 'aftershock']],
-  volcano: [[20, 'ash'], [75, 'lava'], [130, 'rocks'], [190, 'mask'], [250, 'gas']],
+  rockslide: [[70, 'slope'], [150, 'cracks'], [230, 'help']],
   hurricane: [[25, 'wind'], [80, 'surge'], [135, 'debris'], [200, 'radio']],
   sandstorm: [[25, 'lost'], [70, 'eyes'], [120, 'water'], [180, 'vehicles'], [240, 'shade']],
   ice: [[30, 'animals'], [90, 'co'], [150, 'visibility'], [220, 'climate']],
-  drought: [[30, 'animals'], [80, 'fire'], [130, 'heat'], [190, 'reuse'], [250, 'climate']],
   extreme: [[20, 'plan'], [70, 'calm'], [130, 'help'], [200, 'info']],
 };
 
@@ -524,7 +523,7 @@ export class Game {
     player.cdMul = tools.has('star') ? 0.75 : 1;
 
     // generación dinámica de rescates: zonas, puntos válidos, colisiones y accesibilidad
-    const difficulty = 1 + (level.n - 1) * 0.15;
+    const difficulty = 1 + ((level.d ?? level.n) - 1) * 0.15;
     const slots = world.generateRescues({ count: level.victims, animalRatio: level.animalRatio, minSep: level.minSep, minStart: level.minStart, tools, difficulty });
     world.scatterObstacles(level.obstacles, tools);
     this.spawnVictims(slots);
@@ -844,12 +843,12 @@ export class Game {
     this.boss = createBoss(this.mission.boss, { scene, world, player, chase, camera, fx: this.fx, audio, ui, game: this }, arena);
     this.boss.introHold = TEAM.introT; // presentación: el jefe no ataca hasta que aparece el equipo
     // vida adaptada a la dificultad: +6 % por cada nivel
-    const hk = 1 + (this.mission.n - 1) * 0.06;
+    const hk = 1 + ((this.mission.d ?? this.mission.n) - 1) * 0.06;
     this.boss.hpMax = Math.round(this.boss.hpMax * hk);
     this.boss.hp = this.boss.hpMax;
     this.boss.title = this.mission.bossTitle || '';
     // SOLDADOS: el jefe entra con 2 (primeras zonas) o 3 (el tercero, un bruto); hay que derrotarlos a todos
-    this.combat.spawnMinions(this.mission.n <= 2 ? 2 : 3, this.boss.pos);
+    this.combat.spawnMinions((this.mission.d ?? this.mission.n) <= 2 ? 2 : 3, this.boss.pos);
     enableSeeThrough(this.world.mats); // el escenario que tape el combate se vuelve transparente
     this.allyWin = false; this.victoryT = 0; this.foesMsg = ''; this.victoryShown = false;
     this.bossStats = { t0: performance.now() / 1000, soldiers: 0, staggers: 0 }; // para la pantalla de victoria

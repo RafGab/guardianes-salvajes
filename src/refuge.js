@@ -8,6 +8,7 @@ const STYLES = {
   shelter: { sign: 'REFUGIO HURACÁN', signBg: '#0d5a8a', disc: 0xb4b8b8, tents: [0xf0f0e8, 0x2e86c1, 0xf0f0e8], extra: 'lighthouse' },
   oasis: { sign: 'REFUGIO OASIS', signBg: '#8a6a10', disc: 0xc9b48a, tents: [0xe8d8b0, 0xc0392b, 0xe8d8b0], extra: 'palms' },
   lodge: { sign: 'REFUGIO MONTAÑA', signBg: '#1a4a6a', disc: 0xcfd8e2, tents: [0xf0f4f8, 0xd8452a, 0xf0f4f8], extra: 'lodge' },
+  mine: { sign: 'REFUGIO MINERO', signBg: '#4a4b55', disc: 0x8a8c94, tents: [0xe8e8e4, 0xe8853a, 0xe8e8e4], extra: 'bunker' }, // Rockslide
   farm: { sign: 'REFUGIO + AGUA', signBg: '#1a6a3a', disc: 0xb8aa88, tents: [0xf0f0e0, 0x2e86c1, 0xf0f0e0], extra: 'tank' },
   quake: { sign: 'ZONA SEGURA', signBg: '#11803f', disc: 0xa8aaa8, tents: [0xf0f0e8, 0xe8853a, 0xf0f0e8], extra: null },
 };

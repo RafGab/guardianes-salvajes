@@ -1,5 +1,8 @@
 import { LEVELS } from './levels.js';
 
+// Desbloqueo temporal de todos los mundos para pruebas y desarrollo (la progresión se guarda igual)
+export const UNLOCK_ALL = true;
+
 const KEY = 'gs_save_v2';
 
 const DEFAULT = () => ({
@@ -49,7 +52,8 @@ export const Save = {
   },
   get data() { return data; },
   get completed() { return data.completed; },
-  isUnlocked(n) { return n <= 1 || data.completed >= n - 1; },
+  // PRUEBAS: todos los mundos abiertos (UNLOCK_ALL). Para volver a la progresión normal, ponerlo a false.
+  isUnlocked(n) { return UNLOCK_ALL || n <= 1 || data.completed >= n - 1; },
   hasItem(id) { return data.items.includes(id); },
   get items() { return data.items; },
   get hero() { return data.hero; },
