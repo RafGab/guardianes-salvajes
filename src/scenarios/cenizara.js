@@ -1,7 +1,8 @@
 import * as THREE from 'three';
 import { propAt } from '../props.js';
-import { CFG, terrainH, setTerrain, smoothstep, lerp, n2, pathDist, pathPoint, refugeHeight, startFlat, setStartSafe, makeDescriptor, placeSigns, paintRefugeAndStart } from './common.js';
+import { CFG, terrainH, setTerrain, smoothstep, lerp, n2, pathDist, pathPoint, refugeHeight, setStartSafe, makeDescriptor, placeSigns, paintRefugeAndStart } from './common.js';
 import { lavaMaterial } from './cenizara_rt.js';
+import { createCenizaraFX } from './cenizara_fx.js';
 
 /* ======================================================================
    NIVEL 3 · CENIZARA — el volcán de fuego y la ciudad arrasada
@@ -13,8 +14,11 @@ import { lavaMaterial } from './cenizara_rt.js';
      (plataformas móviles + cuerda) o por la escalera de madera en llamas del este.
    · EL VOLCÁN (norte): tres terrazas de roca volcánica separadas por paredes de basalto (rampas, ascensores de
      piedra, cuerdas y géiseres para subir), dos ríos de lava que caen en cascada de terraza en terraza, cráteres
-     secundarios, el lago de lava con la Isla de Obsidiana (secreto), la Puerta de Kerberos con sus soldados, el
-     portal de rescate en la terraza alta y el gran cono con su cráter de lava (secreto en el borde).
+     secundarios, el lago de lava con la Isla de Obsidiana (secreto), la cueva volcánica del jefe (antes la Puerta de
+     Kerberos) con sus soldados, el portal de rescate en la terraza alta y el gran cono en erupción con su cráter de
+     lava (secreto en el borde), columnas de basalto, coladas y la columna de humo.
+   · El héroe empieza en la terraza volcánica del este, de cara al volcán, tras un sobrevuelo cinematográfico.
+   · Casas quemadas, gasolineras, bocas de riego, cabinas, contenedores, árboles quemados y cristales: cenizara_fx.js.
    Coleccionables y secretos con el mismo sistema que Camp Fire (piñas doradas y medallas, CampFireRuntime);
    los mecanismos del escenario (plataformas, aspas de fuego, cuerdas, géiseres, lava) los anima cenizara_rt.js.
    ====================================================================== */
@@ -56,6 +60,32 @@ const ROAD = [[0, 106], [0, 42], [0, 25], [0, 3], [-6, -2], [-12, -6], [-12, -20
 const CROSS = [80, 60, 40];
 const SIDE = [-30, 30];
 const ARENA = { x: 0, z: -50, r: 14 };
+// INICIO: el héroe empieza en la terraza volcánica del este, mirando al volcán en erupción.
+// (La plaza de la ciudad donde se empezaba antes sigue igual; el portal de rescate no cambia de sitio.)
+const OLD_START = { x: 0, z: 100 };
+const NEW_START = { x: 86, z: -3 };
+// coladas de lava nuevas que bajan del cráter por las laderas (como en la referencia del volcán)
+const CONE_FLOWS = [
+  [[10, -121], [24, -118], [36, -113], [45, -107]],
+  [[-10, -121], [-24, -117], [-36, -112], [-45, -105]],
+  [[7, -131], [18, -142], [29, -154]],
+  [[-7, -131], [-18, -143], [-28, -156]],
+  [[0, -134], [3, -148], [-1, -162]],
+];
+// SOBREVUELO INICIAL: la cámara recorre la ciudad arrasada, el río de lava, la cueva y el volcán en erupción
+// y termina detrás del héroe (cada punto: [posición de la cámara, punto al que mira])
+const FLYOVER = {
+  dur: 16, blend: 3.2, keys: [
+    [[0, 78, 178], [0, 58, -122]],
+    [[-46, 34, 114], [-10, 6, 66]],
+    [[-26, 17, 72], [20, 4, 54]],
+    [[14, 21, 30], [6, 8, -2]],
+    [[32, 30, -10], [12, 19, -36]],
+    [[-36, 58, -66], [0, 72, -122]],
+    [[24, 104, -82], [0, 72, -124]],
+    [[98, 40, 8], [40, 42, -70]],
+  ],
+};
 
 const riverZ = (x) => {
   for (let i = 0; i < RIVER.length - 1; i++) {
@@ -86,6 +116,7 @@ function cenizaraTerrain(x, z) {
       let c = coneH(r) + 1.6 * n2(x, z, 0.08) * (1 - r / VOLC.R) + 1.2 * Math.sin(Math.atan2(z - VOLC.z, x - VOLC.x) * 9) * smoothstep(VOLC.R, 20, r) * smoothstep(8, 18, r);
       if (r < VOLC.crater + 3) c = lerp(VOLC.floor, c, smoothstep(VOLC.crater - 3, VOLC.crater + 1, r));
       for (const s of CONE_STREAMS) { const d = pathDist(x, z, s).d; if (d < 2.6) c -= 0.7 * smoothstep(2.6, 1, d); }
+      for (const s of CONE_FLOWS) { const d = pathDist(x, z, s).d; if (d < 2.2) c -= 0.5 * smoothstep(2.2, 0.8, d); }
       h = Math.max(h, c);
     }
   } else if (dz > BANK) {
@@ -115,7 +146,7 @@ function cenizaraTerrain(x, z) {
   h += smoothstep(104, 126, z) * (16 + 8 * n2(x, z, 0.04));
   h += smoothstep(-96, -124, z) * smoothstep(34, 60, Math.abs(x)) * (14 + 8 * n2(x, z, 0.04));
   if (Math.hypot(x - CFG.SAFE.x, z - CFG.SAFE.z) < 40) h = refugeHeight(h, x, z);
-  h = startFlat(h, x, z, CITY_Y);
+  h = lerp(h, CITY_Y, smoothstep(22, 12, Math.hypot(x - OLD_START.x, z - OLD_START.z))); // plaza de la ciudad (antiguo inicio)
   return h;
 }
 
@@ -162,7 +193,14 @@ export function build(K, { scene }) {
   const inCity = (x, z) => z > riverZ(x) + BANK + 1;
   const onTerrace = (x, z) => z < riverZ(x) - BANK;
   const streamD = (x, z) => Math.min(...STREAMS.map((s) => pathDist(x, z, s).d));
-  const coneStreamD = (x, z) => Math.min(...CONE_STREAMS.map((s) => pathDist(x, z, s).d));
+  const coneStreamD = (x, z) => Math.min(...CONE_STREAMS.map((s) => pathDist(x, z, s).d), ...CONE_FLOWS.map((s) => pathDist(x, z, s).d));
+  const nearNew = (x, z, r) => Math.hypot(x - NEW_START.x, z - NEW_START.z) < r;
+  // pasillo de vista desde el inicio hasta el volcán: ahí no se ponen árboles nuevos (que no tapen la erupción)
+  const inStartView = (x, z) => {
+    const dx = VOLC.x - NEW_START.x, dz = VOLC.z - NEW_START.z, L = Math.hypot(dx, dz), px = x - NEW_START.x, pz = z - NEW_START.z;
+    const along = (px * dx + pz * dz) / L, side = Math.abs(px * dz - pz * dx) / L;
+    return along > -4 && along < 95 && side < 4 + along * 0.08;
+  };
   const lavaNear = (x, z, pad = 0) => Math.abs(z - riverZ(x)) < BANK + pad || (onTerrace(x, z) && streamD(x, z) < 3.4 + pad) || coneStreamD(x, z) < 2.4 + pad
     || Math.hypot(x - LAKE.x, z - LAKE.z) < LAKE.r + 1 + pad || CRATERS.some((c) => Math.hypot(x - c.x, z - c.z) < 2.6 + pad) || volcR(x, z) < VOLC.crater + 1 + pad
     || PUDDLES.some(([px, pz, pr]) => Math.hypot(x - px, z - pz) < pr + 0.8 + pad);
@@ -184,6 +222,21 @@ export function build(K, { scene }) {
     return m;
   };
   const extra = { platforms: [], blades: [], ropes: [], geysers: [], obstacles: [], fumaroles: [], flames: [], lights: [], guards: [], beacons: [], falls: [] };
+  // modelos 3D nuevos del escenario devastado (con su propio generador aleatorio: el resto del mapa no se mueve)
+  const fx = createCenizaraFX({ K, scene, extra, seed: 9091 });
+  // árbol quemado en lugar del árbol muerto sencillo (consume los mismos números aleatorios que K.tree)
+  const deadTree = (x, z, s) => { rng.range(0, 6.283); rng.range(0.85, 1.12); if (!nearNew(x, z, 8) && !inStartView(x, z)) fx.tree(x, z, s); };
+  const rock = (x, z, s, c) => { if (nearNew(x, z, 8)) { for (let i = 0; i < 4; i++) rng.next(); return; } K.rock(x, z, s, c); };
+  // ejecuta un trozo del diseño anterior sin dibujar nada (para consumir los mismos números aleatorios)
+  const dry = (fn) => {
+    const keep = { box: K.box, ico: K.ico, house: K.house, prism: K.prism, cyl: K.cyl, cone: K.cone, solid: K.solid };
+    const fl = extra.flames; let cap = null;
+    K.box = K.ico = K.prism = K.cyl = K.cone = K.solid = () => null;
+    K.house = (o) => { cap = o; return {}; };
+    extra.flames = [];
+    try { fn(); } finally { Object.assign(K, keep); extra.flames = fl; }
+    return cap;
+  };
 
   /* ================= LAVA: RÍO, RÍOS DEL VOLCÁN, LAGO, CRÁTERES Y CHARCOS ================= */
   const lavaMeshes = new THREE.Group();
@@ -213,6 +266,12 @@ export function build(K, { scene }) {
     const s = [];
     for (let t = 0; t <= 1.0001; t += 0.01) { const [x, z] = pathPoint(path, t); s.push({ x, z, y: G(x, z) + 0.12, half: 1.4 + t * 0.8 }); }
     addLava(ribbon(s, 1.6));
+  });
+  // coladas nuevas: nacen anchas en el borde del cráter y se van enfriando (estrechando) ladera abajo
+  CONE_FLOWS.forEach((path) => {
+    const s = [];
+    for (let t = 0; t <= 1.0001; t += 0.01) { const [x, z] = pathPoint(path, t); s.push({ x, z, y: G(x, z) + 0.12, half: 1.5 * (1 - smoothstep(0.55, 1, t)) + 0.2 }); }
+    addLava(ribbon(s, 1.4));
   });
   { const m = addLava(disc(VOLC.crater - 1.5), 0); m.position.set(VOLC.x, VOLC.lake, VOLC.z); }
   { const m = addLava(disc(LAKE.r + 0.6), 0); m.position.set(LAKE.x, T2Y - 0.45, LAKE.z); }
@@ -292,19 +351,13 @@ export function build(K, { scene }) {
     }
   };
   // casa en ruinas (varias formas)
+  // Las casas de cajas sencillas (carcasa, derrumbada y cubierta de ceniza) se sustituyen por casas quemadas en 3D
+  // (en llamas, calcinadas, cabañas hundidas y ruinas). El diseño anterior se «ejecuta en seco» solo para consumir
+  // los mismos números aleatorios, así el resto del mapa queda exactamente igual.
+  const HOUSE_OF = { shell: 'gutted', ash: 'burning' };
   const ruin = (x, z, face, kind, zone) => {
     const g = G(x, z), fz = face === 0 ? 1 : -1;
-    if (kind === 'shell') {
-      K.house({ x, z, w: rr(7.5, 9), d: 6.2, h: rr(2.8, 3.4), color: rng.pick(sooty), roofColor: 0x1a1616, roof: 'none', facing: face, cand: zone, base: g });
-      K.box(x - 1, g + 2.8, z, 7.4, 0.25, 0.3, 0x1e1816, { solid: false, ry: rr(-0.3, 0.3) });
-      K.box(x + 1.2, g + 2.6, z + 0.8, 0.3, 0.25, 5, 0x1e1816, { solid: false, ry: rr(-0.3, 0.3) });
-      ashPile(x + rr(-2, 2), z + rr(-1.5, 1.5), 0.8, g);
-      extra.flames.push([x + rr(-2, 2), g + 0.4, z + rr(-1.5, 1.5), 1]);
-    } else if (kind === 'collapsed') {
-      K.house({ x, z, w: rr(7.5, 9), d: 6.2, h: rr(1.4, 1.9), color: rng.pick(wallCols), roofColor: 0x3a302a, roof: 'none', facing: face, cand: zone, base: g });
-      rubble(x, z, 10, 1.4, g + 1.2);
-      K.box(x + rr(-2, 2), g + 1.5, z, rr(4, 6), 0.3, 3, 0x4a3a2a, { solid: false, ry: rr(-0.5, 0.5) }); // tejado hundido
-    } else if (kind === 'tall') {
+    if (kind === 'tall') {
       // edificio de dos plantas a medio derrumbar: una mitad entera, la otra caída en escombros
       const w = 9, d = 6.6, h = 6.4;
       K.box(x - w / 4, g, z, w / 2, h, d, rng.pick(wallCols), { tag: 'building' });
@@ -316,10 +369,25 @@ export function build(K, { scene }) {
       cone(x - w / 4, g + h, z);
       if (rng.chance(0.6)) bomb(x - w / 4 + rr(-1, 1), g + h + 0.9, z + rr(-1, 1), 1.3);
     } else {
+      const cap = dry(() => {
+        if (kind === 'shell') {
+      K.house({ x, z, w: rr(7.5, 9), d: 6.2, h: rr(2.8, 3.4), color: rng.pick(sooty), roofColor: 0x1a1616, roof: 'none', facing: face, cand: zone, base: g });
+      K.box(x - 1, g + 2.8, z, 7.4, 0.25, 0.3, 0x1e1816, { solid: false, ry: rr(-0.3, 0.3) });
+      K.box(x + 1.2, g + 2.6, z + 0.8, 0.3, 0.25, 5, 0x1e1816, { solid: false, ry: rr(-0.3, 0.3) });
+      ashPile(x + rr(-2, 2), z + rr(-1.5, 1.5), 0.8, g);
+      extra.flames.push([x + rr(-2, 2), g + 0.4, z + rr(-1.5, 1.5), 1]);
+        } else if (kind === 'collapsed') {
+      K.house({ x, z, w: rr(7.5, 9), d: 6.2, h: rr(1.4, 1.9), color: rng.pick(wallCols), roofColor: 0x3a302a, roof: 'none', facing: face, cand: zone, base: g });
+      rubble(x, z, 10, 1.4, g + 1.2);
+      K.box(x + rr(-2, 2), g + 1.5, z, rr(4, 6), 0.3, 3, 0x4a3a2a, { solid: false, ry: rr(-0.5, 0.5) }); // tejado hundido
+        } else {
       // casa cubierta de ceniza con el tejado gris
       K.house({ x, z, w: rr(7.5, 9), d: 6.2, h: rr(2.9, 3.3), color: rng.pick(wallCols), roofColor: 0x6a6460, roof: 'gable', facing: face, chimney: rng.chance(0.4), cand: zone, base: g });
       ashPile(x + rr(-2, 2), z, 1.1, g + 3.6);
       if (rng.chance(0.5)) bomb(x + rr(-2.5, 2.5), g + 4.4, z + rr(-1, 1), rr(1.1, 1.5), false);
+        }
+      });
+      fx.house(x, z, face, HOUSE_OF[kind] || (fx.R.chance(0.5) ? 'shack' : 'ruin'), cap ? cap.w : 8.2, zone, g);
     }
     { const cx = x + rr(-2.5, 2.5), cz = z + fz * 5.2; cand('street', cx, G(cx, cz), cz, { zone: 'calles de Cenizara', type: 'street' }); }
   };
@@ -438,7 +506,7 @@ export function build(K, { scene }) {
   // árboles quemados en las aceras y patios
   for (const p of K.scatter(70, { x0: -56, x1: 96, z0: 24, z1: 100 }, {
     minDist: 5, accept: (x, z) => !lavaNear(x, z, 1) && roadD(x, z) > 4.5 && !nearStart(x, z, 10) && free(x, z, 3, 3) && !lots.some((L) => Math.abs(L.x - x) < 6.5 && Math.abs(L.z - z) < 4.5) && !CROSS.some((zs) => Math.abs(z - zs) < 3.2) && inCity(x, z),
-  })) K.tree('dead', p.x, p.z, rr(0.8, 1.3));
+  })) deadTree(p.x, p.z, rr(0.8, 1.3));
   // la avenida principal: candidatos, piñas y cartel de la ciudad
   for (let i = 0; i < 12; i++) { const z = 96 - i * 5, x = rr(-3, 3); if (z < 44) break; cand('street', x, G(x, z), z, { zone: 'avenida del volcán', type: 'street' }); if (i % 2) coneG(i % 4 === 1 ? 2 : -2, z); }
   K.box(-5, CITY_Y, 92, 0.25, 1.8, 0.25, 0x4a3a2a, { solid: false });
@@ -538,7 +606,7 @@ export function build(K, { scene }) {
   const crystals = (x, z, n = 4, s = 1, y = null) => {
     for (let i = 0; i < n; i++) {
       const a = rr(0, 6.3), d = rr(0, 1.3) * s, px = x + Math.cos(a) * d, pz = z + Math.sin(a) * d;
-      prop('cristal', rr(1.2, 2.8) * s, px, (y ?? G(px, pz)) - 0.25, pz, rr(0, 6.3), [rr(-0.35, 0.35), rr(-0.35, 0.35)]);
+      fx.crystalInst({ h: rr(1.2, 2.8) * s, x: px, y: (y ?? G(px, pz)) - 0.25, z: pz, ry: rr(0, 6.3), rx: rr(-0.35, 0.35), rz: rr(-0.35, 0.35), o: 'XYZ' });
     }
     if (s >= 1) K.solid(x - 1.1 * s, x + 1.1 * s, (y ?? G(x, z)) - 1, (y ?? G(x, z)) + 1.6 * s, z - 1.1 * s, z + 1.1 * s, 'rock');
   };
@@ -571,7 +639,7 @@ export function build(K, { scene }) {
   for (const [x, z] of [[-48, -6], [-20, 2], [8, -2], [26, 4], [52, 0], [-8, -10], [36, -11]]) if (!lavaNear(x, z, 1) && free(x, z, 3, 3)) crystals(x, z, 4, rr(0.8, 1.1));
   for (const [x, z] of [[-36, 2], [-50, -10], [22, -12], [48, 4], [-14, 4], [6, -12]]) if (!lavaNear(x, z, 1) && free(x, z, 2, 2)) tree(x, z, rr(6, 8));
   for (const p of K.scatter(40, { x0: -108, x1: 108, z0: -13, z1: 6 }, { minDist: 5, accept: (x, z) => onTerrace(x, z) && !lavaNear(x, z, 1) && roadD(x, z) > 4 && free(x, z, 2, 2) && z > -13 })) {
-    if (rng.chance(0.5)) K.tree('dead', p.x, p.z, rr(0.8, 1.2)); else K.rock(p.x, p.z, rr(0.8, 1.8), 0x2a2422);
+    if (rng.chance(0.5)) deadTree(p.x, p.z, rr(0.8, 1.2)); else rock(p.x, p.z, rr(0.8, 1.8), 0x2a2422);
   }
   for (let i = 0; i < 14; i++) { const x = rr(-100, 100), z = rr(-12, 3); if (onTerrace(x, z) && !lavaNear(x, z, 1) && free(x, z, 2, 2)) { cand(i % 3 ? 'street' : 'clearing', x, G(x, z), z, { zone: 'terraza de las cenizas', type: i % 3 ? 'ground' : 'clearing' }); if (i % 2) coneG(x + 1.4, z); } }
   for (const [x, z] of [[-60, -8], [-30, -12], [0, -6], [40, 2], [70, -6], [90, -2], [-80, -4]]) crack(x, z, rr(6, 10), rr(0, 6));
@@ -620,24 +688,24 @@ export function build(K, { scene }) {
     cone(px, y, zc);
   }
 
-  /* ================= TERRAZA 3: PUERTA DE KERBEROS, PORTAL Y PLATAFORMAS COLGANTES ================= */
-  // la Puerta de Kerberos: dos pilares con braseros y un arco; los soldados de Kerberos la guardan
+  /* ================= TERRAZA 3: CUEVA VOLCÁNICA DEL JEFE, PORTAL Y PLATAFORMAS COLGANTES ================= */
+  // La antigua Puerta de Kerberos (dos pilares y un arco) se sustituye por la entrada a una cueva volcánica en el mismo
+  // sitio, en lo alto de la rampa B: se sigue pasando por dentro hacia la terraza alta y la arena del jefe. Los dos
+  // soldados de Kerberos (los orcos) siguen guardando la entrada.
   {
-    const z = -37.5, g = T3Y;
-    for (const x of [6.6, 17.4]) {
-      K.box(x, g, z, 1.8, 6.4, 1.8, 0x241e1c, { tag: 'pillar' });
-      K.box(x, g + 6.4, z, 2.4, 0.5, 2.4, 0x1a1616, { solid: false });
-      K.cyl(x, g + 6.9, z, 0.7, 0.3, 0x3a302a);
-      extra.flames.push([x, g + 7.3, z, 1.5]);
-      K.box(x + (x < 12 ? 0.92 : -0.92), g + 1.5, z, 0.06, 3.6, 0.4, vein, { key: 'glow', solid: false });
+    const mx = 12, mz = -33.6;
+    fx.cave({ mx, mz, y0: T3Y, floorM: G(mx, mz), arena: ARENA });
+    // hilo de lava que sale de la cueva y baja junto a la rampa (como en la referencia)
+    {
+      const s = [];
+      for (const [x, z] of [[14.5, -38.4], [14.6, -36], [14.7, -33.5], [14.8, -31], [14.85, -28.5], [14.85, -25], [14.8, -22.5]]) s.push({ x, z, y: G(x, z) + 0.07, half: 0.32 });
+      addLava(ribbon(s, 0.32));
     }
-    K.box(12, g + 6.4, z, 9, 0.9, 1.2, 0x1a1616, { solid: false });
-    K.box(12, g + 5.6, z + 0.62, 4, 0.7, 0.05, 0xff6a2a, { key: 'glow', solid: false });
-    for (const x of [4.4, 19.6]) {
-      const m = prop('soldado', 2.3, x, g, z + 1.4, 0);
-      if (m) { extra.guards.push(m); K.solid(x - 0.45, x + 0.45, g - 0.5, g + 2.1, z + 1.0, z + 1.8, 'guard'); }
+    for (const x of [7.4, 16.6]) {
+      const z = -31.3, g = G(x, z);
+      const m = prop('soldado', 2.3, x, g, z, 0);
+      if (m) { extra.guards.push(m); K.solid(x - 0.45, x + 0.45, g - 0.5, g + 2.1, z - 0.4, z + 0.4, 'guard'); }
     }
-    extra.lights.push([12, g + 5, z, 0xff6a20, 16, 18]);
   }
   // el portal de rescate: anillo de obsidiana y cristales de magma alrededor (solo al norte y a los lados:
   // la arena del jefe queda despejada)
@@ -670,7 +738,7 @@ export function build(K, { scene }) {
   }
   for (let i = 0; i < 16; i++) { const x = rr(-96, 96), z = rr(-90, -34); if (onTerrace(x, z) && volcR(x, z) > VOLC.R + 2 && !lavaNear(x, z, 1) && arenaFree(x, z, 1) && !nearSafe(x, z, 12) && free(x, z, 2, 2)) { cand(i % 3 ? 'street' : 'clearing', x, G(x, z), z, { zone: 'terraza del portal', type: i % 3 ? 'ground' : 'clearing' }); if (i % 2) coneG(x, z); } }
   for (const p of K.scatter(26, { x0: -100, x1: 100, z0: -96, z1: -32 }, { minDist: 7, accept: (x, z) => volcR(x, z) > VOLC.R && !lavaNear(x, z, 1) && arenaFree(x, z, 2) && !nearSafe(x, z, 16) && roadD(x, z) > 5 && free(x, z, 2, 2) })) {
-    if (rng.chance(0.5)) K.tree('dead', p.x, p.z, rr(0.9, 1.3)); else K.rock(p.x, p.z, rr(1, 2.2), 0x241e1c);
+    if (rng.chance(0.5)) deadTree(p.x, p.z, rr(0.9, 1.3)); else rock(p.x, p.z, rr(1, 2.2), 0x241e1c);
   }
   extra.geysers.push({ x: -50, z: -76, y: G(-50, -76), launch: 12 }, { x: 62, z: -70, y: G(62, -70), launch: 12 });
   // sendero al cráter (cerrado por tablones al principio) y el secreto del borde del cráter
@@ -761,6 +829,134 @@ export function build(K, { scene }) {
     }
   }
 
+  /* ================= TRANSFORMACIÓN VISUAL: VOLCÁN, INICIO, VEGETACIÓN, CRISTALES Y CIUDAD ================= */
+  // Todo con el generador propio de los modelos nuevos (fx.R): no cambia nada de lo que ya estaba colocado.
+  {
+    const R = fx.R;
+    const collNear = (x, z, r) => coll.some((c) => Math.hypot(c.x - x, c.z - z) < r);
+    const okGround = (x, z, w = 2, d = 2, pad = 1) => !lavaNear(x, z, pad) && free(x, z, w, d) && arenaFree(x, z, Math.max(w, d) / 2 + 1) && !nearSafe(x, z, 14 + Math.max(w, d) / 2) && !nearNew(x, z, 5 + Math.max(w, d) / 2) && !collNear(x, z, Math.max(w, d) / 2 + 0.6);
+    // busca el sitio válido más cercano en anillos alrededor del punto pedido
+    const near = (x, z, test, step = 1.5, rings = 4) => {
+      if (test(x, z)) return [x, z];
+      for (let k = 1; k <= rings; k++) for (let i = 0; i < 8; i++) { const a = i / 8 * 6.283 + k, px = x + Math.cos(a) * k * step, pz = z + Math.sin(a) * k * step; if (test(px, pz)) return [px, pz]; }
+      return null;
+    };
+    const inCave = (x, z) => x > 0 && x < 30 && z > -46 && z < -28;
+
+    // --- EL VOLCÁN: columnas de basalto, corona del cráter, agujas y grietas de magma ---
+    fx.volcano({
+      V: VOLC, coneR: VOLC.R, avoid: (x, z, pad, rim = false) => {
+        if (pathDist(x, z, TRAIL).d < 5 + pad) return true;
+        if (Math.hypot(x - VOLC.x, z - (VOLC.z + VOLC.crater + 1.4)) < 7 + pad) return true; // sendero y secreto del borde del cráter
+        if (coneStreamD(x, z) < 2.6 + pad) return true;
+        if (onTerrace(x, z) && streamD(x, z) < 3.6 + pad && volcR(x, z) > VOLC.R - 8) return true;
+        if (!rim && (volcR(x, z) < VOLC.crater + 5 || volcR(x, z) > VOLC.R - 3)) return true;
+        return nearSafe(x, z, 22) || !arenaFree(x, z, 4);
+      },
+    });
+    // venas de magma que se ramifican desde las coladas por las laderas
+    const flows = [...CONE_STREAMS, ...CONE_FLOWS];
+    for (let i = 0; i < 26; i++) {
+      const path = R.pick(flows), t = R.range(0.12, 0.85);
+      let [x, z] = pathPoint(path, t);
+      const [x2, z2] = pathPoint(path, Math.min(1, t + 0.02));
+      let a = Math.atan2(z2 - z, x2 - x) + (R.chance(0.5) ? 1 : -1) * R.range(0.5, 1.2);
+      const s = [];
+      for (let k = 0; k < R.int(5, 10); k++) {
+        if (volcR(x, z) > VOLC.R - 2 || pathDist(x, z, TRAIL).d < 3) break;
+        s.push({ x, z, y: G(x, z) + 0.09, half: 0.2 * (1 - k / 12) });
+        a += R.range(-0.45, 0.45); x += Math.cos(a) * 1.3; z += Math.sin(a) * 1.3;
+      }
+      if (s.length > 2) addLava(ribbon(s, 0.2));
+    }
+    // grietas en la base del cono
+    for (let i = 0; i < 18; i++) {
+      const a = R.range(0, 6.283), r = VOLC.R + R.range(-5, 6), x = VOLC.x + Math.cos(a) * r, z = VOLC.z + Math.sin(a) * r;
+      if (!onTerrace(x, z) || nearSafe(x, z, 18) || !arenaFree(x, z, 3) || pathDist(x, z, TRAIL).d < 4 || lavaNear(x, z, 0.5) || roadD(x, z) < 3) continue;
+      fx.crackAt(x, z, R.range(5, 10), a + Math.PI / 2 + R.range(-0.5, 0.5));
+    }
+
+    // --- ZONA DE INICIO: terreno volcánico con grietas, cristales, árboles quemados, roca de lava y fumarolas ---
+    {
+      const NS = NEW_START, fl = Math.hypot(VOLC.x - NS.x, VOLC.z - NS.z), fw = [(VOLC.x - NS.x) / fl, (VOLC.z - NS.z) / fl], rt = [-fw[1], fw[0]];
+      const P = (f, r) => [NS.x + fw[0] * f + rt[0] * r, NS.z + fw[1] * f + rt[1] * r];
+      const ok = (w) => (x, z) => !lavaNear(x, z, 1) && free(x, z, w, w) && Math.hypot(x - NS.x, z - NS.z) > 4.5 && !collNear(x, z, w);
+      const heading = Math.atan2(fw[1], fw[0]);
+      let p;
+      if ((p = near(...P(8, -6), ok(3.4), 1.2))) fx.crystalCluster(p[0], p[1], 1.7);
+      if ((p = near(...P(6, 5), ok(2.4), 1.2))) fx.crystalCluster(p[0], p[1], 1.1);
+      if ((p = near(...P(2, -9), ok(2.5), 1.2))) fx.tree(p[0], p[1], 1.15, 'fuego');
+      if ((p = near(...P(-3, 8), ok(2.5), 1.2))) fx.tree(p[0], p[1], 1.0, 'partido');
+      if ((p = near(...P(-1, -5.5), ok(2.5), 1.2))) fx.tree(p[0], p[1], 1.0, 'caido');
+      if ((p = near(...P(-2, 11), ok(3), 1.2))) fx.lavaRock(p[0], p[1], 2.4);
+      for (const s of [-1, 1]) { const [x, z] = P(3, s * 2.2); fx.crackAt(x, z, R.range(6, 9), heading + s * 0.2); }
+      { const [x, z] = P(11, -2); fx.crackAt(x, z, 7, heading - 0.6); }
+      { const [x, z] = P(5, -3.5); extra.fumaroles.push([x, G(x, z), z, 0x5a5654]); }
+      { const [x, z] = P(1, 7); extra.fumaroles.push([x, G(x, z), z, 0x3a3634]); }
+      { const [x, z] = P(4, 0); extra.lights.push([x, G(x, z) + 2.5, z, 0xff6a20, 10, 16]); }
+    }
+
+    // --- MÁS VEGETACIÓN QUEMADA (árboles secos, en brasas, caídos, partidos y tocones) ---
+    {
+      const NT = Math.round(75 * K.density);
+      for (let i = 0, n = 0; i < NT * 10 && n < NT; i++) {
+        const city = i % 3 === 0;
+        const x = city ? R.range(-56, 96) : R.range(-104, 104), z = city ? R.range(24, 100) : R.range(-96, 4);
+        if (city) { if (!inCity(x, z) || roadD(x, z) < 4.5 || CROSS.some((zs) => Math.abs(z - zs) < 3.2) || lots.some((L) => Math.abs(L.x - x) < 6.5 && Math.abs(L.z - z) < 4.5) || nearStart(x, z, 10)) continue; }
+        else if (!onTerrace(x, z) || volcR(x, z) < VOLC.R + 1 || roadD(x, z) < 4 || inCave(x, z)) continue;
+        if (!okGround(x, z, 2.6, 2.6) || fx.treeNear(x, z, 4) || inStartView(x, z)) continue;
+        fx.tree(x, z, R.range(0.85, 1.3));
+        n++;
+      }
+    }
+
+    // --- MÁS CRISTALES DE MAGMA: junto a la cueva, los ríos de lava, el pie del volcán, el inicio y la ciudad ---
+    {
+      const CR = [];
+      const crys = (x, z, s) => {
+        if (K.mobile && R.next() < 0.45) return; // en el móvil, menos grupos sueltos (rendimiento)
+        const p = near(x, z, (px, pz) => okGround(px, pz, 2.4 * s, 2.4 * s) && !inCave(px, pz) && roadD(px, pz) > 2.5 && !CR.some(([cx, cz]) => Math.hypot(cx - px, cz - pz) < 5));
+        if (p) { fx.crystalCluster(p[0], p[1], s); CR.push(p); }
+      };
+      for (const [x, z, s] of [[2.6, -31.9, 1.1], [28.6, -35.5, 1.6], [28.2, -42, 1.2]]) if (!lavaNear(x, z, 0.5) && free(x, z, 2 * s, 2 * s) && arenaFree(x, z, 2 * s)) { fx.crystalCluster(x, z, s); CR.push([x, z]); }
+      for (const path of STREAMS) for (let t = 0.12; t < 0.95; t += 0.1) {
+        if (R.chance(0.35)) continue;
+        const [x, z] = pathPoint(path, t), [x2, z2] = pathPoint(path, t + 0.01), dx = x2 - x, dz = z2 - z, l = Math.hypot(dx, dz) || 1, side = R.chance(0.5) ? 1 : -1, off = R.range(5.5, 8);
+        crys(x - dz / l * off * side, z + dx / l * off * side, R.range(0.8, 1.5));
+      }
+      for (let i = 0; i < 16; i++) { const a = R.range(Math.PI * 0.05, Math.PI * 0.95), r = VOLC.R + R.range(2, 9); crys(VOLC.x + Math.cos(a) * r, VOLC.z + Math.sin(a) * r, R.range(1.2, 2.2)); }
+      for (const [x, z] of [[-30, 70], [30, 50], [8, 70], [-8, 32], [70, 70], [62, 30]]) crys(x + R.range(-4, 4), z + R.range(-4, 4), R.range(0.6, 0.9));
+      for (let i = 0; i < 12; i++) crys(R.range(-100, 100), R.range(-28, 2), R.range(0.7, 1.3));
+    }
+
+    // --- CIUDAD: gasolineras, bocas de riego, cabinas telefónicas y contenedores en llamas ---
+    {
+      const stationOk = (ry) => (x, z) => { const along = Math.abs(Math.cos(ry)) > 0.5, w = along ? 14 : 11.5, d = along ? 11.5 : 14; return !lavaNear(x, z, 3) && free(x, z, w, d) && !coll.some((c) => Math.abs(c.x - x) < w / 2 + 0.5 && Math.abs(c.z - z) < d / 2 + 0.5); };
+      for (const [x, z, ry, ruined] of [[-31, 70, 0, false], [61, 70, Math.PI, true]]) { const p = near(x, z, stationOk(ry), 1, 3); if (p) fx.gasStation(p[0], p[1], ry, ruined); }
+      const small = (w) => (x, z) => !lavaNear(x, z, 0.6) && free(x, z, w, w) && roadD(x, z) > 2.2 && !collNear(x, z, w / 2 + 0.6);
+      for (const zs of CROSS) for (const x of [-38, -24, -4, 8, 24, 38, 54, 68, 86]) {
+        if (R.chance(0.35)) continue;
+        const z = zs + (R.chance(0.5) ? 3.0 : -3.0);
+        if (small(0.9)(x, z)) fx.hydrant(x, z, R.range(0, 6.283));
+      }
+      for (const [x, z] of [[-27.5, 83.4], [26.5, 63.4], [-4.5, 43.4], [57.5, 56.6], [-55, 63.4], [88, 83.4], [-34, 36.6]]) {
+        const p = near(x, z, small(1.7), 0.8, 3);
+        if (p) fx.booth(p[0], p[1], R.pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]) + R.range(-0.2, 0.2), R.pick(['up', 'up', 'lean', 'lean', 'down']));
+      }
+      const DST = ['fire', 'tipped', 'fire', 'dented', 'normal', 'fire'];
+      let nd = 0;
+      for (const L of lots) {
+        if (R.chance(0.4)) continue;
+        const side = R.chance(0.5) ? 1 : -1, fz = L.face === 0 ? 1 : -1;
+        const x = L.x + side * R.range(6.4, 7.4), z = L.z + fz * R.range(-1.2, 1.2);
+        if (lavaNear(x, z, 0.6) || !free(x, z, 2.4, 1.9) || roadD(x, z) < 3 || collNear(x, z, 1.8)) continue;
+        fx.dumpster(x, z, Math.PI / 2 * R.int(0, 3) + R.range(-0.25, 0.25), DST[nd++ % DST.length]);
+        if (R.chance(0.6)) { const bx = x + R.range(-1.2, 1.2), bz = z + fz * R.range(1.8, 2.6); if (small(0.9)(bx, bz)) fx.bin(bx, bz, R.range(0, 6.283), R.chance(0.35)); }
+      }
+    }
+    fx.finalize({ free });
+  }
+
   /* ================= PINTURA DEL SUELO ================= */
   const paint = () => K.paintGround({
     colorAt: (x, z, h, sl) => {
@@ -811,9 +1007,15 @@ export function build(K, { scene }) {
   extra.crater = { x: VOLC.x, y: VOLC.lake, z: VOLC.z, r: VOLC.crater };
   extra.mats = LM;
 
-  return makeDescriptor(K, scene, {
+  extra.eruption = { x: VOLC.x, y: VOLC.lake, z: VOLC.z, r: VOLC.crater - 1.5, mobile: K.mobile };
+  // el refugio y su portal se orientan con el inicio de siempre (no cambian); después el héroe pasa a empezar en la
+  // terraza volcánica del este, de cara al volcán
+  const desc = makeDescriptor(K, scene, {
     id: 'fire', look, paint, refugeStyle: 'camp', mapView: { cx: 0, cz: -8, half: 112 }, windAmp: 1.1, hazard: 'fire',
     extra: {
+      bossArena: { x: ARENA.x, z: ARENA.z, r: 13 },
+      startYaw: Math.atan2(NEW_START.x - VOLC.x, NEW_START.z - VOLC.z), startPitch: -0.03,
+      flyover: FLYOVER,
       fireSeedPool: [[-46, 74], [16, 74], [46, 54], [-16, 54], [-30, 84], [76, 46], [-80, 72], [-70, 40], [-50, -4], [30, 0], [-60, -24], [70, -24], [40, -66], [-40, -64]],
       roadPts: ROAD,
       noSpawn: (x, z) => lavaNear(x, z, 0.6) || Math.hypot(x - 46, z - 33.2) < 4.2,
@@ -821,4 +1023,6 @@ export function build(K, { scene }) {
       cenizara: extra,
     },
   });
+  Object.assign(CFG.START, NEW_START);
+  return desc;
 }

@@ -19,6 +19,8 @@ const FILES = {
   // troncos, rocas de lava con llamas y montaña de lava
   hospital: 'props/hospital.glb', ambulancia: 'props/ambulancia.glb', helicoptero: 'props/helicoptero.glb', arbolseco: 'props/arbolseco.glb',
   arbolfuego: 'props/arbolfuego.glb', troncos: 'props/troncos.glb', rocas: 'props/rocas.glb', montana: 'props/montana.glb',
+  // versiones ligeras (menos polígonos) para repartir muchas copias instanciadas por Cenizara
+  arbolseco_lo: 'props/arbolseco_lo.glb', arbolfuego_lo: 'props/arbolfuego_lo.glb', cristal_lo: 'props/cristal_lo.glb', rocas_lo: 'props/rocas_lo.glb',
 };
 
 export function preloadProps() {
@@ -43,6 +45,37 @@ export function propAt(name, h, x = 0, y = 0, z = 0, ry = 0) {
   m.position.set(x, y, z);
   m.rotation.y = ry;
   return m;
+}
+
+// Muchas copias de un modelo en una sola llamada de dibujo (InstancedMesh).
+// list: [{ x, y, z, h, ry, rx?, rz?, sx? }] (h = altura en metros, pies en y; sx = ancho relativo)
+export function propInstances(name, list, { shadow = true } = {}) {
+  const root = propModel(name);
+  if (!root || !list.length) return null;
+  root.updateMatrixWorld(true);
+  const group = new THREE.Group();
+  const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler(), P = new THREE.Vector3(), S = new THREE.Vector3();
+  const tinted = list.some((it) => it.c !== undefined), col = new THREE.Color();
+  root.traverse((o) => {
+    if (!o.isMesh) return;
+    const im = new THREE.InstancedMesh(o.geometry, o.material, list.length);
+    list.forEach((it, i) => {
+      E.set(it.rx || 0, it.ry || 0, it.rz || 0, it.o || 'YXZ');   // it.o: orden de los giros (p. ej. 'XZY' = girar sobre sí y luego inclinar)
+      Q.setFromEuler(E);
+      S.set(it.h * (it.sx || 1), it.h, it.h * (it.sx || 1));
+      P.set(it.x, it.y, it.z);
+      M.compose(P, Q, S).multiply(o.matrixWorld);
+      im.setMatrixAt(i, M);
+      if (tinted) im.setColorAt(i, col.set(it.c ?? 0xffffff));      // it.c: tono que multiplica el color del modelo
+    });
+    im.instanceMatrix.needsUpdate = true;
+    if (im.instanceColor) im.instanceColor.needsUpdate = true;
+    im.castShadow = shadow;
+    im.receiveShadow = true;
+    im.computeBoundingSphere();
+    group.add(im);
+  });
+  return group;
 }
 
 // colores de carrocería: [tono 0..1, saturación, brillo] (el original es rojo)

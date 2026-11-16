@@ -217,6 +217,13 @@ export class Input {
     for (let i = 0; i < gp.buttons.length; i++) prev[i] = b(i);
   }
 
+  // ¿quiere el jugador ponerse en marcha? (sirve para saltar el sobrevuelo inicial; no consume nada)
+  peekSkip() {
+    const k = this.keys;
+    return ['KeyW', 'KeyA', 'KeyS', 'KeyD', 'Space', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Enter'].some((c) => k.has(c))
+      || Math.abs(this.pad.x) + Math.abs(this.pad.y) > 0.4 || this.pad.jump || Math.abs(this.touch.x) + Math.abs(this.touch.y) > 0.4 || this.touch.jumpHeld;
+  }
+
   getMove() {
     const k = this.keys;
     let x = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);

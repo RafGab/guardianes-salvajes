@@ -571,13 +571,18 @@ export class Game {
     ui.showScreen(null);
     ui.hud(true);
     ui.minimap.init(world);
-    chase.yaw = 0;
-    chase.pitch = 0.3;
+    // orientación inicial: por defecto mirando al norte; un escenario puede pedir otra (Cenizara: hacia el volcán)
+    const sy = world.sc.startYaw ?? 0;
+    chase.yaw = sy;
+    chase.pitch = world.sc.startPitch ?? 0.3;
+    if (world.sc.startYaw !== undefined) player.facing = sy + Math.PI;
     chase.distTarget = player.cam.dist; // cámara a la medida del héroe (scale.js)
     chase.dist = player.cam.dist;
     chase.aim = player.cam.aim;
-    chase.snap(player.pos, 0);
+    chase.snap(player.pos, sy);
     this.state = 'intro';
+    this.flyHud = !!world.sc.flyover;
+    if (this.flyHud) ui.hud(false); // sobrevuelo cinematográfico: sin marcadores en pantalla
     this.input.enabled = true;
     const amb = AMBIENCE[level.scenario] || [0.3, 0.3];
     audio.setIntensity(amb[0], amb[1]);
@@ -1406,9 +1411,16 @@ export class Game {
     const introLocked = this.state === 'intro';
     if (introLocked) {
       this.introT += real;
-      if (this.introT > 3.2) {
+      const fly = world.sc.flyover, introDur = fly ? fly.dur : 3.2;
+      // el sobrevuelo se puede saltar moviéndose o saltando (va directo al final, detrás del héroe)
+      if (fly && this.introT > 1 && this.introT < introDur - (fly.blend || 3)) {
+        const mv = input.peekSkip ? input.peekSkip() : false;
+        if (mv) this.introT = introDur - (fly.blend || 3) * 0.6;
+      }
+      if (this.introT > introDur) {
         this.state = 'playing';
         player.locked = false;
+        if (this.flyHud) { this.flyHud = false; ui.hud(true); }
         this.tip('start');
       }
     }
@@ -1639,6 +1651,7 @@ export class Game {
   }
 
   introCamera() {
+    if (this.world.sc.flyover) return this.flyoverCamera(this.world.sc.flyover);
     const k = clamp(this.introT / 3.2, 0, 1);
     const e = k * k * (3 - 2 * k);
     const cam = this.camera;
@@ -1649,6 +1662,24 @@ export class Game {
     const look = sl.lerp(this.chase.look.clone(), e);
     cam.position.copy(pos);
     cam.lookAt(look);
+  }
+
+  // Sobrevuelo cinematográfico del escenario: la cámara sigue una curva suave por los puntos del escenario y, al
+  // final, se funde con la cámara normal detrás del héroe
+  flyoverCamera(fly) {
+    if (!fly.curves) {
+      fly.curves = [0, 1].map((j) => new THREE.CatmullRomCurve3(fly.keys.map((k) => new THREE.Vector3(...k[j])), false, 'centripetal'));
+    }
+    const B = fly.blend || 3, D = fly.dur, t = this.introT;
+    const u = clamp(t / (D - B * 0.4), 0, 1), e = u * u * (3 - 2 * u) * 0.35 + u * 0.65;
+    const pos = fly.curves[0].getPoint(e), look = fly.curves[1].getPoint(e);
+    if (t > D - B) {
+      const k = clamp((t - (D - B)) / B, 0, 1), s = k * k * (3 - 2 * k);
+      pos.lerp(this.chase.pos, s);
+      look.lerp(this.chase.look, s);
+    }
+    this.camera.position.copy(pos);
+    this.camera.lookAt(look);
   }
 
   updatePrompt(inSafe) {

@@ -4,6 +4,7 @@ import { Audio3D as audio } from '../audio.js';
 import { HEALTH } from '../skills/config.js';
 import { terrainH } from '../terrain.js';
 import { pathDist } from './common.js';
+import { Eruption } from './cenizara_fx.js';
 
 /* ======================================================================
    CENIZARA · elementos vivos del escenario (los coleccionables y secretos los lleva CampFireRuntime)
@@ -92,6 +93,8 @@ export class CenizaraRuntime {
     this.hint = new Set();
     this.lavaHop = 0;
     this.fxAcc = 0;
+    // la erupción del volcán: fuente de lava, bombas, columna de humo, resplandor y luz
+    this.eruption = cfg.eruption ? new Eruption(game, cfg.eruption) : null;
   }
 
   /* ---------- plataformas móviles ---------- */
@@ -312,6 +315,7 @@ export class CenizaraRuntime {
         this.banner('lava', '🔥', '¡La lava quema! Usa los puentes, las balsas y las plataformas');
       }
     }
+    if (this.eruption) this.eruption.update(dt);
     // ambiente: llamas, fumarolas, cascadas de lava, cráter, ascuas
     this.fxAcc += dt;
     if (this.fxAcc > 0.05) {
@@ -368,5 +372,6 @@ export class CenizaraRuntime {
     const W = this.g.world;
     for (const pl of this.platforms) { const i = W.dynSolids.indexOf(pl.solid); if (i >= 0) W.dynSolids.splice(i, 1); }
     if (this.group.parent) this.group.parent.remove(this.group);
+    if (this.eruption) this.eruption.dispose();
   }
 }
