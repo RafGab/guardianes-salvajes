@@ -406,15 +406,27 @@ export class WorldSelect {
   showInfo(i) {
     const info = this.info;
     this.root.classList.toggle('has-sel', i >= 0);
+    clearInterval(this.prevTimer);
     if (i < 0) { info.classList.remove('show'); this.enterBtn.disabled = true; this.enterBtn.textContent = 'ENTRAR AL MUNDO'; return; }
     const p = this.portals[i], L = p.L;
     const st = this.stars(L.id);
     const rw = this.rewardOf(L);
     info.style.setProperty('--wc', '#' + p.col.getHexString());
-    info.innerHTML = `<div class="wi-kicker">${L.kicker}</div><div class="wi-name">${L.icon} ${L.name}</div><div class="wi-place">${L.place}</div>
+    // VISTA PREVIA DEL MAPA: tres capturas reales del escenario 3D (public/img/worlds/<id>_1..3.jpg)
+    const PV = [['Vista aérea', 1], ['Vista lateral', 2], ['Desde el portal de rescate', 3]];
+    const gallery = `<div class="wi-prev${p.locked ? ' locked' : ''}"><img class="wi-main" alt="Vista previa de ${L.name}" src="/img/worlds/${L.id}_1.jpg"><div class="wi-cap">${PV[0][0]}</div>
+      <div class="wi-thumbs">${PV.map(([t, k], j) => `<button type="button" class="wi-th${j ? '' : ' on'}" data-k="${j}" title="${t}"><img alt="${t}" src="/img/worlds/${L.id}_${k}.jpg"></button>`).join('')}</div></div>`;
+    info.innerHTML = gallery + `<div class="wi-kicker">${L.kicker}</div><div class="wi-name">${L.icon} ${L.name}</div><div class="wi-place">${L.place}</div>
       <p class="wi-desc">${L.desc}</p>
       <div class="wi-meta"><span>Dificultad ${'🔥'.repeat(Math.ceil(L.n / 2))}</span><span>${[0, 1, 2].map((k) => (k < st ? '⭐' : '☆')).join('')}</span>${rw ? `<span>Premio: ${rw.icon} ${rw.name}</span>` : ''}<span>Ideal: ${this.bestOf(L)}</span></div>
       ${p.locked ? `<div class="wi-lock">🔒 Completa el nivel ${L.n - 1} para abrir este portal</div>` : ''}`;
+    {
+      const main = info.querySelector('.wi-main'), cap = info.querySelector('.wi-cap'), ths = [...info.querySelectorAll('.wi-th')];
+      let cur = 0;
+      const show = (k) => { cur = k; main.src = `/img/worlds/${L.id}_${PV[k][1]}.jpg`; cap.textContent = PV[k][0]; ths.forEach((b, j) => b.classList.toggle('on', j === k)); };
+      ths.forEach((b, j) => { b.onclick = (e) => { e.stopPropagation(); show(j); clearInterval(this.prevTimer); }; });
+      this.prevTimer = setInterval(() => show((cur + 1) % PV.length), 3800);
+    }
     info.classList.add('show');
     this.enterBtn.disabled = p.locked;
     this.enterBtn.textContent = p.locked ? '🔒 PORTAL CERRADO' : 'ENTRAR AL MUNDO';

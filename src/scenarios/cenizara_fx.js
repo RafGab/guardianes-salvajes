@@ -59,6 +59,54 @@ function pillarGeo(seed) {
   return g;
 }
 const ROCKS = [1, 2, 3, 4, 5].map((s) => lumpy(s));
+// bloque de roca volcánica de la referencia: alto y redondeado, con caras planas grandes (facetas)
+function lavaRockGeo(seed) {
+  const g = new THREE.IcosahedronGeometry(1, 2), p = g.attributes.position, v = new THREE.Vector3();
+  const cuts = Array.from({ length: 9 }, (_, i) => { const a = hash3(i, seed, 1, 3) * TAU, b = Math.acos(hash3(i, seed, 2, 7) * 1.6 - 0.8); return [new THREE.Vector3(Math.sin(b) * Math.cos(a), Math.cos(b), Math.sin(b) * Math.sin(a)), 0.78 + hash3(i, seed, 3, 5) * 0.14]; });
+  for (let i = 0; i < p.count; i++) {
+    v.fromBufferAttribute(p, i);
+    const k = 1 + (hash3(Math.round(v.x * 997), Math.round(v.y * 997), Math.round(v.z * 997), seed) - 0.5) * 0.16;
+    v.multiplyScalar(k);
+    for (const [n, d] of cuts) { const h = v.dot(n); if (h > d) v.addScaledVector(n, d - h); } // planos que tallan las facetas
+    if (v.y < -0.75) v.y = -0.75 + (v.y + 0.75) * 0.3; // base algo plana para asentarse en el suelo
+    p.setXYZ(i, v.x, v.y, v.z);
+  }
+  g.computeVertexNormals();
+  return g;
+}
+const LAVA_ROCKS = [21, 22, 23, 24, 25, 26].map((s) => lavaRockGeo(s));
+const LAVA_TONES = [0x262a31, 0x2e323a, 0x1f2228, 0x34363c];
+// material de la roca volcánica: negro azulado, satinado, con grietas de magma que brillan (Voronoi 3D)
+function lavaRockMaterial() {
+  const m = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.42, metalness: 0.18, flatShading: true });
+  m.onBeforeCompile = (sh) => {
+    sh.uniforms.uT = FXT;
+    sh.vertexShader = sh.vertexShader.replace('#include <common>', `#include <common>
+      varying vec3 vRP;`).replace('#include <begin_vertex>', `#include <begin_vertex>
+      vRP = (modelMatrix * vec4(position, 1.0)).xyz;`);
+    sh.fragmentShader = sh.fragmentShader.replace('#include <common>', `#include <common>
+      varying vec3 vRP; uniform float uT;
+      vec3 h33(vec3 p){ p = vec3(dot(p, vec3(127.1, 311.7, 74.7)), dot(p, vec3(269.5, 183.3, 246.1)), dot(p, vec3(113.5, 271.9, 124.6))); return fract(sin(p) * 43758.5453); }
+      float vEdge(vec3 x){ vec3 p = floor(x), f = fract(x); float d1 = 8.0, d2 = 8.0;
+        for (int k = -1; k <= 1; k++) for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) { vec3 b = vec3(float(i), float(j), float(k)); vec3 r = b - f + h33(p + b); float d = dot(r, r); if (d < d1) { d2 = d1; d1 = d; } else if (d < d2) d2 = d; }
+        return sqrt(d2) - sqrt(d1); }`)
+      .replace('#include <emissivemap_fragment>', `#include <emissivemap_fragment>
+      {
+        vec3 q = vRP * 0.62; q += (h33(floor(vRP * 2.3)) - 0.5) * 0.06 + sin(vRP.yzx * 2.1) * 0.09; // grietas irregulares
+        float e1 = vEdge(q), e2 = vEdge(q * 2.2 + 7.3);
+        float c1 = 1.0 - smoothstep(0.02, 0.085, e1);
+        float c2 = (1.0 - smoothstep(0.015, 0.04, e2)) * smoothstep(0.35, 0.05, e1) * 0.8; // ramitas que salen de las grandes
+        float crack = max(c1, c2);
+        float core = 1.0 - smoothstep(0.0, 0.03, e1);
+        float halo = (1.0 - smoothstep(0.0, 0.22, e1)) * 0.22;      // el calor tiñe un poco la roca junto a la grieta
+        float pulse = 0.85 + 0.15 * sin(uT * 1.7 + vRP.x * 0.7 + vRP.z * 0.5);
+        diffuseColor.rgb *= 1.0 - crack * 0.7;
+        totalEmissiveRadiance += (mix(vec3(0.95, 0.22, 0.0), vec3(1.0, 0.62, 0.08), core) * crack * 1.55 + vec3(0.5, 0.08, 0.0) * halo) * pulse;
+      }`);
+  };
+  m.customProgramCacheKey = () => 'lava-rock';
+  return m;
+}
 const CRAGS = [11, 12, 13, 14, 15].map((s) => lumpy(s, 1, 0.42));
 const PILLARS = [1, 2, 3].map((s) => pillarGeo(s));
 
@@ -107,6 +155,7 @@ export function createCenizaraFX(C) {
   const { K, scene, extra } = C;
   const G = (x, z) => terrainH(x, z);
   const R = makeRng(C.seed || 7331);
+  const R2 = makeRng((C.seed || 7331) + 77); // rocas volcánicas y arco de los orcos (no mueven lo demás)
   const add = (geo, key, m, col) => K.batch.add(geo, key, m, col);
   // lote propio de rocas brillantes (cueva y volcán) y su resplandor
   const rockBatch = new Batch();
@@ -708,6 +757,75 @@ export function createCenizaraFX(C) {
     for (let i = 0; i < 24; i++) { const a = i / 24 * TAU, r = V.crater - 1.2, x = V.x + Math.cos(a) * r, z = V.z + Math.sin(a) * r; WR(x, V.lake + 0.4, z, -a).put(gBox, 0, 0, 0, 0.6, 1.2, 3.2, 0xff8a2a, { key: 'glow' }); }
   };
 
+
+  /* ================= ROCAS VOLCÁNICAS (según la imagen de referencia) =================
+     Bloques de roca negra azulada, facetados y algo brillantes, partidos en placas por una red de grietas por las
+     que asoma el magma (naranja con el centro amarillo). Las grietas las dibuja el material (diagrama de Voronoi
+     en 3D sobre la superficie), así cada roca tiene su propio dibujo de grietas. */
+  const lavaRockAt = (x, y, z, sx, sy, sz, ry = R2.range(0, TAU), tilt = 0.12) => {
+    WR(x, y, z, ry, R2.range(-tilt, tilt), R2.range(-tilt, tilt)).put(LAVA_ROCKS[R2.int(0, LAVA_ROCKS.length - 1)], 0, 0, 0, sx, sy, sz, R2.pick(LAVA_TONES), { key: 'lava' });
+  };
+  // formación: 'boulder' (un bloque grande), 'cluster' (varios bloques) o 'spire' (bloque alto)
+  const lavaFormation = (x, z, s = 1, kind = 'boulder') => {
+    const g = G(x, z);
+    if (kind === 'spire') {
+      lavaRockAt(x, g + 1.6 * s, z, 1.0 * s, 2.3 * s, 0.9 * s, undefined, 0.08);
+      lavaRockAt(x + 0.9 * s, g + 0.35 * s, z + 0.5 * s, 0.55 * s, 0.5 * s, 0.5 * s);
+      K.solid(x - 0.9 * s, x + 0.9 * s, g - 1, g + 3.6 * s, z - 0.9 * s, z + 0.9 * s, 'rock');
+    } else if (kind === 'cluster') {
+      lavaRockAt(x, g + 0.85 * s, z, 1.1 * s, 1.25 * s, 1.0 * s);
+      for (let i = 0; i < R2.int(2, 4); i++) { const a = R2.range(0, TAU), d = R2.range(1.2, 1.9) * s, k = R2.range(0.35, 0.7); lavaRockAt(x + Math.cos(a) * d, g + 0.6 * k * s, z + Math.sin(a) * d, k * s, k * 1.1 * s, k * 0.95 * s); }
+      K.solid(x - 1.1 * s, x + 1.1 * s, g - 1, g + 1.9 * s, z - 1.1 * s, z + 1.1 * s, 'rock');
+    } else {
+      lavaRockAt(x, g + 1.0 * s, z, 1.15 * s, 1.35 * s, 1.0 * s);
+      K.solid(x - 1.0 * s, x + 1.0 * s, g - 1, g + 2.1 * s, z - 0.9 * s, z + 0.9 * s, 'rock');
+    }
+    if (s >= 1.1) light({ x, y: g + 1.2 * s, z }, 0xff5a14, 5 * s, 7 * s);
+    if (R2.chance(0.35)) flame({ x: x + R2.range(-0.5, 0.5) * s, y: g + 0.3, z: z + R2.range(-0.5, 0.5) * s }, 0.45);
+    clears.push({ x0: x - 1.5 * s, x1: x + 1.5 * s, z0: z - 1.5 * s, z1: z + 1.5 * s });
+  };
+
+  /* ================= EL ARCO DE LOS ORCOS =================
+     Dos torres de celosía rojas (postes, travesaños, cruces en X, almenas, tejado a cuatro aguas y pináculo) y entre
+     ellas un gran arco de roca volcánica agrietada. cx, cz: centro del vano; ry: orientación (el paso va a lo largo
+     de z local); y0: suelo. Se pasa por debajo. */
+  const orcArch = ({ cx, cz, ry = 0, y0, span = 13.6 }) => {
+    const F = W(cx, y0, cz, ry), red = 0xa8321e, redD = 0x7a2414, redL = 0xc84a2a, hw = span / 2;
+    for (const s of [-1, 1]) {
+      const tx = s * hw, T = F.sub(tx, 0, 0, 0), w = 2.4, H = 12;
+      for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { T.box(px * w / 2, H / 2, pz * w / 2, 0.3, H, 0.3, red); T.box(px * w / 2, 0.35, pz * w / 2, 0.5, 0.7, 0.5, redD); }
+      for (let y = 1.6; y < H; y += 2.1) {
+        for (const pz of [-1, 1]) T.box(0, y, pz * w / 2, w + 0.2, 0.22, 0.24, redL);
+        for (const px of [-1, 1]) T.box(px * w / 2, y, 0, 0.24, 0.22, w + 0.2, redL);
+        if (y + 2.1 < H) for (const pz of [-1, 1]) for (const d of [-1, 1]) T.box(0, y + 1.05, pz * w / 2, 0.12, 2.6, 0.12, redD, { rz: d * 0.72 });
+        if (y + 2.1 < H) for (const px of [-1, 1]) for (const d of [-1, 1]) T.box(px * w / 2, y + 1.05, 0, 0.12, 2.6, 0.12, redD, { rx: d * 0.72 });
+      }
+      T.box(0, H / 2, 0, w - 0.3, H, w - 0.3, 0x3a1a12);                       // interior oscuro
+      T.box(0, H + 0.15, 0, w + 0.7, 0.3, w + 0.7, red);                        // remate
+      for (const [px, pz] of [[-1, -1], [1, -1], [-1, 1], [1, 1], [0, -1], [0, 1], [-1, 0], [1, 0]]) T.box(px * (w / 2 + 0.2), H + 0.55, pz * (w / 2 + 0.2), 0.35, 0.55, 0.35, red);
+      T.put(gCone, 0, H + 1.6, 0, 1.75, 1.9, 1.75, redD, { ry: Math.PI / 4 });
+      T.box(0, H + 2.9, 0, 0.18, 1.2, 0.18, red);
+      T.put(gCone, 0, H + 3.75, 0, 0.32, 0.9, 0.32, redL);
+      for (const d of [-1, 1]) T.put(gCone, d * 0.25, H + 3.1, 0, 0.12, 0.5, 0.12, redL, { rz: -d * 0.9 });
+      T.cyl(0, H + 0.45, 0, 0.5, 0.3, 0x2a1a14);
+      flame(T.pt(0, H + 0.7, 0), 1.0);
+      solidRect(T, -w / 2 - 0.2, w / 2 + 0.2, -w / 2 - 0.2, w / 2 + 0.2, -0.5, H + 0.6, 'pillar');
+      // pie de piedras volcánicas
+      for (let i = 0; i < 7; i++) { const a = R2.range(0, TAU), d = R2.range(1.4, 2.4); const p = T.pt(Math.cos(a) * d, 0, Math.sin(a) * d); lavaRockAt(p.x, y0 + R2.range(0.1, 0.35), p.z, R2.range(0.35, 0.7), R2.range(0.3, 0.55), R2.range(0.35, 0.7)); }
+    }
+    // las patas de roca del arco (pegadas a las torres) y la gran masa de roca de arriba
+    for (const s of [-1, 1]) {
+      for (let k = 0; k < 4; k++) { const p = F.pt(s * (hw - 1.9 + R2.range(-0.2, 0.25)), 0, R2.range(-0.4, 0.4)); lavaRockAt(p.x, y0 + 1.0 + k * 1.9, p.z, R2.range(1.0, 1.3), R2.range(1.1, 1.4), R2.range(0.95, 1.2), undefined, 0.2); }
+      const p = F.pt(s * (hw - 1.6), 0, 0);
+      K.solid(Math.min(p.x, F.pt(s * (hw - 3.0), 0, 0).x) - 0.3, Math.max(p.x, F.pt(s * (hw - 3.0), 0, 0).x) + 0.3, y0 - 1, y0 + 8, p.z - 1.3, p.z + 1.3, 'rock');
+    }
+    for (let i = 0; i < 9; i++) { const t = i / 8, p = F.pt(-hw + 1.6 + t * (span - 3.2), 0, R2.range(-0.5, 0.5)); lavaRockAt(p.x, y0 + 8.9 + Math.sin(t * Math.PI) * 1.3 + R2.range(-0.3, 0.3), p.z, R2.range(1.2, 1.7), R2.range(1.0, 1.4), R2.range(1.1, 1.5), undefined, 0.3); }
+    for (let i = 0; i < 4; i++) { const p = F.pt(R2.range(-hw + 3, hw - 3), 0, R2.range(-0.3, 0.3)); lavaRockAt(p.x, y0 + 11.0 + R2.range(0, 0.8), p.z, R2.range(0.8, 1.2), R2.range(0.9, 1.6), R2.range(0.8, 1.1), undefined, 0.4); }
+    { const a = F.pt(-hw + 2, 0, -1.6), b = F.pt(hw - 2, 0, 1.6); K.solid(Math.min(a.x, b.x), Math.max(a.x, b.x), y0 + 7.6, y0 + 12.5, Math.min(a.z, b.z), Math.max(a.z, b.z), 'rock'); }
+    light(F.pt(0, 7.5, 0), 0xff5a14, 14, 16);
+    clearRect(F, -hw - 1.6, hw + 1.6, -2.4, 2.4);
+  };
+
   /* ================= FINAL: se dibuja todo lo instanciado y los árboles diferidos ================= */
   const finalize = ({ free }) => {
     for (const T of deferred) {
@@ -724,9 +842,10 @@ export function createCenizaraFX(C) {
     const mats = {
       rock: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.3, metalness: 0.22, flatShading: true }),
       vrock: new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.8, metalness: 0.0, flatShading: true }),
+      lava: lavaRockMaterial(),
       glow: new THREE.MeshBasicMaterial({ vertexColors: true, toneMapped: false }),
     };
-    rockBatch.build(scene, mats, { glow: { cast: false, receive: false }, rock: { cast: !mobile }, vrock: { cast: !mobile } });
+    rockBatch.build(scene, mats, { glow: { cast: false, receive: false }, rock: { cast: !mobile }, vrock: { cast: !mobile }, lava: { cast: !mobile } });
     // candidatos y coleccionables que quedaban dentro de los objetos nuevos se descartan
     const inClear = (x, z) => clears.some((c) => x > c.x0 - 0.3 && x < c.x1 + 0.3 && z > c.z0 - 0.3 && z < c.z1 + 0.3);
     for (let i = K.cands.length - 1; i >= 0; i--) { const c = K.cands[i]; if ((c.type === 'street' || c.type === 'clearing') && inClear(c.x, c.z)) K.cands.splice(i, 1); }
@@ -734,7 +853,7 @@ export function createCenizaraFX(C) {
   };
 
   const treeNear = (x, z, r) => deferred.some((T) => Math.hypot(T.x - x, T.z - z) < r);
-  return { R, treeNear, tree, crystalInst, crystalCluster, crackAt, lavaRock, house, gasStation, hydrant, booth, dumpster, bin, cave, volcano, finalize, clears };
+  return { R, R2, treeNear, lavaFormation, orcArch, tree, crystalInst, crystalCluster, crackAt, lavaRock, house, gasStation, hydrant, booth, dumpster, bin, cave, volcano, finalize, clears };
 }
 
 /* ======================================================================

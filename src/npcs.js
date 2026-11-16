@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { makeCanvas, texFromCanvas, makeRng, TAU, lerp } from './utils.js';
 import { loadGLB, cachedGLB, normalizeModel } from './glb.js';
 import { modelUrl } from './scale.js';
+import { clone as cloneSkinned } from 'three/examples/jsm/utils/SkeletonUtils.js';
 
 const M = (geo, mat, parent, o = {}) => {
   const m = new THREE.Mesh(geo, mat);
@@ -52,18 +53,25 @@ function human(kind, seed) {
   const hairCol = elder ? 0xe8e8ee : r.pick([0x2a1a10, 0x5a3a1a, 0x1a1a1a, 0xc08a3a, 0x7a2a1a]);
   const hairM = std(hairCol, { roughness: 0.9 });
 
-  const legs = [];
+  // ESQUELETO: huesos de verdad (THREE.Bone) para cadera, rodillas, hombros, codos y cuello; cada pieza del
+  // cuerpo va pegada a su hueso, así las piernas y los brazos se doblan al caminar
+  const legs = [], knees = [];
+  const legM = female && !child && r.chance(0.5) ? skin : pants;
   for (const s of [-1, 1]) {
-    const lg = new THREE.Group();
+    const lg = new THREE.Bone();
     lg.position.set(s * 0.07, 0.42, 0);
     inner.add(lg);
-    M(cap(0.055, 0.28), female && !child && r.chance(0.5) ? skin : pants, lg, { y: -0.2 });
-    M(new THREE.BoxGeometry(0.1, 0.06, 0.16), std(0x222222), lg, { y: -0.42, z: 0.03 });
-    legs.push(lg);
+    M(cap(0.058, 0.12), legM, lg, { y: -0.1 });
+    const kn = new THREE.Bone();
+    kn.position.y = -0.21;
+    lg.add(kn);
+    M(cap(0.052, 0.12), legM, kn, { y: -0.1 });
+    M(new THREE.BoxGeometry(0.1, 0.06, 0.16), std(0x222222), kn, { y: -0.21, z: 0.03 });
+    legs.push(lg); knees.push(kn);
   }
   M(cap(0.115, 0.18), shirt, inner, { y: 0.6, sx: 1.1, sz: 0.8 });
   if (female && !child) M(cone(0.19, 0.24, 10), shirt, inner, { y: 0.42, rx: Math.PI });
-  const head = new THREE.Group();
+  const head = new THREE.Bone();
   head.position.y = 0.84;
   inner.add(head);
   const hr = child ? 0.16 : 0.135;
@@ -90,23 +98,28 @@ function human(kind, seed) {
     M(cone(hr * 1.1, hr * 0.5, 14), std(0xd24a2a), head, { y: hr * 1.5, z: hr * 0.15, rx: -0.12 });
     M(new THREE.CylinderGeometry(hr * 1.25, hr * 1.25, 0.02, 14), std(0xd24a2a), head, { y: hr * 1.3, z: hr * 0.2 });
   }
-  const arms = [];
+  const arms = [], elbows = [];
   for (const s of [-1, 1]) {
-    const ag = new THREE.Group();
+    const ag = new THREE.Bone();
     ag.position.set(s * 0.17, 0.7, 0);
     inner.add(ag);
-    M(cap(0.04, 0.24), shirt, ag, { y: -0.14 });
-    M(sph(0.045), skin, ag, { y: -0.31 });
-    arms.push(ag);
+    M(cap(0.042, 0.1), shirt, ag, { y: -0.08 });
+    const el = new THREE.Bone();
+    el.position.y = -0.16;
+    ag.add(el);
+    M(cap(0.038, 0.09), shirt, el, { y: -0.07 });
+    M(sph(0.045), skin, el, { y: -0.15 });
+    arms.push(ag); elbows.push(el);
   }
   if (elder) {
     // bastón
     const cane = new THREE.Group();
-    cane.position.set(0.02, -0.28, 0.04);
-    arms[1].add(cane);
+    cane.position.set(0.02, -0.12, 0.04);
+    elbows[1].add(cane);
     M(new THREE.CylinderGeometry(0.012, 0.012, 0.75, 6), std(0x5a3a1a), cane, { y: -0.3 });
   }
-  return { root, inner, legs, arms, head, animal: false };
+  const skeleton = new THREE.Skeleton([...legs, ...knees, ...arms, ...elbows, head]);
+  return { root, inner, legs, knees, arms, elbows, head, skeleton, animal: false };
 }
 
 function furTex(base, spot, seed, spots = 0) {
@@ -251,13 +264,16 @@ const GLB_ANIMALS = {
 /*  RESCATABLES CON MODELO 3D (personas y cervatillo): sustituyen en TODO el juego al modelo hecho con piezas.
     · nino: el niño o la niña (mitad y mitad, como antes)   · anciano: el abuelo en su silla de ruedas
     · ciervo: el cervatillo                                  · abuela y bombero: rescatables nuevos
-    Sin esqueleto: se animan moviendo el cuerpo entero (saltitos, balanceo, giros); el de la silla rueda adelante y atrás.
+    PERSONAS CON ESQUELETO (rig: *_rig.glb): huesos de cadera, columna, cuello, cabeza, brazos, antebrazos, manos,
+    piernas, rodillas y pies (el bastón de la abuela y la silla del abuelo con hueso propio) y animaciones propias:
+    'wave' (pide ayuda), 'walk' (camina; también dentro de la burbuja mientras el héroe avanza y al cruzar el portal),
+    'idle' (reposo) y 'cele' (contento al llegar). El abuelo empuja los aros de la silla con las manos.
     ry: giro para que miren a +Z como los demás; seated: va sentado (no salta). */
 const GLB_PEOPLE = {
-  nino: [{ file: 'props/nino.glb', h: 1.1 }, { file: 'props/nina.glb', h: 1.1 }],
-  anciano: [{ file: 'props/silla.glb', h: 1.35, seated: true }],
-  abuela: [{ file: 'props/abuela.glb', h: 1.5 }],
-  bombero: [{ file: 'props/bombero.glb', h: 1.75 }],
+  nino: [{ file: 'props/nino_rig.glb', h: 1.1, rig: true }, { file: 'props/nina_rig.glb', h: 1.1, rig: true }],
+  anciano: [{ file: 'props/silla_rig.glb', h: 1.35, seated: true, rig: true }],
+  abuela: [{ file: 'props/abuela_rig.glb', h: 1.5, rig: true }],
+  bombero: [{ file: 'props/bombero_rig.glb', h: 1.75, rig: true }],
   ciervo: [{ file: 'props/cervatillo.glb', h: 1.1, ry: -Math.PI / 2, animal: true }],
 };
 export const GLB_VICTIMS = [...Object.keys(GLB_ANIMALS), ...Object.keys(GLB_PEOPLE)];
@@ -334,8 +350,16 @@ function glbPerson(kind, seed) {
   const cfg = list[Math.floor(r.next() * list.length) % list.length];
   const gltf = cachedGLB(modelUrl(cfg.file));
   if (!gltf) return null;
-  const { root: norm } = normalizeModel(gltf.scene.clone(true));
-  norm.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; } });
+  const src = cfg.rig ? cloneSkinned(gltf.scene) : gltf.scene.clone(true);
+  const { root: norm } = normalizeModel(src);
+  norm.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; if (o.isSkinnedMesh) o.frustumCulled = false; } });
+  // esqueleto y animaciones
+  let mixer = null, actions = null;
+  if (cfg.rig && gltf.animations && gltf.animations.length) {
+    mixer = new THREE.AnimationMixer(src);
+    actions = {};
+    for (const c of gltf.animations) actions[c.name] = mixer.clipAction(c);
+  }
   const holder = new THREE.Group();
   holder.add(norm);
   holder.rotation.y = cfg.ry || 0;
@@ -345,7 +369,26 @@ function glbPerson(kind, seed) {
   const inner = new THREE.Group();
   root.add(inner);
   inner.add(holder);
-  return { root, inner, legs: [], head: null, tail: null, animal: !!cfg.animal, type: kind, glb: true, person: !cfg.animal, seated: !!cfg.seated, uniforms: [], ph: r.range(0, TAU), h };
+  return { root, inner, legs: [], head: null, tail: null, animal: !!cfg.animal, type: kind, glb: true, person: !cfg.animal, seated: !!cfg.seated, uniforms: [], ph: r.range(0, TAU), h, mixer, actions, cur: null, curA: null };
+}
+
+// animación con esqueleto: elige el clip según lo que hace la persona y lo funde con el anterior
+function animateRig(p, mode, dt, speed) {
+  const clip = mode === 'wave' ? 'wave' : mode === 'happy' ? 'cele' : mode === 'walk' ? 'walk' : mode === 'carried' ? (speed > 0.6 ? 'walk' : 'idle') : 'idle';
+  if (p.cur !== clip) {
+    const a = p.actions[clip] || p.actions.idle;
+    if (a) {
+      a.reset(); a.setEffectiveWeight(1); a.fadeIn(p.cur ? 0.25 : 0); a.play();
+      if (p.curA && p.curA !== a) p.curA.fadeOut(0.25);
+      p.curA = a;
+    }
+    p.cur = clip;
+  }
+  // el paso va al ritmo de la marcha (dentro de la burbuja sigue la velocidad del héroe)
+  if (p.curA) p.curA.timeScale = clip === 'walk' && mode === 'carried' ? Math.min(1.7, Math.max(0.7, speed / 2.4)) : 1;
+  // un ligero balanceo del cuerpo completo acompaña (sin saltitos: las piernas ya caminan)
+  p.inner.position.y = 0; p.inner.scale.set(1, 1, 1); p.inner.rotation.set(0, p.inner.rotation.y * 0.9, 0);
+  p.mixer.update(dt);
 }
 
 // animación de los rescatables con modelo 3D (sin esqueleto)
@@ -414,16 +457,38 @@ export function createVictim(kind, seed = 1) {
       const p = this.parts;
       const mode = this.mode;
       const inner = p.inner;
+      // velocidad real de la persona (para caminar dentro de la burbuja mientras el héroe avanza)
+      {
+        const e = this.root.matrixWorld.elements, px = e[12], pz = e[14];
+        const sp = this._px === undefined || dt <= 0 ? 0 : Math.hypot(px - this._px, pz - this._pz) / dt;
+        this._px = px; this._pz = pz;
+        this.speed = lerp(this.speed || 0, Math.min(sp, 12), Math.min(1, dt * 6));
+      }
+      if (p.mixer) { animateRig(p, mode, dt, this.speed); return; }
       if (p.glb) { animateGLB(p, mode, t, dt); return; }
       if (!p.animal) {
+        const kn = p.knees || [], el = p.elbows || [];
+        const bend = (a, b, c, d) => { if (kn[0]) { kn[0].rotation.x = a; kn[1].rotation.x = b; } if (el[0]) { el[0].rotation.x = c; el[1].rotation.x = d; } };
         if (mode === 'wave') {
+          bend(0, 0, 0, 0);
+          if (el[0]) el[0].rotation.z = Math.sin(t * 9) * 0.45;
           inner.position.y = Math.abs(Math.sin(t * 4)) * 0.04;
           p.arms[0].rotation.z = -2.7 + Math.sin(t * 9) * 0.35;
           p.arms[1].rotation.z = kind === 'nino' ? 2.7 - Math.sin(t * 9 + 1) * 0.35 : 0.2;
           p.arms[1].rotation.x = kind === 'anciano' ? -0.3 : 0;
           p.head.rotation.z = Math.sin(t * 3) * 0.1;
           p.legs.forEach((l) => (l.rotation.x = 0));
+        } else if (mode === 'carried' && this.speed > 0.6) {
+          // dentro de la burbuja, mientras el héroe avanza: camina con él
+          inner.position.y = Math.abs(Math.sin(t * 8)) * 0.03;
+          p.legs[0].rotation.x = Math.sin(t * 8) * 0.6;
+          p.legs[1].rotation.x = -Math.sin(t * 8) * 0.6;
+          p.arms[0].rotation.set(-Math.sin(t * 8) * 0.5, 0, -0.1);
+          p.arms[1].rotation.set(Math.sin(t * 8) * 0.5, 0, 0.1);
+          bend(Math.max(0, Math.sin(t * 8 + 1.3)) * 0.9, Math.max(0, Math.sin(t * 8 + 1.3 + Math.PI)) * 0.9, -0.35, -0.35);
+          p.head.rotation.z = 0;
         } else if (mode === 'carried') {
+          bend(0.7, 0.55, -0.6, -0.6);
           inner.position.y = 0;
           p.arms[0].rotation.set(-1.9, 0, -0.5);
           p.arms[1].rotation.set(-1.9, 0, 0.5);
@@ -431,10 +496,15 @@ export function createVictim(kind, seed = 1) {
           p.legs[1].rotation.x = -0.25 + Math.sin(t * 3 + 1) * 0.08;
           p.head.rotation.z = 0.15;
         } else if (mode === 'happy') {
+          const hop = Math.abs(Math.sin(t * 5));
+          bend((1 - hop) * 0.5, (1 - hop) * 0.5, 0, 0);
+          if (el[0]) { el[0].rotation.z = -0.3; el[1].rotation.z = 0.3; }
           inner.position.y = Math.abs(Math.sin(t * 5)) * 0.08;
           p.arms[0].rotation.z = -2.9 + Math.sin(t * 10) * 0.3;
           p.arms[1].rotation.z = 2.9 - Math.sin(t * 10) * 0.3;
         } else if (mode === 'walk') {
+          bend(Math.max(0, Math.sin(t * 8 + 1.3)) * 0.9, Math.max(0, Math.sin(t * 8 + 1.3 + Math.PI)) * 0.9, -0.35, -0.35);
+          if (el[0]) { el[0].rotation.z = 0; el[1].rotation.z = 0; }
           inner.position.y = Math.abs(Math.sin(t * 8)) * 0.03;
           p.legs[0].rotation.x = Math.sin(t * 8) * 0.6;
           p.legs[1].rotation.x = -Math.sin(t * 8) * 0.6;

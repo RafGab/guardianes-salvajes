@@ -571,15 +571,42 @@ export class Game {
     ui.showScreen(null);
     ui.hud(true);
     ui.minimap.init(world);
-    // orientación inicial: por defecto mirando al norte; un escenario puede pedir otra (Cenizara: hacia el volcán)
-    const sy = world.sc.startYaw ?? 0;
+    // APARICIÓN EN EL PORTAL DE RESCATE (todos los mapas): el héroe sale de la puerta del portal y queda delante
+    // de ella, de cara al portal y a su domo (con la cámara detrás, fuera del campo de energía). Un escenario puede
+    // pedir mirar a otro punto (Cenizara: el volcán en erupción, que queda detrás del portal).
+    const sp = this.portal.spawnPoint();
+    this.spawn = sp || { x: CFG.START.x, z: CFG.START.z, yaw: Math.PI };
+    if (sp) player.reset(sp.x, sp.z);
+    const lk = world.sc.startLook;
+    const face = lk ? Math.atan2(lk.x - this.spawn.x, lk.z - this.spawn.z) : this.spawn.yaw + Math.PI;
+    player.facing = face;
+    const sy = face + Math.PI;
     chase.yaw = sy;
-    chase.pitch = world.sc.startPitch ?? 0.3;
-    if (world.sc.startYaw !== undefined) player.facing = sy + Math.PI;
+    chase.pitch = world.sc.startPitch ?? 0.14;
     chase.distTarget = player.cam.dist; // cámara a la medida del héroe (scale.js)
     chase.dist = player.cam.dist;
     chase.aim = player.cam.aim;
-    chase.snap(player.pos, sy);
+    // la cámara del inicio busca un ángulo despejado (sin edificios del refugio entre ella y el héroe)
+    {
+      let best = sy, bestS = -1e9;
+      const tgt = new THREE.Vector3(player.pos.x, player.pos.y + chase.aim, player.pos.z);
+      // objetos del refugio que pueden tapar la vista (carteles, tiendas, edificios), sin el portal ni su domo
+      const occl = [];
+      const so = world.sc.safeObj;
+      if (so && so.group) so.group.traverse((o) => { if (!o.isMesh) return; for (let q = o; q; q = q.parent) if (q.name === 'rescue-portal') return; occl.push(o); });
+      const rc = new THREE.Raycaster(), dir = new THREE.Vector3();
+      for (const off of [0, 0.4, -0.4, 0.8, -0.8, 1.2, -1.2, 1.6, -1.6, 2.0, -2.0]) {
+        chase.snap(player.pos, sy + off);
+        const d = chase.pos.distanceTo(tgt);
+        dir.copy(chase.pos).sub(tgt).normalize();
+        rc.set(tgt, dir); rc.far = d;
+        const hidden = occl.length ? rc.intersectObjects(occl, false).length > 0 : false;
+        const score = d - (hidden ? 10 : 0) - Math.abs(off) * 0.4;
+        if (score > bestS) { bestS = score; best = sy + off; }
+        if (!hidden && d >= chase.dist * 0.92 && off === 0) break;
+      }
+      chase.snap(player.pos, best);
+    }
     this.state = 'intro';
     this.flyHud = !!world.sc.flyover;
     if (this.flyHud) ui.hud(false); // sobrevuelo cinematográfico: sin marcadores en pantalla

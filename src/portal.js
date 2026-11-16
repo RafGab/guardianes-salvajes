@@ -3,7 +3,7 @@ import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js
 import { toonMat } from './toon.js';
 import { TAU, clamp, damp, lerp, makeCanvas, texFromCanvas } from './utils.js';
 import { CFG } from './terrain.js';
-import { PORTAL_DIM, refugeKeepOut } from './refuge.js';
+import { PORTAL_DIM, DOME, refugeKeepOut } from './refuge.js';
 
 /* =====================================================================
    PORTAL DE RESCATE ELEMENTAL
@@ -984,6 +984,60 @@ function mulberry(seed) {
   return () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
 }
 
+/* =====================================================================
+   DOMO DE PROTECCIÓN: medio domo de energía detrás del portal (donde esperan los rescatados) y pared delantera
+   que rodea el portal. Cerrado por todas partes: la única entrada y salida es la puerta del portal.
+   Las colisiones las pone refuge.js (mismas medidas, DOME).
+   ===================================================================== */
+const DOME_VS = /* glsl */`varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying vec3 vL;
+void main(){ vUv = uv; vL = position; vec4 mv = modelViewMatrix * vec4(position, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`;
+const DOME_FS = /* glsl */`uniform vec3 uCol; uniform float uT; uniform float uWall; uniform float uFlash; varying vec2 vUv; varying vec3 vN; varying vec3 vV; varying vec3 vL;
+float hexEdge(vec2 p){ p.x *= 1.1547; p.y += mod(floor(p.x), 2.0) * 0.5; p = abs(fract(p) - 0.5); return abs(max(p.x * 1.5 + p.y, p.y * 2.0) - 1.0); }
+void main(){
+  float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
+  float rim = pow(f, 2.2);
+  vec2 hp = uWall > 0.5 ? vL.xy * 0.75 : vec2(vUv.x * 52.0, vUv.y * 13.0);
+  float e = hexEdge(hp);
+  float line = smoothstep(0.1, 0.0, e);
+  float wave = smoothstep(0.85, 1.0, sin(vL.y * 1.6 - uT * 1.8 + vL.x * 0.3) * 0.5 + 0.5);
+  float base = smoothstep(1.2, 0.0, vL.y);                          // brillo donde el domo toca el suelo
+  float a = 0.07 + rim * (uWall > 0.5 ? 0.15 : 0.45) + line * (0.16 + wave * 0.3) + base * 0.35 + uFlash * 0.25;
+  vec3 c = mix(uCol, vec3(1.0), line * 0.35 + base * 0.2) * (1.0 + wave * 0.5);
+  gl_FragColor = vec4(c, clamp(a, 0.0, 0.85));
+}`;
+function buildDome() {
+  const R = DOME.r, H = DOME.h, N = DOME.notch, Hs = DOME.spring;
+  const g = new THREE.Group();
+  g.name = 'rescue-dome';
+  const mk = (wall) => new THREE.ShaderMaterial({ uniforms: { uCol: { value: new THREE.Color(0x8ad8ff) }, uT: { value: 0 }, uWall: { value: wall }, uFlash: { value: 0 } }, vertexShader: DOME_VS, fragmentShader: DOME_FS, transparent: true, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+  const shellM = mk(0), wallM = mk(1);
+  // casco: la mitad trasera de una semiesfera (local +z = delante del portal)
+  const shell = new THREE.Mesh(new THREE.SphereGeometry(R, 72, 22, Math.PI, Math.PI, 0, Math.PI / 2), shellM);
+  shell.scale.y = H / R; // achatado
+  shell.renderOrder = 8;
+  g.add(shell);
+  // pared delantera: semicírculo con el hueco del portal (la silueta de sus columnas y su arco)
+  const sh = new THREE.Shape();
+  sh.moveTo(R, 0);
+  sh.absellipse(0, 0, R, H, 0, Math.PI, false);
+  sh.lineTo(-N, 0); sh.lineTo(-N, Hs);
+  sh.absarc(0, Hs, N, Math.PI, 0, true);
+  sh.lineTo(N, 0); sh.lineTo(R, 0);
+  const wall = new THREE.Mesh(new THREE.ShapeGeometry(sh, 48), wallM);
+  wall.position.z = -0.35;
+  wall.renderOrder = 8;
+  g.add(wall);
+  // anillo luminoso en la base del domo
+  const ringG = new THREE.RingGeometry(R - 0.12, R + 0.12, 64, 1, Math.PI, Math.PI);
+  ringG.rotateX(-Math.PI / 2);
+  const ringM = new THREE.MeshBasicMaterial({ color: 0x8ad8ff, transparent: true, opacity: 0.7, depthWrite: false, toneMapped: false, side: THREE.DoubleSide });
+  const ring = new THREE.Mesh(ringG, ringM);
+  ring.position.y = 0.05;
+  g.add(ring);
+  g.traverse((o) => { if (o.isMesh) { o.castShadow = false; o.receiveShadow = false; } });
+  return { group: g, mats: [shellM, wallM], ringM };
+}
+
 const BUILDERS = { roca: buildRoca, fuego: buildFuego, arena: buildArena, hielo: buildHielo, aire: buildAire, agua: buildAgua, tierra: buildTierra };
 
 /* =====================================================================
@@ -1012,12 +1066,21 @@ export class RescuePortal {
     this.root.position.set(f.lx, 0, f.lz);
     this.root.rotation.y = f.yaw;
     safeObj.group.add(this.root);
+    this.dome = buildDome();
+    this.root.add(this.dome.group);
     this.dir = new THREE.Vector2(Math.sin(f.yaw), Math.cos(f.yaw));
     // la columna de luz del refugio nace ahora sobre la figura del portal
     if (safeObj.beacon) safeObj.beacon.position.set(f.lx, 27.5 + 10.2, f.lz);
     if (safeObj.safeLight) safeObj.safeLight.position.set(f.lx + this.dir.x * 1.5, 3, f.lz + this.dir.y * 1.5);
     this.el = null;
     this.setElement(element, true);
+  }
+
+  // punto de aparición del héroe: delante de la puerta del portal (yaw: hacia fuera del portal)
+  spawnPoint(d = 4.4) {
+    if (!this.root) return null;
+    const c = this.center;
+    return { x: c.x + this.dir.x * d, z: c.z + this.dir.y * d, yaw: Math.atan2(this.dir.x, this.dir.y) };
   }
 
   get center() { const S = CFG.SAFE; return { x: S.x + this.frame.lx, z: S.z + this.frame.lz }; }
@@ -1053,6 +1116,7 @@ export class RescuePortal {
     if (so && so.beaconMat && so.beaconMat.uniforms.uCol) so.beaconMat.uniforms.uCol.value.set(...this.cur.beacon);
     if (so && so.safeLight) so.safeLight.color.setHex(this.cur.light);
     if (so && so.ring) so.ring.material.color.setRGB(...this.cur.beacon).multiplyScalar(1.6);
+    if (this.dome) { const dc = new THREE.Color(this.cur.light); for (const m of this.dome.mats) m.uniforms.uCol.value.copy(dc); this.dome.ringM.color.copy(dc).multiplyScalar(1.4); }
     if (!silent) {
       this.st.swap = 1;
       this.st.pop = 0.82;
@@ -1124,6 +1188,7 @@ export class RescuePortal {
     st.pop = damp(st.pop, 1, 6, dt);
     const pop = st.pop + Math.sin(Math.min(1, (1 - st.pop) * 6)) * 0.02;
     P.root.scale.setScalar(pop);
+    if (this.dome) for (const m of this.dome.mats) { m.uniforms.uT.value = t; m.uniforms.uFlash.value = st.burst; }
     const u = P.field.uniforms;
     u.uT.value = t; u.uCharge.value = st.charge; u.uBurst.value = st.burst; u.uOpen.value = st.open; u.uSwap.value = st.swap;
     // cerca de la zona de entrega el portal brilla algo menos (sin apagarse): se distinguen mejor las personas

@@ -60,8 +60,8 @@ const ROAD = [[0, 106], [0, 42], [0, 25], [0, 3], [-6, -2], [-12, -6], [-12, -20
 const CROSS = [80, 60, 40];
 const SIDE = [-30, 30];
 const ARENA = { x: 0, z: -50, r: 14 };
-// INICIO: el héroe empieza en la terraza volcánica del este, mirando al volcán en erupción.
-// (La plaza de la ciudad donde se empezaba antes sigue igual; el portal de rescate no cambia de sitio.)
+// MIRADOR VOLCÁNICO del este (grietas, cristales y árboles quemados con vista al volcán). El héroe aparece en el
+// portal de rescate, como en todos los mapas; CFG.START sigue siendo la plaza de la ciudad (orienta el refugio).
 const OLD_START = { x: 0, z: 100 };
 const NEW_START = { x: 86, z: -3 };
 // coladas de lava nuevas que bajan del cráter por las laderas (como en la referencia del volcán)
@@ -83,7 +83,7 @@ const FLYOVER = {
     [[32, 30, -10], [12, 19, -36]],
     [[-36, 58, -66], [0, 72, -122]],
     [[24, 104, -82], [0, 72, -124]],
-    [[98, 40, 8], [40, 42, -70]],
+    [[36, 34, -24], [0, 40, -112]],
   ],
 };
 
@@ -707,6 +707,8 @@ export function build(K, { scene }) {
       if (m) { extra.guards.push(m); K.solid(x - 0.45, x + 0.45, g - 0.5, g + 2.1, z - 0.4, z + 0.4, 'guard'); }
     }
   }
+  // EL ARCO DE LOS ORCOS: al pie de la rampa B (terraza 2), anuncia la subida a la cueva del jefe que guardan los orcos
+  fx.orcArch({ cx: 12, cz: -19.6, ry: 0, y0: T2Y });
   // el portal de rescate: anillo de obsidiana y cristales de magma alrededor (solo al norte y a los lados:
   // la arena del jefe queda despejada)
   for (let i = 0; i < 9; i++) {
@@ -929,6 +931,23 @@ export function build(K, { scene }) {
       for (let i = 0; i < 12; i++) crys(R.range(-100, 100), R.range(-28, 2), R.range(0.7, 1.3));
     }
 
+    // --- ROCAS VOLCÁNICAS (según la imagen de referencia): bloques, grupos y agujas con grietas de magma ---
+    {
+      const R2 = fx.R2;
+      const KIND = ['boulder', 'cluster', 'cluster', 'spire', 'boulder'];
+      const placeRock = (x, z, s, kind) => { const p = near(x, z, (px, pz) => okGround(px, pz, 3.2 * s, 3.2 * s) && !inCave(px, pz) && roadD(px, pz) > 3 && !inStartView(px, pz)); if (p) fx.lavaFormation(p[0], p[1], s, kind); };
+      // junto a la cueva y al arco de los orcos, en el mirador del este y al pie del volcán
+      for (const [x, z, s, k] of [[30, -30.5, 1.2, 'spire'], [-6, -33, 1.0, 'cluster'], [-4, -18, 0.9, 'boulder'], [28, -19, 1.1, 'cluster'], [96, -9, 1.3, 'spire'], [76, 3, 0.9, 'boulder'], [-30, -80, 1.6, 'spire'], [32, -82, 1.5, 'cluster']]) placeRock(x, z, s, k);
+      const NR = Math.round(26 * K.density);
+      for (let i = 0, n = 0; i < NR * 12 && n < NR; i++) {
+        const x = R2.range(-104, 104), z = i % 4 === 0 ? R2.range(24, 98) : R2.range(-96, 4);
+        if (z > 20 ? !inCity(x, z) || CROSS.some((zs) => Math.abs(z - zs) < 4) || lots.some((L) => Math.abs(L.x - x) < 7.5 && Math.abs(L.z - z) < 5.5) || nearStart(x, z, 12) : !onTerrace(x, z) || volcR(x, z) < VOLC.R - 4) continue;
+        if (!okGround(x, z, 3.6, 3.6) || inCave(x, z) || roadD(x, z) < 4 || inStartView(x, z) || fx.treeNear(x, z, 3)) continue;
+        fx.lavaFormation(x, z, R2.range(0.7, 1.4), R2.pick(KIND));
+        n++;
+      }
+    }
+
     // --- CIUDAD: gasolineras, bocas de riego, cabinas telefónicas y contenedores en llamas ---
     {
       const stationOk = (ry) => (x, z) => { const along = Math.abs(Math.cos(ry)) > 0.5, w = along ? 14 : 11.5, d = along ? 11.5 : 14; return !lavaNear(x, z, 3) && free(x, z, w, d) && !coll.some((c) => Math.abs(c.x - x) < w / 2 + 0.5 && Math.abs(c.z - z) < d / 2 + 0.5); };
@@ -1008,13 +1027,12 @@ export function build(K, { scene }) {
   extra.mats = LM;
 
   extra.eruption = { x: VOLC.x, y: VOLC.lake, z: VOLC.z, r: VOLC.crater - 1.5, mobile: K.mobile };
-  // el refugio y su portal se orientan con el inicio de siempre (no cambian); después el héroe pasa a empezar en la
-  // terraza volcánica del este, de cara al volcán
+  // el héroe aparece en el portal de rescate (game.js) mirando al volcán en erupción
   const desc = makeDescriptor(K, scene, {
     id: 'fire', look, paint, refugeStyle: 'camp', mapView: { cx: 0, cz: -8, half: 112 }, windAmp: 1.1, hazard: 'fire',
     extra: {
       bossArena: { x: ARENA.x, z: ARENA.z, r: 13 },
-      startYaw: Math.atan2(NEW_START.x - VOLC.x, NEW_START.z - VOLC.z), startPitch: -0.03,
+      startLook: { x: VOLC.x, z: VOLC.z }, startPitch: 0.02,
       flyover: FLYOVER,
       fireSeedPool: [[-46, 74], [16, 74], [46, 54], [-16, 54], [-30, 84], [76, 46], [-80, 72], [-70, 40], [-50, -4], [30, 0], [-60, -24], [70, -24], [40, -66], [-40, -64]],
       roadPts: ROAD,
@@ -1023,6 +1041,5 @@ export function build(K, { scene }) {
       cenizara: extra,
     },
   });
-  Object.assign(CFG.START, NEW_START);
   return desc;
 }

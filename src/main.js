@@ -629,9 +629,10 @@ function bindUi() {
   input.on('recenter', () => mode === 'playing' && (chase.yaw = player.facing + Math.PI));
   input.on('respawn', () => {
     if (mode !== 'playing' || game.state !== 'playing') return;
-    player.pos.set(CFG.START.x, terrainH(CFG.START.x, CFG.START.z) + 0.2, CFG.START.z);
+    const sp = game.spawn || CFG.START; // el punto de aparición es el portal de rescate
+    player.pos.set(sp.x, terrainH(sp.x, sp.z) + 0.2, sp.z);
     player.vy = 0;
-    ui.banner('find', '↩️', 'De vuelta al punto de inicio');
+    ui.banner('find', '↩️', 'De vuelta al portal de rescate');
   });
   // MOCHILA: se abre con B o con su botón; mientras está abierta el ratón queda libre (el juego sigue)
   const bagToggle = (force) => {

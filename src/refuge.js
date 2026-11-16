@@ -222,6 +222,10 @@ export function buildRefuge(scene, addSolid, styleName = 'camp') {
    ni con el edificio propio del refugio, y se orienta hacia el punto de inicio del nivel (por donde llega el héroe).
    Las dos columnas son sólidas; el campo de energía central se puede atravesar. */
 export const PORTAL_DIM = { col: 2.62, colHalf: 0.55, half: 3.2, depth: 0.8, plat: 3.4, colTop: 4.3 };
+// DOMO del portal: medio domo de energía (achatado: radio r, altura h) detrás del portal que cubre el refugio (donde
+// esperan los rescatados, con sus tiendas, ambulancia y helicóptero). Está cerrado por todas partes; la única entrada es
+// la puerta del portal (vano de ±2,2 m hasta el arco). notch/spring: silueta del portal en la pared delantera.
+export const DOME = { r: 12.3, h: 8.5, notch: 3.2, spring: 3.8, door: 2.2, doorTop: 6.0 };
 const KEEP = [
   [4.2, 6.8, -6.4, -1.6], [-4.8, -0.4, -8.8, -4.2],                                  // ambulancia, helicóptero
   [-8.3, -4.7, -4.8, -1.2], [-8.3, -4.7, 1.2, 4.8], [4.7, 8.3, 1.7, 5.3],              // tiendas
@@ -275,6 +279,24 @@ function placePortal(addSolid, extra) {
   for (const sg of [-1, 1]) {
     const cx = S0.x + best.lx + qx * D.col * sg, cz = S0.z + best.lz + qz * D.col * sg;
     addSolid(cx - D.colHalf, cx + D.colHalf, S0.y - 1, S0.y + D.colTop, cz - D.colHalf, cz + D.colHalf, 'portal');
+  }
+  // Paredes del DOMO (cajas que siguen su curva por capas de altura) y pared delantera alrededor del portal:
+  // nadie puede atravesarlo; solo se entra y se sale por la puerta del portal
+  {
+    const R = DOME.r, H = DOME.h, fx = Math.sin(best.yaw), fz = Math.cos(best.yaw), ox = S0.x + best.lx, oz = S0.z + best.lz, y0 = S0.y;
+    const at = (lat, back) => [ox + qx * lat - fx * back, oz + qz * lat - fz * back];
+    const box = (x, z, h, y1, y2, tag = 'dome') => addSolid(x - h, x + h, y2 === undefined ? y0 - 1 : y0 + y1, y0 + (y2 === undefined ? y1 : y2), z - h, z + h, tag);
+    const rAt = (y) => R * Math.sqrt(Math.max(0.02, 1 - (y / H) ** 2));
+    for (const [ya, yb] of [[0, 3], [3, 5.2], [5.2, 6.8], [6.8, 7.9]]) {
+      const r = rAt((ya + yb) / 2), n = Math.max(6, Math.ceil(Math.PI * r / 0.9));
+      for (let i = 0; i <= n; i++) { const a = -Math.PI / 2 + (i / n) * Math.PI, [x, z] = at(Math.sin(a) * r, Math.cos(a) * r); box(x, z, 0.5, ya === 0 ? -1 : ya, yb); }
+    }
+    for (let k = -3; k <= 3; k++) for (let j = 0; j <= 3; j++) { const [x, z] = at(k * 1.9, 0.9 + j * 1.8); box(x, z, 1.1, H - 0.7, H + 0.3); } // casquete
+    for (const sg of [-1, 1]) {
+      for (let lat = DOME.notch + 0.4; lat < R; lat += 0.8) { const [x, z] = at(sg * lat, 0); box(x, z, 0.45, -1, H * Math.sqrt(Math.max(0.02, 1 - (lat / R) ** 2))); }
+      for (let lat = DOME.door + 0.3; lat <= DOME.notch + 0.2; lat += 0.5) { const [x, z] = at(sg * lat, 0); box(x, z, 0.3, D.colTop - 0.1, H); } // sobre las columnas
+    }
+    for (let lat = -DOME.door; lat <= DOME.door + 0.01; lat += 0.55) { const [x, z] = at(lat, 0); box(x, z, 0.3, DOME.doorTop, H); } // sobre el vano
   }
   return { lx: best.lx, lz: best.lz, yaw: best.yaw, extra };
 }
