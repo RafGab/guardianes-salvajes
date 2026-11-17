@@ -71,6 +71,7 @@ export class Combat {
     this.scene = game.scene;
     this.vfx = game.vfx;
     this.minions = [];
+    this.orcs = [];            // orcos de los tableros (orcs.js): fuera de los combates de jefe
     this.projectiles = [];
     this.lingering = [];
     this.damageMul = 1; // multiplicador global de daño del equipo (reservado para poderes)
@@ -90,6 +91,8 @@ export class Combat {
   reset() {
     for (const m of this.minions) { if (!m.dead) this.scene.remove(m.group); }
     this.minions.length = 0;
+    for (const o of this.orcs) { if (!o.dead) this.scene.remove(o.group); }
+    this.orcs.length = 0;
     for (const p of this.projectiles) this.scene.remove(p.mesh);
     this.projectiles.length = 0;
     this.clearLingering();
@@ -104,6 +107,7 @@ export class Combat {
     const b = this.game.boss;
     if (b && b.state !== 'dead' && b.state !== 'enter') out.push(b);
     for (const m of this.minions) if (!m.dead) out.push(m);
+    for (const o of this.orcs) if (!o.dead) out.push(o);
     for (const p of this.props) if (!p.dead) out.push(p);
     return out;
   }
@@ -294,6 +298,11 @@ export class Combat {
       const m = this.minions[i];
       if (m.dead) { this.minions.splice(i, 1); continue; }
       m.update(dt);
+    }
+    for (let i = this.orcs.length - 1; i >= 0; i--) {
+      const o = this.orcs[i];
+      if (o.dead) { this.orcs.splice(i, 1); continue; }
+      o.update(dt);
     }
     for (let i = this.lingering.length - 1; i >= 0; i--) {
       const o = this.lingering[i];

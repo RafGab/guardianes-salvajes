@@ -348,6 +348,8 @@ export class CinematicIntro {
         const w = n === 'logo' ? 18 : H * aspect, h = n === 'logo' ? 18 / aspect : H;
         // relieve 3D: la imagen se abomba según su silueta y recibe luz y sombra (el reflejo usa el mismo relieve)
         Object.assign(u, reliefUniforms(t, w, h, n === 'logo' ? 0.45 : 1.1, { size: 128, light: [-0.5, 0.55, 0.7], relief: 0.9 }));
+        // LINCE (Lira): sin relieve 3D, se muestra con su imagen plana (el resto de la intro no cambia)
+        if (n === 'lira') { u.uDepth.value = 0; u.uRelief.value = 0; }
         const geo = new THREE.PlaneGeometry(w, h, 110, 110); geo.translate(0, h / 2, 0);
         const m = new THREE.Mesh(geo, new THREE.ShaderMaterial({ uniforms: u, vertexShader: HERO_VS, fragmentShader: HERO_FS, transparent: true, depthWrite: false }));
         if (refl) { m.scale.y = -1; m.renderOrder = 0; } else m.renderOrder = 2;

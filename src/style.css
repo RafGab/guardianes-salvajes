@@ -845,3 +845,9 @@ html.touch .bag.show { animation: none; }
 .skill.active { border-color: #9ff0ff; box-shadow: 0 0 14px rgba(120,230,255,.75); }
 .skill .actb { position: absolute; left: 0; bottom: 0; height: 4px; background: linear-gradient(90deg,#7ff0ff,#e8ffff); border-radius: 0 2px 2px 0; pointer-events: none; transition: width .25s linear; }
 .skill:not(.active) .actb { display: none; }
+
+/* panel del menú de mundos: imagen 3D del escenario elegido (su isla en relieve, con el color oficial del mundo) */
+.wi-prev .wi-main.is3d { object-fit: contain; background: radial-gradient(ellipse at 50% 60%, color-mix(in srgb, var(--wc, #8ab4ff) 38%, transparent), #050814 70%); padding: 6px; box-sizing: border-box; animation: wi3d 6s ease-in-out infinite; filter: drop-shadow(0 8px 14px rgba(0,0,0,.6)) drop-shadow(0 0 10px color-mix(in srgb, var(--wc, #8ab4ff) 60%, transparent)); transform-origin: 50% 70%; }
+.wi-prev { perspective: 600px; }
+@keyframes wi3d { 0%, 100% { transform: rotateY(-9deg) rotateX(4deg) translateY(0); } 50% { transform: rotateY(9deg) rotateX(2deg) translateY(-4px); } }
+.wi-th.th3d img { object-fit: contain; background: #050814; }

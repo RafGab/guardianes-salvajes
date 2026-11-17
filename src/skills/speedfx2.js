@@ -127,13 +127,42 @@ export const SPEED2 = {
     if (this.trailT <= 0 && sp > 2) { this.trailT = 0.14; const f = this.feet(0.6, bx, bz); this.whirls.push({ x: f.x, y: f.y, z: f.z, t: 0, life: 1.3, r: 0.7 + 0.5 * k, a: rnd(0, TAU) }); }
     // textura granulada en el cuerpo, más evidente cuanto más rápido (y desaparece poco a poco al terminar)
     const U = this.sandU || (this.sandU = this.sandBody());
-    if (U) { U.uSand.value = damp(U.uSand.value, on * clamp(0.35 + 0.65 * k, 0, 1), on ? 4 : 2.5, dt); U.uST.value = this.t; }
+    if (U) { U.uSand.value = damp(U.uSand.value, on * clamp(0.35 + 0.65 * k, 0, 1), on ? 4 : 1.4, dt); U.uST.value = this.t; } // al parar se va poco a poco (reloj de arena)
+    // ARENA DELANTE Y DETRÁS: nubes de arena que la acompañan mientras corre (solo efecto visual: no cambia su física)
+    if (on && sp > 1) {
+      const vx = p.vx, vz = p.vz, nF = 1 + Math.round(2 * k);
+      for (let i = 0; i < nF; i++) { // por delante: arena levantada que avanza con ella
+        const d = rnd(0.5, 1.3), s = rnd(-0.45, 0.45);
+        fx.dust.emit(p.pos.x - bx * d - bz * s, p.pos.y + rnd(0.05, 0.5), p.pos.z - bz * d + bx * s, vx * rnd(0.75, 0.95), rnd(0.2, 0.7), vz * rnd(0.75, 0.95), rnd(0.35, 0.6), 0.16, 0.5, 0xe0c080, 0xd6a84f, 0.4, 0, 0, 1);
+      }
+      for (let i = 0; i < nF; i++) { // por detrás: estela de arena que se queda atrás
+        const d = rnd(0.4, 1.4), s = rnd(-0.5, 0.5);
+        fx.dust.emit(p.pos.x + bx * d - bz * s, p.pos.y + rnd(0.05, 0.6), p.pos.z + bz * d + bx * s, vx * rnd(0.1, 0.35), rnd(0.3, 0.9), vz * rnd(0.1, 0.35), rnd(0.6, 1.0), 0.2, 0.7, 0xe0c080, 0xc89a58, 0.38, 0, 0, 1);
+      }
+    }
     // granos que se desprenden del cuerpo (espalda, brazos, orejas y cola) y se quedan atrás siguiendo su movimiento;
     // la cara y los ojos se dejan libres para que siempre sea reconocible
     const I = U ? U.uSand.value : on * k;
     if (I < 0.03) return;
     const B = p.model && p.model.bones;
     const src = this.sandSrc || (this.sandSrc = ['spine', 'spine_1', 'upper_arm_L', 'upper_arm_R', 'forearm_L', 'forearm_R', 'ear_L1', 'ear_R1', 'ear_L2', 'ear_R2', 'tail1', 'tail2', 'tail3', 'thigh_L', 'thigh_R'].filter((n) => B && B[n]));
+    // AL DEJAR DE CORRER: la arena del cuerpo cae como en un reloj de arena (hilos de granos que bajan hasta los
+    // pies, forman un montoncito y se dispersan) mientras su color original vuelve poco a poco
+    if (!on) {
+      const n2 = Math.round(3 + 9 * I);
+      for (let i = 0; i < n2; i++) {
+        const name = src.length ? src[Math.floor(Math.random() * src.length)] : null;
+        const w = name && boneWorld(this, name, this._sw || (this._sw = new THREE.Vector3()));
+        const x = w ? w.x + rnd(-0.06, 0.06) : p.pos.x + rnd(-0.2, 0.2), z = w ? w.z + rnd(-0.06, 0.06) : p.pos.z + rnd(-0.2, 0.2);
+        const y = w ? w.y : p.pos.y + rnd(0.3, p.H * 0.85);
+        fx.water.emit(x, y, z, rnd(-0.12, 0.12), rnd(-0.6, -0.2), rnd(-0.12, 0.12), rnd(0.45, 0.8), rnd(0.03, 0.05), 0.012, Math.random() < 0.5 ? 0xe2bf7a : 0xc89a58, 0xb8884a, 0.95, 0, -7, 0.4);
+      }
+      if (Math.random() < 0.5 * I) { // el montoncito de los pies se dispersa por el suelo
+        const a = rnd(0, TAU), v = rnd(0.3, 0.9);
+        fx.dust.emit(p.pos.x + Math.cos(a) * 0.15, p.pos.y + 0.04, p.pos.z + Math.sin(a) * 0.15, Math.cos(a) * v, 0.05, Math.sin(a) * v, rnd(0.5, 0.9), 0.12, 0.35, 0xe2bf7a, 0xd6a84f, 0.4, 0, 0, 1);
+      }
+      return;
+    }
     const n = Math.round(4 + 10 * I);
     for (let i = 0; i < n; i++) {
       let x, y, z;

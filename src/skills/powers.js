@@ -667,9 +667,10 @@ export class FlightSkill extends Skill {
   enterFly() {
     const d = this.def, p = this.p;
     p.fly = { kind: d.id, t: 0, max: d.flyT, speed: d.speed, climb: d.climb, sink: d.sink, ceil: d.ceil, lean: this.ears ? 0.25 : 0.75, minT: 0.6 };
+    if (!this.ears && d.levels) { p.fly.levels = d.levels; p.fly.level = 1; } // águila: tres niveles de altura
     p.vy = d.climb * 1.4;
     p.grounded = false; p.support = null;
-    if (!this.ears) { this.camWas = { dist: this.g.chase.distTarget }; ui.banner('find', '🦅', 'SALTAR = subir · suelta = planear · SPRINT = más rápido · baja al suelo para aterrizar'); }
+    if (!this.ears) { this.camWas = { dist: this.g.chase.distTarget }; ui.banner('find', '🦅', d.levels ? 'SALTAR = subir de nivel (3 alturas) · V o Ctrl = bajar · en el nivel 1, V = aterrizar · SPRINT = más rápido' : 'SALTAR = subir · suelta = planear · SPRINT = más rápido · baja al suelo para aterrizar'); }
     else ui.banner('find', '👂', 'Mantén SALTAR para subir');
     this.flapT = 0;
   }
@@ -677,7 +678,9 @@ export class FlightSkill extends Skill {
     const d = this.def, p = this.p, pose = this.pose, f = p.fly;
     if (!f || f.kind !== d.id) { this.endStage(); return; }
     const climbing = p.vy > 0.8, k = Math.min(1, Math.hypot(p.vx, p.vz) / d.speed);
-    this.flapRate = climbing ? 1.5 : this.ears ? 1 : 0.25 + 0.4 * (1 - k); // el águila planea; el fénec aletea sin parar
+    const lv = f.levels ? (f.ending ? 0 : f.level) : 2;
+    // el águila aletea más cerca del suelo y planea con las alas abiertas en lo alto; el fénec aletea sin parar
+    this.flapRate = climbing ? 1.5 : this.ears ? 1 : f.ending ? 0.9 : [0.9, 0.7, 0.45, 0.22][lv] + 0.3 * (1 - k);
     if (this.ears) { pose.rz = 0.12 * Math.sin(this.t * 2.3); pose.dy = 0.06 * Math.sin(this.t * d.flap * 0.5); } // cuelga y se balancea bajo las orejas
     else pose.rz = clamp(-(p.vx * Math.cos(p.facing) - p.vz * Math.sin(p.facing)) * 0.03, -0.35, 0.35);
     // sonido de aleteo
@@ -690,8 +693,10 @@ export class FlightSkill extends Skill {
     // cámara aérea del águila: se aleja y mira desde arriba para explorar el mapa
     if (!this.ears) {
       const ch = this.g.chase;
-      ch.distTarget = lerp(ch.distTarget, d.camDist, Math.min(1, dt * 1.5));
-      if (ch.pitch < d.camPitch) ch.pitch = lerp(ch.pitch, d.camPitch, Math.min(1, dt * 1.2));
+      const cd = f.levels && d.camDists ? (lv ? d.camDists[lv - 1] : d.camDists[0]) : d.camDist, cp = f.levels && d.camPitches ? (lv ? d.camPitches[lv - 1] : d.camPitches[0]) : d.camPitch;
+      ch.distTarget = lerp(ch.distTarget, cd, Math.min(1, dt * 1.5));
+      if (ch.pitch < cp || f.levels) ch.pitch = lerp(ch.pitch, cp, Math.min(1, dt * 1.2));
+      if (f.levels) pose.rx = (pose.rx || 0) + (lv === 3 ? -0.08 : 0) + (f.ending ? 0.12 : 0); // en lo alto, cuerpo estirado; al bajar, se inclina hacia el suelo
     }
   }
   enterLand() {
@@ -718,7 +723,7 @@ export class FlightSkill extends Skill {
       this.earB.R.forEach((b, i) => { fx.rot(b, 0, 0, 1, i === 0 ? open + s * amp : s * amp * 0.4); fx.rot(b, 1, 0, 0, Math.cos(ph) * 0.25); });
     }
   }
-  get canRecast() { return false; } // el águila aterriza bajando al suelo; las orejas se cansan solas
+  get canRecast() { return false; } // el águila aterriza con V (o Ctrl) desde el nivel 1; las orejas se cansan solas
   recast() { if (this.p.fly) this.p.fly.ending = true; ui.banner('find', '🦅', 'Aterrizando…'); return true; }
   dispose() {
     this.restoreCam();
@@ -753,6 +758,8 @@ export class AuroraSkill extends Skill {
     this.sfx('aurora');
     // la energía helada de la aurora congela poco a poco a TODOS los personajes de la escena mientras dura
     if (this.g.frost) this.g.frost.start(total);
+    // los ORCOS alcanzados por la aurora quedan congelados (no se mueven ni atacan) hasta que se apaga
+    for (const o of this.combat.orcs || []) if (!o.dead && Math.hypot(o.pos.x - this.p.pos.x, o.pos.z - this.p.pos.z) < 40) o.freeze(total);
     this.vfx.ring(this.p.pos.x, null, this.p.pos.z, { r0: 0.5, r1: 40, dur: 1.4, color: 0x9ff0ff, opacity: 0.45 });
   }
   enterZone() {
@@ -797,22 +804,82 @@ export class AuroraSkill extends Skill {
 /* ====================================================================== */
 /*  ZORRA ÁRTICA — SOLSTICIO DE VERANO                                     */
 /* ====================================================================== */
+// KIRA — CARGA, DIRECCIÓN Y LANZAMIENTO (Solsticio y Rueda de las Estaciones)
+// 1.ª pulsación: carga (el poder aún no sale). Mientras está cargado, el jugador la orienta con las teclas de
+// dirección (una franja y un círculo en el suelo marcan hacia dónde y dónde caerá). 2.ª pulsación: se lanza en esa
+// dirección. Si espera demasiado (AIM_MAX s) se lanza solo hacia donde mira.
+export const AIM_MAX = 10;
+export function aimPoint(sk, range) {
+  const p = sk.p, f = sk.fwd;
+  // si hay un enemigo justo en la línea de tiro (cono estrecho), el poder va a él; si no, a la distancia máxima
+  const t = sk.combat.aimTarget(p.pos.x, p.pos.z, p.facing, 12 * DEG, range);
+  const d = t ? Math.min(range, Math.hypot(t.pos.x - p.pos.x, t.pos.z - p.pos.z)) : range;
+  const x = p.pos.x + f.x * d, z = p.pos.z + f.z * d;
+  return V(x, p.floorY(x, z, p.pos.y + 2), z);
+}
+export function aimShow(sk, range, r, color) {
+  const p = sk.p, at = aimPoint(sk, range);
+  if (!sk.aimStrip) {
+    sk.aimStrip = sk.track(sk.vfx.telegraph('strip', { x: p.pos.x, z: p.pos.z, x2: at.x, z2: at.z, width: 1.1, color, opacity: 0.28 }));
+    sk.aimDisc = sk.track(sk.vfx.telegraph('disc', { x: at.x, z: at.z, r, color, opacity: 0.22 }));
+  }
+  sk.aimStrip.set(p.pos.x, p.pos.z, { x2: at.x, z2: at.z }); sk.aimStrip.setProgress(0.5 + 0.5 * Math.sin(sk.t * 5) * 0.5 + 0.25);
+  sk.aimDisc.set(at.x, at.z, { r }); sk.aimDisc.setProgress(1);
+  return at;
+}
+export function aimHide(sk) {
+  for (const k of ['aimStrip', 'aimDisc']) if (sk[k]) { sk[k].kill(); sk[k] = null; }
+}
 export class SolsticeSkill extends Skill {
   begin() { this.start(); return true; }
   build() {
     const d = this.def, pose = this.pose;
     return [
-      { name: 'aura-solar', dur: d.prep, enter: this.enterAura, tick: this.tickAura },
+      { name: 'aura-solar', dur: d.prep, enter: this.enterAura, tick: (dt, k) => { this.tickAura(dt, k); aimShow(this, d.range, d.radius, 0xffc040); } },
+      // CARGADO: espera la orden del jugador; mientras, se orienta con las teclas de dirección
+      { name: 'contener', dur: AIM_MAX, enter: this.enterHold, tick: this.tickHold, exit: () => { this.at = aimPoint(this, d.range); aimHide(this); } },
+      { name: 'lanzamiento', dur: d.fly, enter: this.enterThrow, tick: this.tickThrow },
       { name: 'expansion', dur: d.exec, enter: this.enterBurst, tick: this.tickBurst },
-      { name: 'recuperacion', dur: d.recover, enter: () => { this.lock(false); this.amb.end(); }, tick: (dt, k) => { pose.dy = lerp(0.6, 0, ease(k)); pose.rx = lerp(0.15, 0, k); } },
+      { name: 'recuperacion', dur: d.recover, enter: () => { this.lock(false); this.amb.end(); if (this.sun && this.sun.end) this.sun.end(); }, tick: (dt, k) => { pose.dy = lerp(0.6, 0, ease(k)); pose.rx = lerp(0.15, 0, k); } },
     ];
   }
+  get canRecast() { return this.stageName === 'contener'; }
+  recast() {
+    if (this.stageName !== 'contener') return false;
+    this.endStage();
+    if (this.g.armButton) this.g.armButton(this.key); // el escudo y su recarga cuentan desde el lanzamiento
+    return true;
+  }
+  cleanup() { aimHide(this); if (this.amb) this.amb.end(); if (this.sun && this.sun.end) this.sun.end(); }
+  enterHold() {
+    ui.banner('find', '🌞 Solsticio cargado', 'Oriéntalo con las teclas de dirección y pulsa otra vez el botón para lanzarlo');
+    this.sfx('shimmer');
+  }
+  tickHold(dt) {
+    this.tickAura(dt, 1);
+    aimShow(this, this.def.range, this.def.radius, 0xffc040);
+  }
+  // el sol cargado sale de sus manos y vuela hasta el punto elegido
+  enterThrow() {
+    const c = this.center(0.6);
+    this.from = c.clone();
+    this.ball = this.track(this.v2.shell(c, { r: 0.5, color: 0xff8a10, rim: 0xffe070, opacity: 0.9, power: 1.6, core: 0.3, life: 0 }));
+    this.sfx('whoosh');
+  }
+  tickThrow(dt, k) {
+    const a = this.from, b = this.at, e = ease(k);
+    const x = lerp(a.x, b.x, e), z = lerp(a.z, b.z, e), y = lerp(a.y, b.y + 0.8, e) + Math.sin(k * Math.PI) * 1.6;
+    this.ball.mesh.position.set(x, y, z);
+    this.ball.mesh.scale.setScalar(0.7 + 0.5 * k);
+    this.pose.rx = 0.15; this.pose.dy = 0.6 * (1 - k * 0.3);
+    if (Math.random() < 0.8) this.vfx.sparks(x, y, z, 0xffe080, 2, 1.4);
+  }
   enterAura() {
-    const d = this.def, total = d.prep + d.exec + d.recover + 0.6;
+    const d = this.def, total = 60; // dura lo que tarde en lanzarse; se apaga al terminar
     this.lock(true);
     this.amb = this.v2.ambience({ color: '#ffb040', alpha: 0.2, blend: 'screen', exposure: 1.18, dur: total, fin: d.prep, fout: 0.9 });
-    this.aura = this.track(this.v2.shell(this.center(0.5), { r: 0.6, color: 0xff8a10, rim: 0xffe070, opacity: 0.8, power: 1.8, core: 0.25, life: total }));
-    this.sun = this.v2.skyBody('sun', { size: 12, life: total, glow: 0xffa030, side: 0.4 });
+    this.aura = this.track(this.v2.shell(this.center(0.5), { r: 0.6, color: 0xff8a10, rim: 0xffe070, opacity: 0.8, power: 1.8, core: 0.25, life: 0 }));
+    this.sun = this.v2.skyBody('sun', { size: 12, hold: true, glow: 0xffa030, side: 0.4 });
     this.sfx('sun');
     this.rayA = 0;
   }
@@ -833,21 +900,23 @@ export class SolsticeSkill extends Skill {
     if (Math.random() < 0.4) this.vfx.ring(c.x, null, c.z, { r0: 0.5, r1: 2.5, dur: 0.5, color: 0xffb030, opacity: 0.4 }); // ondas de calor
   }
   enterBurst() {
-    const d = this.def, p = this.p;
+    const d = this.def, p = this.at; // la expansión solar ocurre donde cae el sol lanzado (no alrededor de ella)
     this.shake(0.4); this.sfx('blast');
     this.g.chase.fovKick = 6;
-    this.dome = this.track(this.v2.shell(this.center(0.4), { r: 1, color: 0xff7a10, rim: 0xfff0a0, opacity: 0.7, power: 1.6, core: 0.12, life: d.exec }));
+    if (this.ball) { this.ball.mesh.visible = false; }
+    const bc = V(p.x, p.y + 0.8, p.z);
+    this.dome = this.track(this.v2.shell(bc, { r: 1, color: 0xff7a10, rim: 0xfff0a0, opacity: 0.7, power: 1.6, core: 0.12, life: d.exec }));
     for (let i = 0; i < d.rays; i++) {
-      const a = (i / d.rays) * TAU, c = this.center(0.5);
+      const a = (i / d.rays) * TAU, c = bc;
       this.v2.beam(c, V(c.x + Math.cos(a) * d.radius * 1.2, c.y + 0.5, c.z + Math.sin(a) * d.radius * 1.2), { r: 0.3, color: 0xffc040, opacity: 0.6, life: 0.7 });
     }
-    this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 0.5, r1: d.radius, dur: 0.6, color: 0xffd060 });
-    this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 0.5, r1: d.radius * 0.8, dur: 0.8, color: 0xff6a10 });
-    this.vfx.fire(p.pos.x, p.pos.y + 0.2, p.pos.z, 18, 1.4);
+    this.vfx.ring(p.x, null, p.z, { r0: 0.5, r1: d.radius, dur: 0.6, color: 0xffd060 });
+    this.vfx.ring(p.x, null, p.z, { r0: 0.5, r1: d.radius * 0.8, dur: 0.8, color: 0xff6a10 });
+    this.vfx.fire(p.x, p.y + 0.2, p.z, 18, 1.4);
     const c = this.combat;
-    for (const t of c.inCircle(p.pos.x, p.pos.z, d.radius)) {
+    for (const t of c.inCircle(p.x, p.z, d.radius)) {
       this.hit(t, d.damage);
-      const { dx, dz } = this.awayFrom(t, p.pos.x, p.pos.z);
+      const { dx, dz } = this.awayFrom(t, p.x, p.z);
       c.push(t, dx, dz, d.force);
       this.linger({ life: d.burnT, update: (dt) => { if (!t.dead) { c.damage(t, d.burnDps * dt, { quiet: true }); if (Math.random() < 0.2) this.g.fx.flame(t.pos.x, t.pos.y + 0.4, t.pos.z, 0.6, 0.3); } }, end: () => {} });
     }
@@ -857,10 +926,11 @@ export class SolsticeSkill extends Skill {
     this.p.evadeT = Math.max(this.p.evadeT, 0.15);
     this.pose.dy = 0.6; this.pose.rx = 0.15;
     this.aura.mesh.position.copy(this.center(0.5));
-    this.dome.mesh.position.copy(this.center(0.4));
+    this.aura.mesh.scale.setScalar(Math.max(0.01, 1.6 * (1 - k)));
+    this.dome.mesh.position.set(this.at.x, this.at.y + 0.6, this.at.z);
     this.dome.mesh.scale.set(d.radius * back(k), d.radius * 0.6 * back(k), d.radius * back(k));
     this.dome.mat.uniforms.uOp.value = 0.85 * (1 - k);
-    if (Math.random() < 0.7) { const a = rnd(0, TAU), r = d.radius * back(k); this.g.fx.flame(this.p.pos.x + Math.cos(a) * r, this.p.pos.y + 0.2, this.p.pos.z + Math.sin(a) * r, 0.8, 0.3); }
+    if (Math.random() < 0.7) { const a = rnd(0, TAU), r = d.radius * back(k); this.g.fx.flame(this.at.x + Math.cos(a) * r, this.at.y + 0.2, this.at.z + Math.sin(a) * r, 0.8, 0.3); }
   }
 }
 
@@ -1247,19 +1317,43 @@ export class GiantSkill extends Skill {
     for (const q of this.armor) {
       const g = clamp((a - q.at) / 0.14, 0, 1), e = g < 1 ? 1 + 0.25 * Math.sin(g * Math.PI) : 1;
       q.m.scale.copy(q.s).multiplyScalar(Math.max(0.0001, g * e));
-      if (g > 0 && !q.on) { q.on = true; q.m.getWorldPosition(this._wp || (this._wp = new THREE.Vector3())); fx.dustPuff(this._wp.x, this._wp.y - 0.1, this._wp.z, 0.5); }
+      if (g > 0 && !q.on) q.on = true;
     }
     this.shake(0.03 + 0.05 * k);
-    if (Math.random() < 0.3) fx.dustPuff(p.pos.x + rnd(-0.8, 0.8), p.pos.y + 0.05, p.pos.z + rnd(-0.8, 0.8), 0.6);
-    if (Math.random() < 0.18) fx.rock(p.pos.x + rnd(-0.6, 0.6), p.pos.y + p.H * rnd(0.2, 0.8), p.pos.z + rnd(-0.6, 0.6));
+    this.stoneWeapon(); // el arma se vuelve piedra con el mismo frente de roca que el cuerpo
+    void fx; void p;
+  }
+  // ARMA DE PIEDRA: las piezas sólidas del arma usan el mismo material petrificado (mismo frente de roca, que sube
+  // de los pies a la cabeza y baja al terminar); los brillos de energía del arma se apagan mientras es de piedra.
+  // Se revisa en cada fotograma por si el arma se saca durante la transformación. Al terminar, todo vuelve a su material.
+  stoneWeapon() {
+    const W = this.g.weapons, inst = W && W.inst && this.p.model ? W.inst.get(this.p.model) : null;
+    this.wSwaps = this.wSwaps || new Map(); this.wGlow = this.wGlow || new Map();
+    if (inst) for (const pt of inst.parts) pt.w.group.traverse((o) => { // en la mano o guardada a la espalda
+      if (this.wSwaps.has(o) || this.wGlow.has(o) || o.userData.stoneSkip) return;
+      const m = o.material;
+      if (o.isMesh && m && !Array.isArray(m) && (m.isMeshStandardMaterial || m.isMeshPhysicalMaterial) && !m.transparent) {
+        if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+        const sz = o.geometry.boundingBox.getSize(new THREE.Vector3()), ns = 6 / Math.max(0.05, Math.max(sz.x, sz.y, sz.z));
+        const pm = petrifyMaterial(m, this.U, ns);
+        this.wSwaps.set(o, m); o.material = pm; this.newMats.push(pm);
+      } else if (o.isMesh || o.isSprite || o.isLine || o.isPoints) this.wGlow.set(o, o.visible);
+    });
+    // brillo del arma: se apaga cuando la piedra lo alcanza (frente por encima de la mitad del cuerpo)
+    const off = this.U.uRise.value > 0.55;
+    if (W) W.stoneHide = off;
+    for (const [o, vis] of this.wGlow) o.visible = off ? false : vis;
+  }
+  restoreWeapon() {
+    if (this.g.weapons) this.g.weapons.stoneHide = false;
+    if (this.wSwaps) { for (const [o, m] of this.wSwaps) o.material = m; this.wSwaps.clear(); }
+    if (this.wGlow) { for (const [o, vis] of this.wGlow) o.visible = vis; this.wGlow.clear(); }
   }
   // FASE 5: recupera el equilibrio, levanta la cabeza y da un pisotón que hace temblar el suelo
   enterGiant() {
     const p = this.p, d = this.def;
     this.U.uRise.value = 1.1;
-    this.sfx('boom'); this.shake(0.4);
-    this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 0.5, r1: d.slamRadius, dur: 0.5, color: 0xc8a878, opacity: 0.6 });
-    for (let i = 0; i < 10; i++) { const a = (i / 10) * TAU; this.g.fx.dustPuff(p.pos.x + Math.cos(a) * 1.6, p.pos.y + 0.1, p.pos.z + Math.sin(a) * 1.6, 1.2); }
+    this.sfx('boom'); this.shake(0.4); // (sin polvo ni tierra: solo la roca sólida de su cuerpo)
     for (const t of this.combat.inCircle(p.pos.x, p.pos.z, d.slamRadius)) {
       this.hit(t, d.slamDamage * 0.5);
       const { dx, dz } = this.awayFrom(t, p.pos.x, p.pos.z);
@@ -1272,6 +1366,7 @@ export class GiantSkill extends Skill {
     this.stanceK = damp1(this.stanceK, 0, 4, dt);
     this.giantK = Math.min(1, this.giantK + dt * 2.5);
     this.setScale(d.scale);
+    this.stoneWeapon();
     this.U.uGlow.value = 0.55 + 0.15 * Math.sin(this.t * 2.2);
     // idle: respiración pesada (el pecho sube y baja un poco)
     const hs = Math.hypot(p.vx, p.vz);
@@ -1291,9 +1386,8 @@ export class GiantSkill extends Skill {
         this.stepAcc -= stride;
         this.side = -(this.side || 1);
         const fx_ = Math.cos(p.facing) * 0.35 * this.side, fz_ = -Math.sin(p.facing) * 0.35 * this.side;
-        this.shake(d.stepShake); this.sfx('land');
-        fx.dustPuff(p.pos.x + fx_, p.pos.y + 0.05, p.pos.z + fz_, 1.1);
-        if (Math.random() < 0.5) fx.rock(p.pos.x + fx_, p.pos.y + 0.1, p.pos.z + fz_);
+        this.shake(d.stepShake); this.sfx('land'); // pasos pesados: tiembla la cámara, sin polvo ni tierra
+        void fx_; void fz_;
       }
     }
     // los enemigos que choca salen despedidos (pequeño daño)
@@ -1311,10 +1405,7 @@ export class GiantSkill extends Skill {
     this.punchK = easeInOut(wind) * (1 - easeInOut(down)) - 0.25 * easeInOut(down);
     if (down > 0 && !this.slammed) {
       this.slammed = true;
-      this.sfx('boom'); this.shake(0.5);
-      this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 0.5, r1: d.slamRadius, dur: 0.55, color: 0xd8b888, opacity: 0.7 });
-      this.v2.crack(p.pos.x, p.pos.z, d.slamRadius * 0.8, p.facing, { life: 1.4, width: 0.22, color: 0xff7a2a });
-      for (let i = 0; i < 12; i++) fx.rock(p.pos.x + rnd(-1.2, 1.2), p.pos.y + 0.2, p.pos.z + rnd(-1.2, 1.2));
+      this.sfx('boom'); this.shake(0.5); // golpe al suelo: sin grietas, rocas ni polvo levantándose
       for (const t of this.combat.inCircle(p.pos.x, p.pos.z, d.slamRadius)) {
         this.hit(t, d.slamDamage);
         const { dx, dz } = this.awayFrom(t, p.pos.x, p.pos.z);
@@ -1325,7 +1416,6 @@ export class GiantSkill extends Skill {
   enterShrink() {
     this.p.speedBuff = 1;
     this.sfx('crack');
-    if (ObsidianSkill.prototype.crumbleArmor) ObsidianSkill.prototype.crumbleArmor.call(this);
   }
   // RECUPERACIÓN: vuelve a su tamaño poco a poco y la piedra se retira de la cabeza a los pies
   tickShrink(dt, k) {
@@ -1335,11 +1425,14 @@ export class GiantSkill extends Skill {
     this.setScale(1 + (d.scale - 1) * (1 - easeInOut(k)));
     this.U.uRise.value = 1.1 * (1 - easeInOut(k));
     this.U.uGlow.value = 0.5 * (1 - k);
-    if (Math.random() < 0.4) this.g.fx.rock(p.pos.x + rnd(-0.5, 0.5), p.pos.y + p.H * rnd(0.3, 0.9), p.pos.z + rnd(-0.5, 0.5));
+    for (const q of this.armor || []) q.m.scale.copy(q.s).multiplyScalar(Math.max(0.0001, 1 - easeInOut(Math.min(1, k * 1.4)))); // las placas se recogen
+    this.stoneWeapon();
+    void p;
   }
   cleanup() {
     const p = this.p;
     if (this.swaps) { for (const s of this.swaps) s.o.material = s.mat; this.swaps = null; }
+    this.restoreWeapon(); // el arma recupera su material y sus brillos
     if (this.newMats) { for (const m of this.newMats) m.dispose(); this.newMats = null; }
     if (this.armor) for (const q of this.armor) if (q.m.parent) q.m.parent.remove(q.m);
     if (this.H0) { p.H = this.H0; p.R = this.R0; }

@@ -10,7 +10,7 @@ import { ui } from '../ui.js';
 // La pose del cuerpo (inclinar, aplastar, girar, desaparecer) se superpone a la animación del modelo mediante player.pose.
 
 import { Skill, DEG, ease, lerp, clamp, V, NEUTRAL, SKIP_TAGS, makeElastic, boneWorld } from './base.js';
-import { POWER_CLASSES } from './powers.js';
+import { POWER_CLASSES, AIM_MAX, aimPoint, aimShow, aimHide } from './powers.js';
 import { POWER2_CLASSES } from './powers2.js';
 import { SandStorm, WaterGate, SpringWard, puddle } from './fx3.js';
 import { smotherFires } from './envreact.js';
@@ -517,23 +517,43 @@ class SeasonsSkill extends Skill {
   }
 }
 
-// RUEDA DE LAS ESTACIONES: las cuatro colas giran y combinan los cuatro efectos en un ataque circular
+// RUEDA DE LAS ESTACIONES (primavera, verano, OTOÑO e invierno): las cuatro colas giran y combinan los cuatro efectos.
+// CARGA → DIRECCIÓN → LANZAMIENTO: 1.ª pulsación = las cuatro esferas se reúnen y giran a su alrededor (carga);
+// el jugador la orienta con las teclas de dirección (franja y círculo en el suelo); 2.ª pulsación = la rueda sale
+// rodando en esa dirección y aplica sus cuatro efectos por donde pasa hasta el punto elegido.
 class WheelSkill extends Skill {
   begin() { this.start(); return true; }
   build() {
     const d = this.def, pose = this.pose, seasons = HERO_SKILLS.kyra.skill.seasons, order = HERO_SKILLS.kyra.skill.wheelOrder;
+    const range = d.range || 10;
     return [
-      { name: 'preparacion', dur: d.prep, enter: this.enterGather, tick: (dt, k) => { pose.rx = -0.2 * k; this.orbit(0.4 + (1 - k) * 2.6, this.t * 3, 0.3 + 0.7 * k); } },
-      { name: 'rueda', dur: d.exec, enter: () => { this.tickT = 0; this.shake(0.3); audio.power('ice'); }, tick: (dt, k) => {
-        pose.spin = this.t * d.spinSpeed; pose.rx = 0.12; pose.sy = 1.04;
-        this.orbit(2.2, this.t * d.spinSpeed * 0.9, 1);
+      { name: 'preparacion', dur: d.prep, enter: this.enterGather, tick: (dt, k) => { pose.rx = -0.2 * k; this.orbit(0.4 + (1 - k) * 2.6, this.t * 3, 0.3 + 0.7 * k); aimShow(this, range, d.radius, 0xffffff); } },
+      // CARGADA: las esferas giran a su alrededor esperando la orden; el jugador elige la dirección
+      { name: 'contener', dur: AIM_MAX, enter: () => { ui.banner('find', '☸️ Rueda de las Estaciones cargada', 'Oriéntala con las teclas de dirección y pulsa otra vez el botón para lanzarla'); audio.sfx && audio.sfx('shimmer'); },
+        tick: (dt) => { pose.rx = -0.15; pose.sy = 1 + 0.02 * Math.sin(this.t * 6); this.orbit(1.6 + 0.15 * Math.sin(this.t * 4), this.t * 5, 1); aimShow(this, range, d.radius, 0xffffff); },
+        exit: () => { this.to = aimPoint(this, range); this.wc = this.center(0.5); aimHide(this); } },
+      { name: 'rueda', dur: d.exec, enter: () => { this.tickT = 0; this.shake(0.3); audio.power('ice'); this.wFrom = this.wc.clone(); }, tick: (dt, k) => {
+        // la rueda avanza rodando hasta el punto elegido (despacio al final) y gira sobre sí misma
+        const e = 1 - Math.pow(1 - Math.min(1, k * 1.6), 2);
+        this.wc.set(lerp(this.wFrom.x, this.to.x, e), 0, lerp(this.wFrom.z, this.to.z, e));
+        this.wc.y = this.gy(this.wc.x, this.wc.z) + 0.9;
+        pose.spin = 0; pose.rx = k < 0.15 ? 0.35 : 0.12; pose.sy = 1.02; // gesto de lanzamiento y la mira
+        this.orbit(2.2, this.t * d.spinSpeed * 0.9, 1, this.wc);
         this.tickT -= dt;
         if (this.tickT <= 0) { this.tickT = d.tick; this.pulse(order, seasons); }
-        for (const t of this.combat.inCircle(this.p.pos.x, this.p.pos.z, d.radius)) this.combat.root(t, 0.2); // la rueda sujeta mientras gira
-      }, exit: () => { this.vfx.ring(this.p.pos.x, null, this.p.pos.z, { r0: 1, r1: d.radius * 1.2, dur: 0.5, color: 0xffffff }); } },
-      { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.spin = 0; pose.rx = lerp(0.12, 0, k); this.orbit(2.2 * (1 - k), this.t * 4, 1 - k); } },
+        for (const t of this.combat.inCircle(this.wc.x, this.wc.z, d.radius)) this.combat.root(t, 0.2); // la rueda sujeta mientras gira
+      }, exit: () => { this.vfx.ring(this.wc.x, null, this.wc.z, { r0: 1, r1: d.radius * 1.2, dur: 0.5, color: 0xffffff }); } },
+      { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.spin = 0; pose.rx = lerp(0.12, 0, k); this.orbit(2.2 * (1 - k), this.t * 4, 1 - k, this.wc); } },
     ];
   }
+  get canRecast() { return this.stageName === 'contener'; }
+  recast() {
+    if (this.stageName !== 'contener') return false;
+    this.endStage();
+    if (this.g.armButton) this.g.armButton(this.key); // la recarga cuenta desde el lanzamiento
+    return true;
+  }
+  cleanup() { aimHide(this); }
   enterGather() {
     const order = HERO_SKILLS.kyra.skill.wheelOrder, seasons = HERO_SKILLS.kyra.skill.seasons;
     this.orbs = order.map((key) => {
@@ -545,8 +565,8 @@ class WheelSkill extends Skill {
     });
     audio.whoosh();
   }
-  orbit(r, a0, k) {
-    const c = this.center(0.5);
+  orbit(r, a0, k, at = null) {
+    const c = at || this.center(0.5);
     this.orbs.forEach((m, i) => {
       const a = a0 + (i / this.orbs.length) * TAU;
       m.position.set(c.x + Math.cos(a) * r, c.y + Math.sin(a * 2) * 0.15, c.z + Math.sin(a) * r);
@@ -556,7 +576,7 @@ class WheelSkill extends Skill {
   }
   // pulso: los cuatro efectos a la vez
   pulse(order, seasons) {
-    const d = this.def, c = this.p.pos;
+    const d = this.def, c = this.wc ? V(this.wc.x, this.gy(this.wc.x, this.wc.z), this.wc.z) : this.p.pos;
     this.vfx.ring(c.x, null, c.z, { r0: 1, r1: d.radius, dur: 0.5, color: seasons[order[Math.floor(this.t / d.tick) % 4]].color });
     this.vfx.petals(c.x, c.y + 0.5, c.z, 3);
     this.vfx.fire(c.x, c.y + 0.3, c.z, 2, 1);

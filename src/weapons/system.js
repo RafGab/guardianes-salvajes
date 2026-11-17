@@ -442,7 +442,7 @@ export class WeaponSystem {
     if (on) { _c.copy(_b).sub(_a).multiplyScalar(0.28).add(_b); aura.push(_a, _c); }
     aura.update(dt, on);
     if (gs && (on || this.boost > 0.9)) {
-      gs.visible = true;
+      gs.visible = !this.stoneHide; // arma de piedra (Gigante de Roca): sin destellos
       gs.position.copy(_b);
       const fl = 0.75 + 0.25 * Math.sin(this.t * 60);
       gs.scale.setScalar((0.55 + 0.5 * Math.min(1.5, this.boost)) * fl);
@@ -538,7 +538,7 @@ export class WeaponSystem {
       m.color.copy(d.color).multiplyScalar(d.base * (lo + (1 - lo) * k));
     }
     for (const m of w.neonStd) m.emissiveIntensity = m.userData.neonStd.base * k;
-    for (const s of w.glows) { const d = s.userData.glow; s.visible = k > 0.02; s.material.opacity = d.opacity * k; s.scale.setScalar(d.size * (0.8 + 0.3 * k)); }
+    for (const s of w.glows) { const d = s.userData.glow; s.visible = k > 0.02 && !this.stoneHide; s.material.opacity = d.opacity * k; s.scale.setScalar(d.size * (0.8 + 0.3 * k)); }
   }
   get partCount() { return this.cur ? this.cur.parts.length : 0; }
   // hueso del brazo que empuña (para animar el golpe)

@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { buildIsland, buildPlatform } from './worldislands.js';
+import { buildContinent } from './continent.js';
 
 /* ======================================================================
    SELECCIÓN DE MUNDOS · mundos flotantes alrededor de una plataforma de energía, con APOCALIA en el centro
@@ -248,6 +249,12 @@ export class WorldSelect {
       this.portals.push({ i, L, g: isl.g, isl, base, ang, center, pu, label, locked, col: isl.col, ph: Math.random() * TAU, h: 0, s: 1, dim: 0 });
     });
     this.order = this.portals.filter((p) => !p.center).map((p) => p.i).concat(this.portals.filter((p) => p.center).map((p) => p.i));
+    // MAPA GENERAL DE APOCALIA: un solo continente 3D con la región de cada escenario bajo su isla
+    if (this.continent) this.scene.remove(this.continent.g);
+    const cen = this.portals.find((p) => p.center);
+    this.continent = buildContinent(this.portals.filter((p) => !p.center).map((p) => ({ id: p.L.id, ang: p.ang, col: p.col })), cen ? cen.col : 0x212121);
+    this.continent.g.position.y = -2.7;
+    this.scene.add(this.continent.g);
   }
 
   /* ---------------- apertura / cierre ---------------- */
@@ -353,9 +360,10 @@ export class WorldSelect {
     const rw = this.rewardOf(L);
     info.style.setProperty('--wc', '#' + p.col.getHexString());
     // VISTA PREVIA DEL MAPA: tres capturas reales del escenario 3D (public/img/worlds/<id>_1..3.jpg)
-    const PV = [['Vista aérea', 1], ['Vista lateral', 2], ['Desde el portal de rescate', 3]];
-    const gallery = `<div class="wi-prev${p.locked ? ' locked' : ''}"><img class="wi-main" alt="Vista previa de ${L.name}" src="/img/worlds/${L.id}_1.jpg"><div class="wi-cap">${PV[0][0]}</div>
-      <div class="wi-thumbs">${PV.map(([t, k], j) => `<button type="button" class="wi-th${j ? '' : ' on'}" data-k="${j}" title="${t}"><img alt="${t}" src="/img/worlds/${L.id}_${k}.jpg"></button>`).join('')}</div></div>`;
+    const PV = [['Escenario en 3D', 0], ['Vista aérea', 1], ['Vista lateral', 2], ['Desde el portal de rescate', 3]];
+    const srcOf = (k) => (k ? `/img/worlds/${L.id}_${k}.jpg` : `/img/islands/${L.id}.webp`);
+    const gallery = `<div class="wi-prev${p.locked ? ' locked' : ''}"><img class="wi-main is3d" alt="Vista previa de ${L.name}" src="${srcOf(0)}"><div class="wi-cap">${PV[0][0]}</div>
+      <div class="wi-thumbs">${PV.map(([t, k], j) => `<button type="button" class="wi-th${j ? '' : ' on'}${k ? '' : ' th3d'}" data-k="${j}" title="${t}"><img alt="${t}" src="${srcOf(k)}"></button>`).join('')}</div></div>`;
     info.innerHTML = gallery + `<div class="wi-kicker">${L.kicker}</div><div class="wi-name">${L.icon} ${L.name}</div><div class="wi-place">${L.place}</div>
       <p class="wi-desc">${L.desc}</p>
       <div class="wi-meta"><span>Dificultad ${'🔥'.repeat(Math.ceil((L.d ?? L.n) / 2))}</span><span>${[0, 1, 2].map((k) => (k < st ? '⭐' : '☆')).join('')}</span>${rw ? `<span>Premio: ${rw.icon} ${rw.name}</span>` : ''}<span>Ideal: ${this.bestOf(L)}</span></div>
@@ -363,7 +371,7 @@ export class WorldSelect {
     {
       const main = info.querySelector('.wi-main'), cap = info.querySelector('.wi-cap'), ths = [...info.querySelectorAll('.wi-th')];
       let cur = 0;
-      const show = (k) => { cur = k; main.src = `/img/worlds/${L.id}_${PV[k][1]}.jpg`; cap.textContent = PV[k][0]; ths.forEach((b, j) => b.classList.toggle('on', j === k)); };
+      const show = (k) => { cur = k; main.src = srcOf(PV[k][1]); main.classList.toggle('is3d', !PV[k][1]); cap.textContent = PV[k][0]; ths.forEach((b, j) => b.classList.toggle('on', j === k)); };
       ths.forEach((b, j) => { b.onclick = (e) => { e.stopPropagation(); show(j); clearInterval(this.prevTimer); }; });
       this.prevTimer = setInterval(() => show((cur + 1) % PV.length), 3800);
     }
@@ -420,6 +428,10 @@ export class WorldSelect {
     pc.lerp(target, 1 - Math.exp(-4 * dt));
     this.platform.u.uT.value = t;
     this.centerGlow.material.color.copy(pc);
+    if (this.continent) { // el continente gira con el anillo y se ilumina la región del mundo señalado
+      this.continent.g.rotation.y = this.ringYaw;
+      this.continent.setFocus(focusP && !focusP.center ? focusP.L.id : null, focusP ? focusP.h : 0, t);
+    }
     if (focusP && !focusP.center) { const wp = focusP.g.position; this.platform.u.uSelA.value = Math.atan2(-wp.z, wp.x); this.platform.u.uSel.value = damp(this.platform.u.uSel.value, 1, 5, dt); }
     else this.platform.u.uSel.value = damp(this.platform.u.uSel.value, 0, 5, dt);
     // cámara

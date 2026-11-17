@@ -42,6 +42,7 @@ export class Input {
       }
       switch (e.code) {
         case 'Space': this.jumpPressed = true; break;
+        case 'KeyV': case 'ControlLeft': this.downPressed = true; break; // bajar de nivel de vuelo / aterrizar
         case 'KeyQ': this.emit('power'); break;
         case 'KeyF': this.emit('rescue'); break;
         case 'KeyE': this.emit('interact'); break;
@@ -237,8 +238,10 @@ export class Input {
       sprint: k.has('ShiftLeft') || k.has('ShiftRight') || this.pad.sprint || this.touch.sprint || this.touch.run,
       jump,
       jumpPressed: this.jumpPressed,
+      downPressed: !!this.downPressed,
     };
     this.jumpPressed = false;
+    this.downPressed = false;
     return out;
   }
 

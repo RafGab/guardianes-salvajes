@@ -96,7 +96,7 @@ export class SpeedFxSkill extends Skill {
   get active() { const p = this.p; return p.boostT > 0 || p.dashT > 0 || (p.surfT > 0 && p.surfing); }
   tick(dt) {
     const p = this.p;
-    if (!this.active) { this.idle += dt; if (this.idle > (this.hero === 'kyra' ? 0.9 : 0.4)) { this.endStage(); return; } } else this.idle = 0; // la nieve de Kyra se disipa poco a poco
+    if (!this.active) { this.idle += dt; if (this.idle > (this.hero === 'kyra' ? 0.9 : this.hero === 'halley' ? 2.2 : 0.4)) { this.endStage(); return; } } else this.idle = 0; // la nieve de Kyra se disipa poco a poco
     const sp = Math.hypot(p.vx, p.vz), ref = p.stats.speed * 1.6;
     const k = clamp(sp / ref, 0, 1.3) * (this.active ? 1 : 0.4); // intensidad según lo rápido que va
     const bx = sp > 0.1 ? -p.vx / sp : -Math.sin(p.facing), bz = sp > 0.1 ? -p.vz / sp : -Math.cos(p.facing); // hacia atrás
@@ -110,7 +110,7 @@ export class SpeedFxSkill extends Skill {
     const fn = this[this.hero];
     if (fn) fn.call(this, dt, k, bx, bz, sp, step, turn);
     this.whirls = this.whirls.filter((w) => this.tickWhirl(w, dt));
-    if (this.active && k > 0.6) this.g.chase.fovKick = Math.max(this.g.chase.fovKick, 5 * k);
+    if (this.active && k > 0.6 && this.hero !== 'kairo') this.g.chase.fovKick = Math.max(this.g.chase.fovKick, 5 * k); // el cometa de Kairo no da sensación de cohete
   }
   feet(off = 0, bx = 0, bz = 0) { const p = this.p; return V(p.pos.x + bx * off, p.pos.y + 0.08, p.pos.z + bz * off); }
 

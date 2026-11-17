@@ -581,8 +581,7 @@ export function buildCity(scene, { quality = 'high', scenario = 'flood' } = {}) 
     }
     addBox(cx + 6, G, cz - 5, 1.6, 1.3, 1.6, 0xb07a44, { tag: 'crate' });
     addBox(cx + 6, G, cz - 3.2, 1.6, 2.6, 1.6, 0x9a6a3a, { tag: 'crate' });
-    // barreras
-    for (let k = -2; k <= 2; k++) batch.add(unitBox, 'flat', M4(cx + k * 3.5, G, cz + 9.4, 2.4, 0.9, 0.5), 0xd8d8d0);
+    // (la hilera de barreras se ha quitado: tapaba la vista del solar)
   }
 
   const blockInfo = [];

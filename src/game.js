@@ -28,6 +28,7 @@ import { ImpactFx } from './skills/impactfx.js';
 import { Allies } from './allies.js';
 import { AimSystem } from './aim.js';
 import { SEE, enableSeeThrough } from './seethrough.js';
+import { spawnOrcs } from './orcs.js';
 const HERO_SKILLS_CD = (id) => (HERO_SKILLS[id] && HERO_SKILLS[id].flight ? HERO_SKILLS[id].flight.cd : 4);
 import { IS_TOUCH } from './platform.js';
 import { CampFireRuntime } from './scenarios/campfire_rt.js';
@@ -315,6 +316,15 @@ export class Game {
       }
       return used;
     }
+    // ARMAS — DOBLE PULSACIÓN: la primera pulsación solo saca y equipa el arma (nunca dispara);
+    // la segunda pulsación de la misma tecla ataca. Así el jugador decide cuándo atacar.
+    if (a.role === 'arma' && this.weapons && !this.weapons.isOut) {
+      if (!this.weapons.equip()) return false;
+      const W = this.weapons.def, n = this.abilities.indexOf(a) + 1;
+      ui.banner('find', '⚔️', `${W ? W.name : a.name}: ¡lista! Pulsa otra vez ${n <= 9 ? n : 0} para atacar`);
+      audio.click();
+      return true;
+    }
     if ((this.toolCd[a.id] || 0) > 0) {
       ui.banner('find', a.icon, 'Recargando…');
       return false;
@@ -374,6 +384,7 @@ export class Game {
     if (p.locked || p.scripted || this.closeIn) return false;
     const ai = this.abilities.findIndex((a) => a.role === 'arma');
     if (ai < 0) return this.useAbility();
+    if (!this.weapons.isOut) return this.triggerAbility(ai); // primera pulsación: solo saca el arma (no ataca ni se lanza)
     if (this.aimSys.on) return this.triggerAbility(ai); // con la mira: dispara a la retícula
     const t = this.nearestEnemy(10);
     if (t) {
@@ -560,6 +571,8 @@ export class Game {
     const slots = world.generateRescues({ count: level.victims, animalRatio: level.animalRatio, minSep: level.minSep, minStart: level.minStart, tools, difficulty });
     world.scatterObstacles(level.obstacles, tools);
     this.spawnVictims(slots);
+    spawnOrcs(this); // campamentos de orcos en algunos tableros (orcs.js)
+    enableSeeThrough(this.world.mats); // lo que tape al héroe o a los enemigos se vuelve transparente (ver bossCamera)
     this.total = this.victims.length;
     this.kindTotal = { people: this.victims.filter((v) => !v.info.animal).length, animals: this.victims.filter((v) => v.info.animal).length };
     ui.setRescueKinds(0, this.kindTotal.people, 0, this.kindTotal.animals);
@@ -685,6 +698,12 @@ export class Game {
           if (r) this.toolCd['hs:flight'] = (this.hero && HERO_SKILLS_CD(this.hero.id)) * this.player.cdMul;
           break;
         }
+        case 'flyLevel': { // ÁMBAR: cambio de nivel de vuelo
+          const NAMES = ['🛬 Aterrizando…', '🦅 Nivel 1 · vuelo bajo', '🦅 Nivel 2 · vuelo medio', '🦅 Nivel 3 · vuelo alto'];
+          ui.alert(NAMES[ev.level] || NAMES[0], 900);
+          audio.whoosh && audio.whoosh();
+          break;
+        }
         case 'fail':
           ui.banner('find', '⚠️', ev.msg);
           break;
@@ -711,8 +730,11 @@ export class Game {
     const { player, fx, world, chase } = this;
     const p = player.pos;
     audio.power(type);
-    chase.fovKick = 7;
-    if (type === 'dash') {
+    const kairoFx = type === 'dash' && this.hero && this.hero.id === 'kairo'; // cometa de Kairo: solo efecto visual
+    chase.fovKick = kairoFx ? 0 : 7;
+    if (kairoFx) {
+      fx.flameRing(p.x, p.y + 0.05, p.z, 6); // llamas pequeñas a ras de suelo al encenderse el cometa (sin sacudida ni zoom)
+    } else if (type === 'dash') {
       fx.flameRing(p.x, p.y + 0.05, p.z, 12); // arranque: llamas a ras de suelo (no tapan al héroe)
       chase.shake(0.15);
     } else if (type === 'glide') {
@@ -1027,13 +1049,19 @@ export class Game {
   // CÁMARA DEL COMBATE DE JEFE: si el jugador no mueve la cámara, esta se coloca poco a poco detrás del
   // héroe mirando al jefe (el combate queda siempre a la vista); lo que tape la escena se vuelve transparente
   bossCamera(dt, look) {
-    const b = this.boss, on = !!b && this.state === 'playing' && !this.ended;
-    SEE.uSeeOn.value = on ? 1 : 0;
-    if (!on) return;
+    const b = this.boss, playing = this.state === 'playing' && !this.ended, on = !!b && playing;
+    SEE.uSeeOn.value = playing ? 1 : 0;
+    if (!playing) return;
     const p = this.player, ch = this.chase;
     SEE.uSeeCam.value.copy(this.camera.position);
     SEE.uSeeA.value.set(p.pos.x, p.pos.y + p.H * 0.6, p.pos.z);
-    SEE.uSeeB.value.set(b.pos.x, b.pos.y + (b.S ? b.S.height * 0.55 : 1.5), b.pos.z);
+    if (on) SEE.uSeeB.value.set(b.pos.x, b.pos.y + (b.S ? b.S.height * 0.55 : 1.5), b.pos.z);
+    else {
+      let best = null, bd = 18;
+      for (const o of this.combat.orcs) { if (o.dead) continue; const d = Math.hypot(o.pos.x - p.pos.x, o.pos.z - p.pos.z); if (d < bd) { bd = d; best = o; } }
+      if (best) SEE.uSeeB.value.set(best.pos.x, best.pos.y + 1, best.pos.z); else SEE.uSeeB.value.copy(SEE.uSeeA.value);
+      return;
+    }
     const moved = look && (Math.abs(look.dx) > 0.0005 || Math.abs(look.dy) > 0.0005);
     this.lookIdle = moved ? 0 : (this.lookIdle || 0) + dt;
     if (this.lookIdle < 1.2 || this.aimSys.on || this.victoryT > 0 || this.victoryShown || b.state === 'dead') return;

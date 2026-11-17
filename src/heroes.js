@@ -52,7 +52,7 @@ export const HEROES = [
   },
   {
     id: 'kairo', name: 'Kairo', species: 'Komodo', element: 'fuego',
-    power: { type: 'dash', icon: '🔥', name: 'Propulsión de Fuego', cd: 10, desc: 'Llamaradas salen de sus pies y lo lanzan como un cometa: cuanto más corre, más se inclina y más larga es su estela de fuego.' },
+    power: { type: 'dash', icon: '🔥', name: 'Propulsión de Fuego', cd: 10, desc: 'Llamas de cometa en los pies y una estela de fuego tras él durante 5 s. Es solo un efecto visual: Kairo conserva su movimiento y su velocidad normales.' },
     stats: { speed: 6.2, jump: 8.4, swim: 3.6, carry: 3 },
     bio: 'Komodo valiente, fuerte, leal, estratégico e indomable. Su piel es casi impenetrable y su aliento puede encender lo que toca. "El fuego también es una forma de sobrevivir."',
   },

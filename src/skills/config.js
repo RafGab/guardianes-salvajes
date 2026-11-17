@@ -104,6 +104,7 @@ export const HERO_SKILLS = {
       id: 'wheel', name: 'Rueda de las Estaciones', icon: '☸️', cd: 22,
       prep: 0.35, exec: 2.6, recover: 0.4,
       radius: 6.8, tick: 0.35,      // radio y cada cuánto aplica los cuatro efectos
+      range: 10,                    // CARGA → DIRECCIÓN → LANZAMIENTO: distancia a la que llega la rueda lanzada
       spinSpeed: 7,                 // vueltas del héroe (rad/s)
       damage: 3, force: 5, rootT: 0.7, slowF: 0.6, slowT: 2.0,
     },
@@ -119,7 +120,8 @@ export const HERO_SKILLS = {
     solstice: {
       id: 'solstice', name: 'Solsticio de Verano', icon: '🌞', cd: 20,
       prep: 0.75, exec: 1.1, recover: 0.5,
-      radius: 10, damage: 20, force: 15, burnT: 3, burnDps: 3, // expansión: daño, empuje y quemadura
+      range: 10, fly: 0.45,         // CARGA → DIRECCIÓN → LANZAMIENTO: alcance del lanzamiento (m) y vuelo del sol (s)
+      radius: 10, damage: 20, force: 15, burnT: 3, burnDps: 3, // expansión (donde cae el sol): daño, empuje y quemadura
       rays: 10,
     },
     // ARMA — HACHA: hachazo de hielo hacia abajo; cristales que ralentizan
@@ -142,6 +144,8 @@ export const HERO_SKILLS = {
       id: 'flight', name: 'Vuelo Libre', icon: '🦅', cd: 4,
       takeoffT: 0.55, flyT: 40,     // despegue y tiempo máximo de vuelo
       speed: 11, climb: 7, sink: 1.6, ceil: 34, // velocidad (SPRINT = más rápido), subida (SALTAR), planeo y techo
+      levels: [3.5, 9, 24],         // TRES NIVELES DE VUELO (m sobre el suelo): bajo, medio y alto
+      camDists: [11, 15, 22], camPitches: [0.42, 0.6, 0.8], // la cámara se aleja y sube con cada nivel
       camDist: 15, camPitch: 0.62,  // cámara aérea
     },
     // ESCUDO — TORNADOS ENVOLVENTES: varios tornados giran a su alrededor; la protegen y apartan a los enemigos
@@ -340,6 +344,9 @@ export const MINIONS = { max: 3, speed: 2.7, radius: 0.55, contact: 0.95, spawnE
 export const NPC_KINDS = {
   esbirro: { name: 'Esbirro', hp: 12, scale: 1, speed: 2.7, hit: 0.5, score: 10 },
   bruto: { name: 'Bruto', hp: 34, scale: 1.55, speed: 1.9, hit: 0.9, score: 30 },
+  // orcos de los tableros (orcs.js): el modelo 3D del soldado
+  orco: { name: 'Orco', hp: 30, scale: 1, speed: 2.5, hit: 0.5, score: 20 },
+  orcoJefe: { name: 'Orco jefe', hp: 55, scale: 1.25, speed: 2.1, hit: 0.8, score: 40 },
 };
 
 // Equipo y vida en los combates de jefe. Cada héroe tiene su propia barra; los golpes del jefe se miden en "golpes" (1 = golpe normal).

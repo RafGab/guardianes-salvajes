@@ -190,9 +190,13 @@ export class Player {
     const len = Math.hypot(dx, dz) || 1;
     const moving = Math.hypot(this.dirX, this.dirZ) > 0.1;
     const hid = this.hero.id;
-    if (type === 'dash') {
-      // Kairo: cometa de fuego que acelera · Jago: embestida pesada
-      this.speedBoost(5, hid === 'kairo' ? 1.75 : 1.55, hid === 'kairo' ? 1.6 : 0.6);
+    if (type === 'dash' && hid === 'kairo') {
+      // Kairo: el cometa (llamas en los pies y estela) es solo un efecto visual durante 5 s:
+      // conserva su movimiento y su velocidad normales, sin impulso hacia delante ni salto
+      this.speedBoost(5, 1, 0.1);
+    } else if (type === 'dash') {
+      // Jago: embestida pesada
+      this.speedBoost(5, 1.55, 0.6);
       this.dashT = 0.36;
       this.vx = (dx / len) * 20;
       this.vz = (dz / len) * 20;
@@ -376,7 +380,21 @@ export class Player {
     this.gliding = !frozen && this.glideT > 0 && !this.grounded && !this.swimming && inp.jump && this.vy < 3;
 
     // vertical
-    if (fly) {
+    if (fly && fly.levels) {
+      // ÁGUILA — TRES NIVELES DE VUELO: SALTAR sube un nivel, V (o Ctrl) baja un nivel y desde el nivel 1 aterriza.
+      // La altura objetivo se alcanza con una transición suave; al aterrizar vuelve al movimiento normal en el suelo.
+      fly.t += dt;
+      if (fly.t >= fly.max && !fly.ending) { fly.ending = true; this.events.push({ type: 'flyLevel', level: 0 }); } // se acaba el tiempo: aterriza
+      if (!frozen && fly.t > 0.3 && !fly.ending) {
+        if (inp.jumpPressed && fly.level < fly.levels.length) { fly.level++; this.events.push({ type: 'flyLevel', level: fly.level }); }
+        else if (inp.downPressed) { if (fly.level > 1) fly.level--; else fly.ending = true; this.events.push({ type: 'flyLevel', level: fly.ending ? 0 : fly.level }); }
+      }
+      const floor = this.floorY(pos.x, pos.z, pos.y), alt = pos.y - floor;
+      const want = fly.ending ? -1 : fly.levels[fly.level - 1];
+      let tv = clamp((want - alt) * 1.6, fly.ending ? -9 : -7, fly.climb * 1.3);
+      if (fly.t < 0.45 && !fly.ending) tv = Math.max(tv, fly.climb); // despegue
+      this.vy = damp(this.vy, tv, 3.2, dt);
+    } else if (fly) {
       fly.t += dt;
       if (fly.t >= fly.max) fly.ending = true; // se acaba el tiempo: desciende suave hasta aterrizar
       const alt = pos.y - this.floorY(pos.x, pos.z, pos.y);
@@ -429,7 +447,7 @@ export class Player {
     this.moveVertical(dt, surfing);
 
     // aterrizaje: tras el despegue, tocar el suelo descendiendo termina el vuelo
-    if (fly && this.fly === fly && (this.grounded || this.swimming) && fly.t > (fly.minT || 0.8) && !(inp.jump && !fly.ending)) {
+    if (fly && this.fly === fly && (this.grounded || this.swimming) && fly.t > (fly.minT || 0.8) && (fly.levels ? fly.ending : !(inp.jump && !fly.ending))) {
       this.fly = null;
       this.events.push({ type: 'flyEnd', kind: fly.kind });
     }

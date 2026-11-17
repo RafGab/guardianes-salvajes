@@ -95,14 +95,9 @@ export function build(K, { scene }) {
   // ---- redes y barreras de contención en las laderas (algunas reventadas) ----
   for (const L of LANES) {
     const [x, z] = pathPoint(L, 0.55), [x2, z2] = pathPoint(L, 0.6), a = Math.atan2(z2 - z, x2 - x) + Math.PI / 2;
-    const broken = rng.chance(0.5), g = G(x, z);
-    for (let k = -2; k <= 2; k++) {
-      const px = x + Math.cos(a) * k * 2.4, pz = z + Math.sin(a) * k * 2.4, gp = G(px, pz);
-      if (broken && k === 0) { K.box(px, gp, pz, 0.18, 1.2, 0.18, 0x4a4a4e, { solid: false, ry: 0.4 }); continue; }
-      K.cyl(px, gp - 0.3, pz, 0.12, 3.6, 0x4a4a4e);
-    }
-    if (!broken) for (let r = 0; r < 4; r++) K.box(x, g + 0.6 + r * 0.75, z, 9.6, 0.06, 0.06, 0x8a8a90, { solid: false, ry: -a });
-    else for (let r = 0; r < 3; r++) K.box(x + rr(-1, 1), g + 0.2 + r * 0.3, z + rr(-1, 1), rr(3, 5), 0.06, 0.06, 0x8a8a90, { solid: false, ry: -a + rr(-0.6, 0.6) });
+    // (las redes y postes de contención ya no se construyen: tapaban la vista; los sorteos se conservan)
+    const broken = rng.chance(0.5), g = G(x, z), skip = () => {};
+    if (broken) for (let r = 0; r < 3; r++) skip(x + rr(-1, 1), g, z + rr(-1, 1), rr(3, 5), -a + rr(-0.6, 0.6));
     K.cand('ledge', x + Math.cos(a) * 3.2, g + 0.05, z + Math.sin(a) * 3.2, { zone: 'pedreras', needsTool: 'rope' });
   }
   // ---- salientes rocosos con cuerda y repisas en las paredes ----

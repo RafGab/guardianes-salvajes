@@ -27,6 +27,7 @@ export class FrostFreeze {
     const me = g.player && g.player.model && g.player.model.root;
     if (g.boss && g.boss.model && g.boss.state !== 'dead') out.push(g.boss.model.root);
     for (const m of (g.combat && g.combat.minions) || []) if (!m.dead && m.group) out.push(m.group);
+    for (const m of (g.combat && g.combat.orcs) || []) if (!m.dead && m.group) out.push(m.group);
     for (const a of (g.allies && g.allies.list) || []) if (a.model && a.model.root && a.model.root !== me && a.model.root.visible) out.push(a.model.root);
     if (g.ally && g.ally.model && g.ally.model.root) out.push(g.ally.model.root);
     for (const v of g.victims || []) if (v.root && v.state !== 'carried' && v.state !== 'saved' && v.root.visible) out.push(v.root);
