@@ -392,6 +392,7 @@ function frame(now) {
       world.update(dt, clockT, camera.position, new THREE.Vector3(SHOW.x, terrainH(SHOW.x, SHOW.z), SHOW.z), 30, true);
       fx.update(dt, camera, renderer.domElement.height);
     } else if (mode === 'playing') {
+      autoQuality(dt);
       game.update(dt);
       ui.clickHint(!input.locked && input.canLock && game.state === 'playing' && clockT - lastMouseT > 4 && !hintDismissed);
       if (game.state === 'done') mode = 'end';
@@ -548,6 +549,21 @@ function buildEnvironment() {
   scene.environment = envTex;
   scene.environmentIntensity = 0.75;
   pm.dispose();
+}
+
+// mide el tiempo medio por fotograma mientras se juega; una sola vez por sesión
+let aqT = 0, aqSum = 0, aqN = 0, aqDone = false;
+function autoQuality(dt) {
+  if (aqDone || quality !== 'high' || game.state !== 'playing' || document.hidden) { aqT = aqSum = aqN = 0; return; }
+  aqT += dt; aqSum += dt; aqN++;
+  if (aqT < 4) return;
+  const avg = aqSum / aqN;
+  aqT = aqSum = aqN = 0;
+  if (avg > 1 / 40) {
+    aqDone = true;
+    setQuality('low');
+    ui.banner('find', '⚙️ Calidad Media', 'El juego iba lento: se ha bajado la calidad para que vaya fluido (puedes cambiarla en el menú)');
+  }
 }
 
 function setQuality(q) {

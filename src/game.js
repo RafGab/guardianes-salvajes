@@ -1050,18 +1050,18 @@ export class Game {
   // héroe mirando al jefe (el combate queda siempre a la vista); lo que tape la escena se vuelve transparente
   bossCamera(dt, look) {
     const b = this.boss, playing = this.state === 'playing' && !this.ended, on = !!b && playing;
-    SEE.uSeeOn.value = playing ? 1 : 0;
-    if (!playing) return;
     const p = this.player, ch = this.chase;
+    let orc = null;
+    if (playing && !on) { // un orco que persigue al héroe cerca
+      let bd = 18;
+      for (const o of this.combat.orcs) { if (o.dead || !o.aggro) continue; const d = Math.hypot(o.pos.x - p.pos.x, o.pos.z - p.pos.z); if (d < bd) { bd = d; orc = o; } }
+    }
+    SEE.uSeeOn.value = on || orc ? 1 : 0;
+    if (!on && !orc) return;
     SEE.uSeeCam.value.copy(this.camera.position);
     SEE.uSeeA.value.set(p.pos.x, p.pos.y + p.H * 0.6, p.pos.z);
-    if (on) SEE.uSeeB.value.set(b.pos.x, b.pos.y + (b.S ? b.S.height * 0.55 : 1.5), b.pos.z);
-    else {
-      let best = null, bd = 18;
-      for (const o of this.combat.orcs) { if (o.dead) continue; const d = Math.hypot(o.pos.x - p.pos.x, o.pos.z - p.pos.z); if (d < bd) { bd = d; best = o; } }
-      if (best) SEE.uSeeB.value.set(best.pos.x, best.pos.y + 1, best.pos.z); else SEE.uSeeB.value.copy(SEE.uSeeA.value);
-      return;
-    }
+    if (orc) { SEE.uSeeB.value.set(orc.pos.x, orc.pos.y + 1, orc.pos.z); return; }
+    SEE.uSeeB.value.set(b.pos.x, b.pos.y + (b.S ? b.S.height * 0.55 : 1.5), b.pos.z);
     const moved = look && (Math.abs(look.dx) > 0.0005 || Math.abs(look.dy) > 0.0005);
     this.lookIdle = moved ? 0 : (this.lookIdle || 0) + dt;
     if (this.lookIdle < 1.2 || this.aimSys.on || this.victoryT > 0 || this.victoryShown || b.state === 'dead') return;
