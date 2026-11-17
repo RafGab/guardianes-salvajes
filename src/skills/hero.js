@@ -1,4 +1,8 @@
 import * as THREE from 'three';
+import { LeafStorm, iceMaterials, cometDisc } from './magicfx.js';
+import { petrifyMaterial } from './powers.js';
+import { sandMaterial } from './speedfx2.js';
+import { propModel } from '../props.js';
 import { Staged, rnd, TAU } from './attack.js';
 import { HERO_SKILLS, HERO_BUTTONS } from './config.js';
 import { terrainH } from '../terrain.js';
@@ -12,7 +16,7 @@ import { ui } from '../ui.js';
 import { Skill, DEG, ease, lerp, clamp, V, NEUTRAL, SKIP_TAGS, makeElastic, boneWorld } from './base.js';
 import { POWER_CLASSES, AIM_MAX, aimPoint, aimShow, aimHide } from './powers.js';
 import { POWER2_CLASSES } from './powers2.js';
-import { SandStorm, WaterGate, SpringWard, puddle } from './fx3.js';
+import { SandStorm, WaterGate, SpringWard, puddle, takeGate, returnGate } from './fx3.js';
 import { smotherFires } from './envreact.js';
 const damp1 = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 
@@ -542,7 +546,11 @@ class WheelSkill extends Skill {
         this.tickT -= dt;
         if (this.tickT <= 0) { this.tickT = d.tick; this.pulse(order, seasons); }
         for (const t of this.combat.inCircle(this.wc.x, this.wc.z, d.radius)) this.combat.root(t, 0.2); // la rueda sujeta mientras gira
-      }, exit: () => { this.vfx.ring(this.wc.x, null, this.wc.z, { r0: 1, r1: d.radius * 1.2, dur: 0.5, color: 0xffffff }); } },
+      }, exit: () => {
+        this.vfx.ring(this.wc.x, null, this.wc.z, { r0: 1, r1: d.radius * 1.2, dur: 0.5, color: 0xffd27a, opacity: 0.6 });
+        if (this.storm) { this.storm.release(1); this.storm.burst(this.wc.x, this.gy(this.wc.x, this.wc.z) + 1, this.wc.z, 40, 1.1); }
+        for (let i = 0; i < 14; i++) this.g.fx.sparkle(this.wc.x + rnd(-1.5, 1.5), this.gy(this.wc.x, this.wc.z) + rnd(0.4, 2.4), this.wc.z + rnd(-1.5, 1.5), i % 2 ? 0xffd86a : 0xfff2b0, 3);
+      } },
       { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.spin = 0; pose.rx = lerp(0.12, 0, k); this.orbit(2.2 * (1 - k), this.t * 4, 1 - k, this.wc); } },
     ];
   }
@@ -553,36 +561,53 @@ class WheelSkill extends Skill {
     if (this.g.armButton) this.g.armButton(this.key); // la recarga cuenta desde el lanzamiento
     return true;
   }
+  update(dt) { this._dt = dt; return super.update(dt); }
   cleanup() { aimHide(this); }
+  /* REMOLINO MÁGICO DE HOJAS OTOÑALES (solo cambia el efecto visual: etapas, daño, alcance y lógica son los mismos).
+     Cientos de hojas naranjas, doradas, amarillas, rojas y marrones giran alrededor de un núcleo de viento dorado:
+     se forman alrededor de la zorra al cargar, viajan con la rueda hacia los enemigos y, al golpear, estallan en un
+     círculo de hojas con destellos dorados que caen y se desvanecen poco a poco. */
   enterGather() {
-    const order = HERO_SKILLS.kyra.skill.wheelOrder, seasons = HERO_SKILLS.kyra.skill.seasons;
-    this.orbs = order.map((key) => {
-      const m = new THREE.Mesh(this.vfx.sphGeo, new THREE.MeshBasicMaterial({ color: new THREE.Color(seasons[key].color).multiplyScalar(1.6), transparent: true, opacity: 0.95, depthWrite: false, blending: THREE.AdditiveBlending }));
-      m.userData.own = true;
-      m.scale.setScalar(0.28);
-      this.prop(m);
-      return m;
+    const S = new LeafStorm(null, { n: 300, spare: 180, height: 2.8 });
+    this.storm = S;
+    // el remolino vive como efecto propio: al terminar la habilidad, sus últimas hojas siguen cayendo y se apagan solas
+    let fade = 0;
+    this.vfx.add(S.root, 0, (it, dt) => {
+      if (this.storm === S) return; // mientras dura la habilidad, lo mueve ella
+      S.update(dt, null, { r: 1.5, k: 0 });
+      fade += dt;
+      if (fade > 2.1) { S.dispose(); this.vfx.kill(it); }
     });
+    this.track({ kill: () => { this.storm = null; } });
+    this.hitOnce = new Set();
+    this.orbs = [];
     audio.whoosh();
   }
+  // mueve el remolino: r = radio, k = intensidad, at = centro de la rueda (o la propia zorra)
   orbit(r, a0, k, at = null) {
-    const c = at || this.center(0.5);
-    this.orbs.forEach((m, i) => {
-      const a = a0 + (i / this.orbs.length) * TAU;
-      m.position.set(c.x + Math.cos(a) * r, c.y + Math.sin(a * 2) * 0.15, c.z + Math.sin(a) * r);
-      m.scale.setScalar(0.3 * k + 0.05);
-      if (Math.random() < 0.7) this.vfx.orb(m.position, { r: 0.22, color: m.material.color.getHex(), life: 0.3 });
-    });
+    const S = this.storm;
+    if (!S) return;
+    const c = at || this.p.pos, gy = at ? this.gy(c.x, c.z) : this.p.pos.y;
+    S.update(this._dt || 1 / 60, V(c.x, gy, c.z), { r: Math.max(0.3, r * 0.95), k, h: 1.2 + r * 0.75 });
+    if (Math.random() < 0.45 * k) { // destellos dorados y partículas mágicas dentro del remolino
+      const a = rnd(0, TAU), rr = r * rnd(0.2, 0.9);
+      this.g.fx.sparkle(c.x + Math.cos(a) * rr, gy + rnd(0.3, 1.2 + r * 0.7), c.z + Math.sin(a) * rr, Math.random() < 0.6 ? 0xffd86a : 0xfff2b0, 0.9);
+    }
   }
-  // pulso: los cuatro efectos a la vez
+  // pulso: aplica los cuatro efectos de siempre (daño, raíces, ralentización y empuje) con aspecto de hojarasca
   pulse(order, seasons) {
     const d = this.def, c = this.wc ? V(this.wc.x, this.gy(this.wc.x, this.wc.z), this.wc.z) : this.p.pos;
-    this.vfx.ring(c.x, null, c.z, { r0: 1, r1: d.radius, dur: 0.5, color: seasons[order[Math.floor(this.t / d.tick) % 4]].color });
-    this.vfx.petals(c.x, c.y + 0.5, c.z, 3);
-    this.vfx.fire(c.x, c.y + 0.3, c.z, 2, 1);
-    this.vfx.leaves(c.x, c.y + 1, c.z, undefined, 3);
-    this.vfx.ice(c.x, c.y + 0.6, c.z, 2);
+    this.vfx.ring(c.x, null, c.z, { r0: 1, r1: d.radius, dur: 0.5, color: 0xf0a83a, opacity: 0.45 });
+    if (this.storm) this.storm.burst(c.x, c.y + 0.6, c.z, 6, 0.7);
     for (const t of this.combat.inCircle(c.x, c.z, d.radius)) {
+      // IMPACTO: explosión circular de hojas sobre el enemigo (grande la primera vez, pequeña en los siguientes pulsos)
+      const first = !this.hitOnce.has(t);
+      this.hitOnce.add(t);
+      if (this.storm) this.storm.burst(t.pos.x, t.pos.y + 0.8, t.pos.z, first ? 34 : 8, first ? 1 : 0.6);
+      if (first) {
+        this.vfx.ring(t.pos.x, null, t.pos.z, { r0: 0.3, r1: 2.4, dur: 0.45, color: 0xffc85a, opacity: 0.7 });
+        for (let i = 0; i < 8; i++) this.g.fx.sparkle(t.pos.x + rnd(-0.5, 0.5), t.pos.y + rnd(0.4, 1.6), t.pos.z + rnd(-0.5, 0.5), i % 2 ? 0xffd86a : 0xffffff, 2.5);
+      }
       const { dx, dz } = this.awayFrom(t, c.x, c.z);
       this.hit(t, d.damage);
       this.combat.root(t, d.rootT);
@@ -863,30 +888,36 @@ class BlinkSkill extends Skill {
         this.vfx.splash(c.x, c.y + 0.3, c.z, 12, 0.8);
         audio.splash();
       }, tick: (dt, k) => {
-        // se funde en el agua: se aplasta, se hunde un poco y gira con el remolino
+        // se funde en el agua: se aplasta, se encoge, se hunde un poco y gira con el remolino; solo deja de verse
+        // cuando ya es un charco (al final de la etapa), nunca antes de completar la transformación
         const e = ease(k);
-        pose.sy = lerp(1, 0.12, e); pose.dy = -0.25 * e; pose.spin = e * TAU * 1.25; pose.rx = 0.15 * Math.sin(k * Math.PI);
-        pose.hidden = k > 0.85;
+        pose.sy = lerp(1, 0.08, e); pose.sc = lerp(1, 0.55, e); pose.dy = -0.25 * e; pose.spin = e * TAU * 1.25; pose.rx = 0.15 * Math.sin(k * Math.PI);
+        pose.hidden = k > 0.97;
         if (Math.random() < 0.8) { const c = this.from, a = this.t * 14; this.g.fx.spray(c.x + Math.cos(a) * 0.6, c.y + 0.2, c.z + Math.sin(a) * 0.6, -Math.cos(a) * 1.5, 1.5, -Math.sin(a) * 1.5, 0.8); } // gotas que el remolino absorbe
       } },
       ...(tv > 0 ? [{ name: 'viaje', dur: tv, tick: () => { pose.hidden = true; } }] : []),
       { name: 'aparecer', dur: d.appearT, enter: this.enterAppear, tick: (dt, k) => {
-        // sale del géiser estirada y se asienta con un rebote
-        pose.hidden = false; pose.dy = lerp(0.5, 0, ease(k));
-        pose.sy = k < 0.5 ? lerp(0.25, 1.15, k / 0.5) : lerp(1.15, 1, (k - 0.5) / 0.5);
-        pose.spin = (1 - ease(k)) * -TAU * 0.5;
+        // el agua se reúne y reconstruye su cuerpo: crece desde el géiser, se estira y se asienta con un rebote
+        const e = ease(k);
+        pose.hidden = false; pose.dy = lerp(0.45, 0, e);
+        pose.sc = lerp(0.55, 1, 1 - Math.pow(1 - k, 3));
+        pose.sy = k < 0.5 ? lerp(0.2, 1.12, ease(k / 0.5)) : lerp(1.12, 1, ease((k - 0.5) / 0.5));
+        pose.spin = (1 - e) * -TAU * 0.5;
+        // gotas que vuelven hacia ella desde el charco (el agua se junta)
+        const b = this.dest, fx = this.g.fx;
+        if (k < 0.8) for (let i = 0; i < 2; i++) { const a = rnd(0, TAU), r = rnd(0.7, 1.3); fx.spray(b.x + Math.cos(a) * r, b.y + rnd(0.1, 0.5), b.z + Math.sin(a) * r, -Math.cos(a) * r * 3, rnd(1, 2.5), -Math.sin(a) * r * 3, 0.6); }
       } },
-      { name: 'recuperacion', dur: d.recover, tick: () => { pose.hidden = false; } },
+      { name: 'recuperacion', dur: d.recover, tick: () => { pose.hidden = false; pose.sc = 1; } },
     ];
   }
   // efectos de agua del viaje completo, en su propia línea de tiempo (1,5 s)
   makeGate() {
     const d = this.def, a = this.from.clone(), b = this.dest.clone(), tv = d.travelT || 0;
     const T0 = d.vanishT, T1 = T0 + tv, T2 = T1 + d.appearT, LIFE = T2 + 1.0;
-    const gate = new WaterGate();
+    const gate = takeGate();
     gate.setArc(a, b, 1.6 + 0.12 * a.distanceTo(b));
-    const head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 20, 14), gate.vMat);
-    gate.group.add(head);
+    if (!gate.head) { gate.head = new THREE.Mesh(new THREE.SphereGeometry(0.32, 20, 14), gate.vMat); gate.geos.push(gate.head.geometry); gate.group.add(gate.head); }
+    const head = gate.head;
     const fx = this.g.fx, vfx = this.vfx;
     let splashed = false;
     vfx.add(gate.group, LIFE, (it, dt) => {
@@ -903,7 +934,7 @@ class BlinkSkill extends Skill {
       if (head.visible) { gate.pointOnArc(u, head.position); head.scale.setScalar(0.6 + 0.6 * Math.sin(u * Math.PI)); if (Math.random() < 0.8) fx.spray(head.position.x, head.position.y, head.position.z, 0, -1, 0, 0.7); }
       if (!splashed && t >= T1) { splashed = true; fx.splash(b.x, b.y + 0.2, b.z, 22, 1.4); vfx.ring(b.x, null, b.z, { r0: 0.3, r1: 3.2, dur: 0.6, color: 0x8ae0ff }); vfx.ring(b.x, null, b.z, { r0: 0.2, r1: 2.0, dur: 0.8, color: 0xffffff, opacity: 0.5 }); }
       if (geyser > 0.2 && Math.random() < 0.7) fx.spray(b.x + rnd(-0.3, 0.3), b.y + 0.3 + geyser * 2, b.z + rnd(-0.3, 0.3), rnd(-1.5, 1.5), 1 + geyser * 3, rnd(-1.5, 1.5), 1);
-      if (t >= LIFE - 0.001) { head.geometry.dispose(); gate.dispose(); }
+      if (t >= LIFE - 0.001) returnGate(gate); // vuelve a la reserva (no se destruye)
     });
     vfx.ring(a.x, null, a.z, { r0: 0.2, r1: 2.4, dur: 0.6, color: 0x8ae0ff });
   }
@@ -987,6 +1018,57 @@ export class HeroSkills {
     p.fly = null; p.moveMul = 1; p.speedBuff = 1; p.animMul = 1; p.casting = 0;
     if (p.model) p.model.boneFx = null;
     if (this.g.weapons) this.g.weapons.reset(); // el héroe empieza siempre con el arma guardada
+    this._needWarm = true; // se precompila en el primer fotograma de juego (con el escenario y sus luces ya completos)
+  }
+  // PRECOMPILACIÓN: los sombreadores de los poderes del héroe se preparan al empezar la partida, no la primera vez
+  // que se lanzan (así ningún poder —hidroteletransporte, tormenta de hojas, congelación, roca, arena…— da un tirón).
+  // Se hace una vez por héroe: los objetos temporales se añaden, se compilan y se retiran en el mismo instante.
+  prewarm() {
+    const g = this.g, R = g.renderer, p = g.player, id = g.hero && g.hero.id;
+    if (!R || !R.compile || !id || !g.scene || !g.camera || !p) return;
+    const key = id + ':' + (p.model && p.model.root ? p.model.root.uuid : '-');
+    if (this._warm === key) return;
+    this._warm = key;
+    const temps = [], passes = [];
+    const skinned = [];
+    if (p.model && p.model.root) p.model.root.traverse((o) => { if (o.isSkinnedMesh && o.material && !Array.isArray(o.material)) skinned.push(o); });
+    // pasada con otro material en el cuerpo del héroe (variante con esqueleto del sombreador) y vuelta al suyo
+    const bodyPass = (mk) => passes.push(() => { const old = skinned.map((o) => o.material); skinned.forEach((o) => { o.material = mk(o.material); }); return () => skinned.forEach((o, i) => { const m = o.material; o.material = old[i]; if (m !== old[i] && m.userData.own) m.dispose(); }); });
+    const add = (obj, done) => { g.scene.add(obj); temps.push(() => { g.scene.remove(obj); if (done) done(); }); };
+    try {
+      if (id === 'nilo') {
+        const gate = takeGate();
+        gate.setArc(p.pos.clone(), p.pos.clone().add(V(3, 0, 0)), 2);
+        for (const o of [gate.vortex, gate.geyser, gate.arc]) o.visible = true;
+        add(gate.group, () => returnGate(gate));
+        puddle(g.vfx, p.pos.x, p.pos.y, p.pos.z, 0.5, 0.05); // estela de charcos (se apaga sola)
+      }
+      if (id === 'kyra') {
+        const S = new LeafStorm(null, { n: 8, spare: 4 });
+        S.update(1 / 60, p.pos.clone(), { r: 1, k: 1 });
+        add(S.root, () => S.dispose());
+        const ice = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), iceMaterials()[0]);
+        add(ice, () => ice.geometry.dispose());
+        if (g.frost) { const sh = new THREE.Mesh(g.frost.sGeo, g.frost.sMat); add(sh); const cr = new THREE.Mesh(g.frost.cGeo, g.frost.cMat); add(cr); bodyPass(() => g.frost.mat); }
+      }
+      if (id === 'kairo') { const d = cometDisc(g.scene); d.set(p.pos, 1, 1, 0); temps.push(() => d.dispose()); }
+      if (id === 'jago') {
+        const rock = propModel('roca');
+        if (rock) { rock.position.copy(p.pos); add(rock); }
+        const U = { uRise: { value: 0 }, uAmt: { value: 1 }, uFeet: { value: 0 }, uHt: { value: 1 }, uGlow: { value: 0 } };
+        bodyPass((m) => petrifyMaterial(m, U, 6));
+      }
+      if (id === 'halley') { const U = { uSand: { value: 0 }, uST: { value: 0 }, uSNS: { value: 4 }, uLvl: { value: 1 }, uFeet: { value: 0 }, uHt: { value: 1 } }; bodyPass((m) => sandMaterial(m, U)); }
+      // se compila con el MISMO destino que el dibujo real (el composer: espacio de color lineal, sin tone mapping);
+      // si no, los sombreadores precompilados no coincidirían con los que usa la partida
+      const rt = g.getMainRT ? g.getMainRT() : null, prevRT = R.getRenderTarget();
+      if (rt) R.setRenderTarget(rt);
+      try {
+        R.compile(g.scene, g.camera);
+        for (const pass of passes) { const undo = pass(); try { R.compile(g.scene, g.camera); } finally { undo(); } }
+      } finally { R.setRenderTarget(prevRT); }
+    } catch (e) { console.warn("precompilación de poderes:", e); } // si algo falla, el poder se compila al usarlo (como antes)
+    for (const f of temps) { try { f(); } catch (e) { /* nada */ } }
   }
 
   // ¿Este poder está activo y admite una segunda pulsación? (saltar a un espejismo, aterrizar, salir de la roca)
@@ -1033,6 +1115,7 @@ export class HeroSkills {
   }
 
   update(dt) {
+    if (this._needWarm) { this._needWarm = false; this.prewarm(); }
     const p = this.g.player;
     Object.assign(p.pose, NEUTRAL);
     const c = this.g.combat;

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { terrainH } from './terrain.js';
 import { newStatus, tickStatus } from './combat.js';
 import { propModel } from './props.js';
+import { iceShatter } from './skills/magicfx.js';
 
 /* ======================================================================
    SOLDADOS DEL JEFE DE ZONA
@@ -232,8 +233,11 @@ export class Soldier {
     if (this.glbM) { this.glbM.rotation.z = s * 0.07 * k; this.glbM.rotation.y = (armR + 0.5) * -0.35; }
   }
 
+  // ¿está congelado ahora mismo? (Aurora Polar: congelación general o el hielo propio del orco)
+  get iced() { const fr = this.combat.game.frost; return !!(this.frozen || (fr && fr.isFrozen(this.group))); }
   hurt(n) {
     if (this.dead) return;
+    if (this.iced && this.combat.game.frost) this.combat.game.frost.crack(this.group); // el hielo se agrieta con cada golpe
     this.hp = Math.max(0, this.hp - n);
     this.flash = 0.16; this.hurtT = 0.28;
     // REACCIÓN SEGÚN EL GOLPE: uno flojo le hace encogerse; uno fuerte lo derriba y sale despedido hacia atrás
@@ -250,8 +254,21 @@ export class Soldier {
   // DERROTA: cae hacia atrás, se desvanece y desaparece de la batalla
   kill() {
     if (this.dead) return;
+    const shatter = this.iced; // DESTRUIDO CONGELADO: él y su bloque de hielo se rompen en fragmentos cristalinos
     this.dead = true; this.hp = 0;
     const c = this.combat, g = this.group, B = this.rig.B, mats = this.rig.mats;
+    if (shatter) {
+      const gm = c.game;
+      iceShatter(gm, this.pos.x, this.pos.y, this.pos.z, Math.max(1.2, this.barH - 0.4));
+      if (gm.frost) gm.frost.shatter(g);
+      for (const m of mats) m.dispose();
+      c.game.addScore(this.cat.score);
+      this.ring.visible = false;
+      c.scene.remove(g);
+      g.traverse((o) => { if (o.geometry && !o.userData.shared && !o.userData.frost) o.geometry.dispose(); });
+      if (c.game.onNpcDefeated) c.game.onNpcDefeated(this);
+      return;
+    }
     c.vfx.sparks(this.pos.x, this.pos.y + 0.7, this.pos.z, this.color, 16, 3);
     if (c.vfx.ring) c.vfx.ring(this.pos.x, null, this.pos.z, { r0: 0.3, r1: 1.8 * this.scale, dur: 0.45, color: this.color });
     c.game.addScore(this.cat.score);

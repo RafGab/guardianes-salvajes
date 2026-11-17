@@ -90,6 +90,8 @@ const SFX = {
   avalanche: () => { noise({ dur: 2.4, f0: 250, f1: 70, vol: 0.6, attack: 0.2 }); for (let i = 0; i < 10; i++) noise({ dur: 0.1, f0: 1800, f1: 700, type: 'bandpass', q: 3, vol: 0.18, delay: 0.2 + i * 0.18 }); },
   wave: () => { noise({ dur: 2.6, f0: 300, f1: 1400, type: 'bandpass', q: 0.6, vol: 0.45, attack: 0.9 }); noise({ dur: 1.2, f0: 900, f1: 150, vol: 0.5, delay: 2.2 }); },
   vortex: () => { noise({ dur: 3.5, f0: 200, f1: 700, type: 'bandpass', q: 2, vol: 0.35, attack: 0.6 }); osc({ f0: 60, f1: 120, dur: 3.5, type: 'sawtooth', vol: 0.06, attack: 1 }); },
+  // hielo que se rompe: tintineo cristalino agudo + crujido breve
+  shatter: () => { for (let i = 0; i < 7; i++) osc({ f0: 1800 + Math.random() * 2600, f1: 1500 + Math.random() * 1800, dur: 0.25 + Math.random() * 0.35, vol: 0.07, attack: 0.002, delay: i * 0.035 }); noise({ dur: 0.18, f0: 5200, f1: 2400, type: 'highpass', vol: 0.28, attack: 0.002 }); noise({ dur: 0.12, f0: 900, f1: 300, type: 'bandpass', q: 2, vol: 0.18 }); },
   aurora: () => { [523, 659, 784, 988, 1175].forEach((f, i) => osc({ f0: f, f1: f * 1.01, dur: 3.2, vol: 0.06, attack: 0.8, delay: i * 0.25 })); },
   sun: () => { osc({ f0: 220, f1: 880, dur: 1.2, type: 'triangle', vol: 0.12, attack: 0.4 }); noise({ dur: 1.4, f0: 600, f1: 3000, type: 'bandpass', q: 0.8, vol: 0.25, attack: 0.5 }); },
 };

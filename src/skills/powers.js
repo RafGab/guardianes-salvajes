@@ -4,6 +4,7 @@ import { Skill, DEG, ease, lerp, clamp, V } from './base.js';
 import { terrainH } from '../terrain.js';
 import { ui } from '../ui.js';
 import { douseFires, smotherFires, propsNear, captureProp, dropFlung, wetGround } from './envreact.js';
+import { propModel } from '../props.js';
 import { MirageWard, TsunamiWave, WaterVortex, FoamPool, WaterShield, MagmaGeyser, ObsidianSpikes, CrystalDebris } from './fx4.js';
 
 // PODERES ESPECIALES NUEVOS (3 por héroe; la Zorra Ártica tiene 4).
@@ -670,7 +671,7 @@ export class FlightSkill extends Skill {
     if (!this.ears && d.levels) { p.fly.levels = d.levels; p.fly.level = 1; } // águila: tres niveles de altura
     p.vy = d.climb * 1.4;
     p.grounded = false; p.support = null;
-    if (!this.ears) { this.camWas = { dist: this.g.chase.distTarget }; ui.banner('find', '🦅', d.levels ? 'SALTAR = subir de nivel (3 alturas) · V o Ctrl = bajar · en el nivel 1, V = aterrizar · SPRINT = más rápido' : 'SALTAR = subir · suelta = planear · SPRINT = más rápido · baja al suelo para aterrizar'); }
+    if (!this.ears) { this.camWas = { dist: this.g.chase.distTarget }; ui.banner('find', '🦅', d.levels ? 'SALTAR = subir de nivel (3 alturas) · V o Ctrl = bajar · L = aterrizar · SPRINT = más rápido' : 'SALTAR = subir · suelta = planear · SPRINT = más rápido · baja al suelo para aterrizar'); }
     else ui.banner('find', '👂', 'Mantén SALTAR para subir');
     this.flapT = 0;
   }
@@ -740,30 +741,64 @@ export class AuroraSkill extends Skill {
   build() {
     const d = this.def, pose = this.pose;
     return [
-      { name: 'canalizar', dur: d.prep, enter: this.enterCall, tick: (dt, k) => {
-        pose.rx = -0.45 * k; pose.dy = 0.25 * k; // mira al cielo con las colas alzadas
-        const c = this.center(0.9);
-        this.vfx.orb(V(c.x, c.y + 0.4, c.z), { r: 0.15 + 0.4 * k, color: k < 0.5 ? 0x60ffa0 : 0xa070ff, life: 0.2 });
-        this.v2.beam(V(c.x, c.y, c.z), V(c.x, c.y + 18, c.z), { r: 0.15 + 0.3 * k, color: 0x60ffc0, opacity: 0.35, life: 0.12 });
-      } },
+      // INVOCACIÓN: pose de invocación, resplandor azul hielo, colas que se iluminan, nieve y cristales flotando
+      // y un círculo de energía que se acumula bajo sus patas; la luz crece hasta liberar el poder
+      { name: 'canalizar', dur: d.prep, enter: this.enterCall, tick: this.tickCall },
       { name: 'zona-polar', dur: d.exec, enter: this.enterZone, tick: this.tickZone },
-      { name: 'recuperacion', dur: d.recover, enter: () => { this.lock(false); this.amb.end(); }, tick: (dt, k) => { pose.rx = lerp(-0.15, 0, k); pose.dy = lerp(0.1, 0, k); } },
+      { name: 'recuperacion', dur: d.recover, enter: () => { this.lock(false); }, tick: (dt, k) => { pose.rx = lerp(-0.15, 0, k); pose.dy = lerp(0.1, 0, k); } },
     ];
   }
   enterCall() {
-    const d = this.def, total = d.prep + d.exec + d.recover + 0.4; // la aurora se apaga 0,4 s después de la habilidad (antes 1 s)
+    const d = this.def, p = this.p;
+    // la aurora del cielo dura lo mismo que la congelación (invocación + 0,45 s + 5 s + deshielo) y se apaga suavemente
+    const fin = d.freezeIn ?? 0.45, hold = d.freezeHold ?? 5, fout = d.freezeOut ?? 0.9;
+    const total = d.prep + fin + hold + fout;
     this.lock(true);
-    this.amb = this.v2.ambience({ color: '#3a5a8a', alpha: 0.35, blend: 'multiply', exposure: 0.62, dur: total, fin: d.prep, fout: 1 }); // noche polar: la aurora resalta
-    this.aur = this.v2.aurora(V(this.p.pos.x, this.p.pos.y, this.p.pos.z), { life: total });
+    this.amb = this.v2.ambience({ color: '#3a5a8a', alpha: 0.35, blend: 'multiply', exposure: 0.62, dur: total, fin: d.prep, fout: 1.2 }); // noche polar: la aurora resalta
+    this.aur = this.v2.aurora(V(p.pos.x, p.pos.y, p.pos.z), { life: total });
     this.sfx('aurora');
-    // la energía helada de la aurora congela poco a poco a TODOS los personajes de la escena mientras dura
-    if (this.g.frost) this.g.frost.start(total);
-    // los ORCOS alcanzados por la aurora quedan congelados (no se mueven ni atacan) hasta que se apaga
-    for (const o of this.combat.orcs || []) if (!o.dead && Math.hypot(o.pos.x - this.p.pos.x, o.pos.z - this.p.pos.z) < 40) o.freeze(total);
-    this.vfx.ring(this.p.pos.x, null, this.p.pos.z, { r0: 0.5, r1: 40, dur: 1.4, color: 0x9ff0ff, opacity: 0.45 });
+    // resplandor azul hielo que envuelve su cuerpo (translúcido: su diseño se sigue viendo)
+    this.glow = this.v2.shell(this.center(0.5), { r: 1, color: 0x2a9cff, rim: 0x9ff4ff, opacity: 0, power: 2.2, core: 0.04, life: total });
+    // círculo de energía bajo sus patas
+    this.circle = this.track(this.vfx.telegraph('disc', { x: p.pos.x, z: p.pos.z, r: 1.6, color: 0x7ae8ff, opacity: 0.3 }));
+    this.tails = p.model && p.model.bones ? Object.keys(p.model.bones).filter((n) => /tail/i.test(n)).map((n) => p.model.bones[n]) : [];
+    this.wv = new THREE.Vector3();
+  }
+  tickCall(dt, k) {
+    const p = this.p, pose = this.pose, fx = this.g.fx, e = ease(k);
+    pose.rx = -0.45 * e; pose.dy = 0.25 * e; // mira al cielo con las colas alzadas
+    const c = this.center(0.5);
+    if (this.glow) { this.glow.mesh.position.copy(c); this.glow.mesh.scale.set(p.H * 0.5, p.H * 0.62, p.H * 0.5); this.glow.mat.uniforms.uOp.value = 0.32 * e; }
+    this.circle.set(p.pos.x, p.pos.z, { r: 0.6 + 1.4 * e }); this.circle.setProgress(e); this.circle.group.rotation.y += dt * 3;
+    // la energía se concentra: anillos que se cierran hacia sus patas
+    if (Math.random() < 0.35) this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 2.6, r1: 0.4, dur: 0.35, color: Math.random() < 0.5 ? 0x7ae8ff : 0xa07aff, opacity: 0.5 });
+    // colas iluminadas: destellos cian y azul polar que recorren sus huesos
+    for (let i = 0; i < 2 && this.tails.length; i++) {
+      const b = this.tails[Math.floor(Math.random() * this.tails.length)];
+      b.getWorldPosition(this.wv);
+      this.vfx.orb(this.wv, { r: 0.04 + 0.06 * e, color: Math.random() < 0.5 ? 0x2ad8ff : 0x2a6cff, opacity: 0.7, life: 0.2 });
+    }
+    // nieve y cristales de hielo que flotan a su alrededor
+    for (let i = 0; i < 2; i++) { const a = rnd(0, TAU), r = rnd(0.5, 1.6); fx.sparkle(p.pos.x + Math.cos(a) * r, p.pos.y + rnd(0.2, p.H * 1.2), p.pos.z + Math.sin(a) * r, Math.random() < 0.5 ? 0xe8fbff : 0x8fe4ff, 0.6); }
+    if (Math.random() < 0.5) fx.iceShard(p.pos.x + rnd(-1, 1), p.pos.y + rnd(0.3, 1.4), p.pos.z + rnd(-1, 1), 0.6);
+    // rayo de energía hacia el cielo (la aurora nace de ella)
+    const top = this.center(0.9);
+    this.v2.beam(top, V(top.x, top.y + 18, top.z), { r: 0.12 + 0.3 * e, color: 0x60ffe0, opacity: 0.3 + 0.2 * e, life: 0.12 });
   }
   enterZone() {
     const d = this.def, p = this.p;
+    // LIBERACIÓN: la energía se expande desde la zorra en ondas (azul eléctrico, cian, turquesa, violeta y verde aurora)
+    const fin = d.freezeIn ?? 0.45, hold = d.freezeHold ?? 5, fout = d.freezeOut ?? 0.9;
+    if (this.g.frost) this.g.frost.start(fin + hold + fout, { fin, fout }); // EXACTAMENTE 5 s inmóviles
+    this.frozenIds = new Set();
+    this.waveR = 0; this.waveAt = p.pos.clone();
+    [[0x3a8cff, 0.0], [0x40f0ff, 0.12], [0x40ffd0, 0.24], [0xa070ff, 0.36], [0x60ffa0, 0.48]].forEach(([col, dl], i) => {
+      setTimeout(() => { if (!this.disposed) this.vfx.ring(this.waveAt.x, null, this.waveAt.z, { r0: 0.5, r1: 40 - i * 4, dur: 1.4 + i * 0.1, color: col, opacity: 0.5 }); }, dl * 1000);
+    });
+    this.sfx('chime');
+    this.shake(0.22);
+    if (this.circle) { this.circle.kill(); this.circle = null; }
+    if (this.glow) { const G = this.glow, t0 = performance.now(); const fade = () => { const k = 1 - (performance.now() - t0) / 900; if (k <= 0 || !G.mesh.parent) { G.mat.uniforms.uOp.value = 0; return; } G.mat.uniforms.uOp.value = 0.32 * k; G.mesh.position.copy(this.center(0.5)); requestAnimationFrame(fade); }; fade(); }
     this.lock(false); // la zona se queda; ella puede moverse
     this.at = p.pos.clone();
     this.zone = this.track(this.vfx.telegraph('disc', { x: this.at.x, z: this.at.z, r: d.radius, color: 0x60ffd0, opacity: 0.08 }));
@@ -777,6 +812,24 @@ export class AuroraSkill extends Skill {
   tickZone(dt, k) {
     const d = this.def, g = this.g, at = this.at;
     this.ring2.group.rotation.y += dt;
+    // ONDA DE LA AURORA: avanza desde la zorra; a cada enemigo que alcanza lo envuelve una onda helada y lo congela
+    if (this.waveR < 42) {
+      const fin = d.freezeIn ?? 0.45, hold = d.freezeHold ?? 5, w0 = this.waveAt;
+      this.waveR += (d.waveSpeed || 30) * dt;
+      for (let i = 0; i < 6; i++) { // cristales y luces de colores a lo largo del frente
+        const a = rnd(0, TAU), x = w0.x + Math.cos(a) * this.waveR, z = w0.z + Math.sin(a) * this.waveR, y = terrainH(x, z);
+        if (i < 2) g.fx.iceShard(x, y + 0.2, z, 0.8);
+        g.fx.sparkle(x, y + rnd(0.2, 1.6), z, [0x3a8cff, 0x40f0ff, 0x40ffd0, 0xa070ff, 0x60ffa0][i % 5], 0.8);
+      }
+      for (const o of this.combat.orcs || []) {
+        if (o.dead || this.frozenIds.has(o) || Math.hypot(o.pos.x - w0.x, o.pos.z - w0.z) > this.waveR) continue;
+        this.frozenIds.add(o);
+        // se congela durante el resto de la congelación general (mismo final para todos)
+        const left = Math.max(0.1, fin + hold - this.t);
+        o.freeze(left);
+        this.vfx.ring(o.pos.x, null, o.pos.z, { r0: 0.2, r1: 1.8, dur: 0.45, color: 0xcff4ff, opacity: 0.8 });
+      }
+    }
     // dentro de la zona: las recargas de la zorra avanzan más rápido
     const p = this.p, inside = Math.hypot(p.pos.x - at.x, p.pos.z - at.z) < d.radius;
     if (inside) { for (const id in g.toolCd) if (g.toolCd[id] > 0) g.toolCd[id] = Math.max(0, g.toolCd[id] - dt * d.cdHeal); p.cd = Math.max(0, p.cd - dt * d.cdHeal); }
@@ -972,9 +1025,26 @@ export class RockSkill extends Skill {
   // la bola: un grupo que se aplasta y se inclina (inercia) y, dentro, la roca que rueda
   makeBall() {
     const R = this.ballR();
+    const real = propModel('roca');
+    let rock;
+    if (real) {
+      // ROCA 3D DEL ARCHIVO roca.glb: se respetan su malla y sus materiales (color, normales y rugosidad).
+      // El modelo llega normalizado (base en y=0, altura 1, ≈1 de ancho): se escala a diámetro 2 y se baja 1 para
+      // que su CENTRO quede en el pivote → gira sobre su eje real y, con el grupo a escala R, mide R de radio.
+      rock = new THREE.Group();
+      real.scale.setScalar(2);
+      real.position.y = -1;
+      real.rotation.set(rnd(0, TAU), rnd(0, TAU), 0); // cada transformación muestra otra cara de la roca
+      real.traverse((o) => { if (o.isMesh) { o.castShadow = true; o.receiveShadow = true; if (!this.rockSrcMat) this.rockSrcMat = o.material; } });
+      rock.add(real);
+      const sm = this.rockSrcMat || {};
+      this.chunkMat = new THREE.MeshStandardMaterial({ map: sm.map || null, normalMap: sm.normalMap || null, color: sm.map ? 0xffffff : 0x8c7a62, roughness: 0.95, flatShading: true });
+      this.chunkMat.userData.own = true;
+      this._pg = new THREE.DodecahedronGeometry(1, 0);
+    } else {
     const mat = new THREE.MeshStandardMaterial({ color: 0x8c7a62, roughness: 0.95, flatShading: true, emissive: 0x2a1a0a, emissiveIntensity: 0.12 });
     mat.userData.own = true;
-    const rock = new THREE.Mesh(this.v2.rockGeo, mat);
+    rock = new THREE.Mesh(this.v2.rockGeo, mat);
     rock.castShadow = true; rock.receiveShadow = true;
     // placas y aristas de roca encima de la esfera: se ve como un cuerpo de piedra, no como una bola lisa
     const pm = [0x6b5a48, 0x7a6a56, 0x544638].map((c) => { const m = new THREE.MeshStandardMaterial({ color: c, roughness: 0.95, flatShading: true }); m.userData.own = true; return m; });
@@ -988,6 +1058,8 @@ export class RockSkill extends Skill {
       rock.add(m);
     }
     this._pg = pg;
+    this.chunkMat = pm[0];
+    }
     const grp = new THREE.Group();
     grp.add(rock);
     const blob = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: blobTex(), transparent: true, depthWrite: false, opacity: 0 }));
@@ -1023,14 +1095,42 @@ export class RockSkill extends Skill {
     this.blob.scale.setScalar(R * 2.3 * (1 + h * 0.25));
     this.blob.material.opacity = k * clamp(1 - h * 0.35, 0.15, 1);
   }
+  // PIEDRA SOBRE SU PROPIO CUERPO: los materiales del héroe se clonan con el frente de roca (el mismo sombreador del
+  // Gigante de Roca) que sube de los pies a la cabeza; el modelo original no se toca y se restaura al terminar
+  stoneBody() {
+    const p = this.p;
+    this.U = { uRise: { value: 0 }, uAmt: { value: 1 }, uFeet: { value: p.pos.y }, uHt: { value: p.H }, uGlow: { value: 0 } };
+    this.swaps = [];
+    if (!p.model || !p.model.root) return;
+    const cache = new Map();
+    p.model.root.traverse((o) => {
+      if (!o.isMesh || !o.material || o.userData.weapon || (o.parent && o.parent.userData && o.parent.userData.weapon)) return;
+      if (!o.isSkinnedMesh && !o.userData.body) return;
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      const sz = o.geometry.boundingBox.getSize(new THREE.Vector3()), ns = 6 / Math.max(0.05, Math.max(sz.x, sz.y, sz.z));
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      const out = mats.map((m) => { const key = m.uuid + ns.toFixed(2); if (!cache.has(key)) cache.set(key, petrifyMaterial(m, this.U, ns)); return cache.get(key); });
+      this.swaps.push({ o, mat: o.material });
+      o.material = Array.isArray(o.material) ? out : out[0];
+    });
+    this.newMats = [...cache.values()];
+  }
+  cleanup() {
+    if (this.swaps) { for (const s of this.swaps) s.o.material = s.mat; this.swaps = null; }
+    if (this.newMats) { for (const m of this.newMats) m.dispose(); this.newMats = null; }
+    if (this.chunkMat && this.chunkMat.userData.own) { this.chunkMat.dispose(); this.chunkMat = null; }
+    this.pose.sc = 1;
+  }
   enterTransform() {
     this.lock(true);
     this.makeBall();
+    this.stoneBody();
     this.tuck = 0;
     this.setBones((B, dt, t, fx) => this.tuckBones(B, fx));
     this.sfx('crack');
+    this.crk = 0;
     // fragmentos de roca que se separan del suelo y se juntan alrededor de su cuerpo
-    const p = this.p, R = this.ballR(), m = this.rock.children[0].material;
+    const p = this.p, R = this.ballR(), m = this.chunkMat;
     this.chunks = [];
     for (let i = 0; i < 9; i++) {
       const c = new THREE.Mesh(this._pg, m), a = rnd(0, TAU), r = rnd(1.2, 2.2);
@@ -1042,17 +1142,26 @@ export class RockSkill extends Skill {
   }
   tickTransform(dt, k) {
     const pose = this.pose, p = this.p, R = this.ballR();
-    // 1) ANTICIPACIÓN (0–35 %): baja el centro de gravedad, encoge el pecho y recoge brazos y piernas
-    const a = easeInOut(clamp(k / 0.35, 0, 1));
-    // 2) ENROSCARSE (25–85 %): se cierra sobre sí mismo y gira hacia delante mientras la roca lo cubre
-    const c = easeInOut(clamp((k - 0.25) / 0.6, 0, 1));
+    // FASE A — ANTICIPACIÓN (0–30 %): flexiona las piernas, baja el centro de gravedad y empieza a comprimirse
+    const a = easeInOut(clamp(k / 0.3, 0, 1));
+    // FASE B — PIEDRA (12–72 %): la roca sube de los pies a la cabeza con grietas finas y brillo interior suave
+    if (this.U) {
+      this.U.uFeet.value = p.pos.y; this.U.uHt.value = p.H;
+      this.U.uRise.value = 1.1 * easeInOut(clamp((k - 0.12) / 0.6, 0, 1));
+      this.U.uGlow.value = 0.35 * Math.sin(clamp((k - 0.2) / 0.8, 0, 1) * Math.PI);
+    }
+    // ...y se enrosca y comprime hasta una forma casi esférica (25–90 %)
+    const c = easeInOut(clamp((k - 0.25) / 0.65, 0, 1));
     this.tuck = Math.max(a * 0.55, c);
-    pose.sy = lerp(1, 0.86, a) * lerp(1, 0.62, c);
+    pose.sy = lerp(1, 0.86, a) * lerp(1, 0.66, c);
+    pose.sc = lerp(1, 0.78, c);         // se compacta (de su altura a la de la roca), siempre con los pies en el suelo
     pose.rx = 0.25 * a + 0.9 * c;      // se inclina hacia delante (no hacia atrás): rueda hacia donde mira
     pose.dy = -0.06 * a;
-    pose.hidden = k > 0.86;             // el modelo desaparece cuando la roca ya lo envuelve (sin saltos)
-    // la roca crece desde dentro con un pequeño rebote (curva "back"), algo achatada al principio
-    const g = clamp((k - 0.38) / 0.62, 0, 1), s = R * Math.max(0.0001, easeOutBack(g, 1.2));
+    pose.hidden = k > 0.9;              // desaparece cuando la roca ya lo envuelve por completo (sin parpadeos)
+    // grietas que crujen mientras se petrifica
+    if (k > 0.2 && k < 0.75) { this.crk -= dt; if (this.crk <= 0) { this.crk = 0.22; this.sfx('crack'); } }
+    // FASE C — LA ROCA (55–100 %): la roca real crece desde dentro del cuerpo de piedra con un pequeño rebote
+    const g = clamp((k - 0.55) / 0.45, 0, 1), s = R * Math.max(0.0001, easeOutBack(g, 1.2));
     this.grp.scale.set(s * (1 + 0.12 * (1 - g)), s * (1 - 0.18 * (1 - g)), s * (1 + 0.12 * (1 - g)));
     this.grp.position.set(p.pos.x, p.pos.y + R * lerp(1.15, 1, g) - 0.06 * a, p.pos.z);
     this.rock.quaternion.setFromAxisAngle(V(Math.cos(p.facing), 0, -Math.sin(p.facing)), c * 1.6);
@@ -1064,17 +1173,22 @@ export class RockSkill extends Skill {
       q.c.rotation.set(this.t * q.spin, this.t * q.spin * 0.7, 0);
     }
     this.updBlob(R, clamp(k * 2, 0, 1));
+    // partículas suaves: polvo bajo los pies al agacharse, chinas de piedra que se desprenden mientras se petrifica
     if (k < 0.35 && Math.random() < 0.35) this.g.fx.dustPuff(p.pos.x + rnd(-0.6, 0.6), p.pos.y + 0.05, p.pos.z + rnd(-0.6, 0.6), 0.5);
-    if (k > 0.5 && Math.random() < 0.25) this.g.fx.rock(p.pos.x, p.pos.y + R, p.pos.z);
+    if (k > 0.2 && k < 0.85 && Math.random() < 0.3) this.g.fx.rock(p.pos.x + rnd(-0.3, 0.3), p.pos.y + p.H * rnd(0.2, 0.8) * (pose.sc || 1), p.pos.z + rnd(-0.3, 0.3));
+    if (k > 0.55 && Math.random() < 0.3) this.g.fx.dustPuff(p.pos.x + rnd(-R, R), p.pos.y + 0.1, p.pos.z + rnd(-R, R), 0.6);
   }
   enterRoll() {
     const p = this.p, R = this.ballR();
     this.lock(false);
     for (const q of this.chunks) q.c.visible = false;
-    p.moveMul = this.def.speedMul;
+    p.moveMul = 1;
+    this.rollAge = 0;
+    this.gPrev = null; this.slPrev = 0;
     this.hitCd = new Map();
     this.rollSnd = 0;
     this.tuck = 1;
+    this.pose.sc = 1;
     // cae con todo su peso: aplastamiento, polvo y una sacudida corta
     this.impact(0.55, 0.16);
     this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 0.4, r1: 2.6, dur: 0.4, color: 0xc8b090, opacity: 0.5 });
@@ -1089,7 +1203,11 @@ export class RockSkill extends Skill {
   tickRoll(dt) {
     const d = this.def, p = this.p, pose = this.pose, R = this.ballR();
     pose.hidden = true;
-    p.moveMul = d.speedMul;
+    // ACELERACIÓN PROGRESIVA (peso e inercia): arranca despacio y alcanza su velocidad en accelT s, con pequeñas
+    // variaciones naturales de velocidad (nunca constante como una máquina)
+    this.rollAge += dt;
+    const acc = easeInOut(clamp(this.rollAge / (d.accelT || 0.9), 0, 1));
+    p.moveMul = (1 + (d.speedMul - 1) * acc) * (1 + 0.035 * Math.sin(this.t * 2.3) + 0.025 * Math.sin(this.t * 5.7 + 1));
     p.evadeT = Math.max(p.evadeT, 0.15); // la coraza de roca anula los golpes
     // GIRO = distancia recorrida / radio (sobre el suelo real): la bola nunca patina ni gira en vacío
     const mx = p.pos.x - this.last.x, mz = p.pos.z - this.last.z, dist = Math.hypot(mx, mz);
@@ -1111,6 +1229,18 @@ export class RockSkill extends Skill {
     const wob = 0.012 * Math.sin(this.t * 13) * Math.min(1, sp / 8); // pequeña vibración natural de la roca al rodar rápido
     this.grp.scale.set(R * (1 - sq * 0.6), R * (1 + sq + wob), R * (1 - sq * 0.6));
     this.grp.rotation.set(this.tilt.x, 0, this.tilt.y);
+    // BACHES: al pasar por irregularidades del terreno (cambio brusco de pendiente) la roca vibra un poco y suelta polvo
+    const gyN = terrainH(p.pos.x, p.pos.z);
+    if (p.grounded && this.gPrev !== null && dist > 1e-3) {
+      const sl = (gyN - this.gPrev) / dist, dsl = Math.abs(sl - this.slPrev);
+      if (dsl > 0.18 && sp > 2) {
+        this.impact(Math.min(0.3, dsl * 0.5));
+        if (Math.random() < 0.6) this.g.fx.dustPuff(p.pos.x, p.pos.y + 0.06, p.pos.z, 0.5);
+        if (Math.random() < 0.25) this.g.fx.rock(p.pos.x, p.pos.y + 0.12, p.pos.z);
+      }
+      this.slPrev = sl;
+    }
+    this.gPrev = gyN;
     this.grp.position.set(p.pos.x, p.pos.y + R * (1 + sq), p.pos.z);
     this.updBlob(R, 1);
     // ATERRIZAJE: tras un salto o una caída, golpe proporcional a la velocidad de caída (fragmentos y polvo)
@@ -1164,6 +1294,8 @@ export class RockSkill extends Skill {
     pose.hidden = k < 0.12;
     this.tuck = clamp(1 - open, 0, 1);
     pose.sy = lerp(0.6, 1, open);
+    pose.sc = lerp(0.78, 1, clamp(open, 0, 1));
+    if (this.U) { this.U.uFeet.value = p.pos.y; this.U.uRise.value = 1.1 * (1 - easeInOut(clamp((k - 0.15) / 0.75, 0, 1))); this.U.uGlow.value = 0; }
     pose.rx = 0.6 * (1 - easeInOut(clamp(k / 0.8, 0, 1)));
     const s = R * Math.max(0.0001, 1 - easeInOut(clamp(k / 0.35, 0, 1)));
     this.grp.scale.setScalar(s);
@@ -1198,7 +1330,7 @@ const STONE_FS_HEAD = `
     return mix(mix(mix(gHash(i), gHash(i + vec3(1,0,0)), f.x), mix(gHash(i + vec3(0,1,0)), gHash(i + vec3(1,1,0)), f.x), f.y),
                mix(mix(gHash(i + vec3(0,0,1)), gHash(i + vec3(1,0,1)), f.x), mix(gHash(i + vec3(0,1,1)), gHash(i + vec3(1,1,1)), f.x), f.y), f.z); }
 `;
-function petrifyMaterial(src, U, ns) {
+export function petrifyMaterial(src, U, ns) {
   const m = src.clone();
   m.userData.own = true;
   m.onBeforeCompile = (sh) => {

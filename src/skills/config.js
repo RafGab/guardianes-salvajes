@@ -8,7 +8,8 @@ export const HERO_SKILLS = {
     // TRANSFORMACIÓN EN ROCA: se hace bola y rueda a gran velocidad (lo controla el jugador); arrolla enemigos
     rock: {
       id: 'rock', name: 'Transformación en Roca', icon: '🥌', cd: 10,
-      transformT: 0.62, rollT: 4.4, recover: 0.5, // anticipación + transformación, rodar, volver a su forma (≈ 5 s; vuelve a pulsar para salir antes)
+      transformT: 1.15, rollT: 4.4, recover: 0.7, // anticipación + petrificación + roca, rodar, volver a su forma (vuelve a pulsar para salir antes)
+      accelT: 0.9,                                // aceleración progresiva al empezar a rodar (s)
       speedMul: 2.2, radius: 0.95,                // velocidad (× la normal) y radio de la bola (× media altura del héroe)
       hitDamage: 10, hitForce: 12, hitEvery: 0.6, // golpe al arrollar (por objetivo, cada hitEvery s)
       shake: 0.08,
@@ -78,8 +79,8 @@ export const HERO_SKILLS = {
     // VUELO DE OREJAS: despega con sus enormes orejas, vuela un tiempo limitado
     ears: {
       id: 'ears', name: 'Vuelo de Orejas', icon: '👂', cd: 14,
-      takeoffT: 0.5, flyT: 12,      // despegue y tiempo de vuelo (el doble que antes: 6 → 12 s)
-      speed: 7, climb: 5.5, sink: 1.1, ceil: 7.5, // velocidad, subida (mantén SALTAR), descenso suave y altura máxima
+      takeoffT: 0.5, flyT: 10,      // despegue y tiempo de vuelo: exactamente 10 s (luego desciende suave hasta el suelo)
+      speed: 7, climb: 5.5, sink: 1.1, ceil: 8.4, // velocidad, subida (mantén SALTAR), descenso suave y altura máxima (algo más alta: 7,5 → 8,4 m; Ámbar llega a 24 m)
       flap: 26,                     // velocidad del aleteo de las orejas
     },
     // ARMA — LANZA MORADA: estocada (golpe cercano) y proyección de cristal violeta que atraviesa
@@ -115,6 +116,9 @@ export const HERO_SKILLS = {
       radius: 8, tick: 0.5,         // zona y frecuencia de los pulsos
       slowF: 0.35, damage: 2.5, freezeEvery: 2.0, freezeT: 1.1, // ralentiza, daña y congela cada cierto tiempo
       cdHeal: 0.35,                 // dentro de la zona, las recargas del héroe avanzan un 35 % más rápido
+      freezeHold: 5,                // CONGELACIÓN: exactamente 5 s completamente inmóviles…
+      freezeIn: 0.45, freezeOut: 0.9, // …tras 0,45 s en que el hielo los envuelve y antes de 0,9 s de deshielo
+      waveSpeed: 30,                // la onda de la aurora se expande desde la zorra (m/s)
     },
     // SOLSTICIO DE VERANO: aura solar dorada y expansión de luz cálida
     solstice: {
@@ -194,7 +198,7 @@ export const HERO_SKILLS = {
   nilo: {
     skill: {
       id: 'blink', name: 'Blink Acuático', icon: '💧', cd: 5.5,
-      vanishT: 0.2, travelT: 0.12, appearT: 0.24, recover: 0.12, // fundirse en el agua, viajar por el arco, salir del géiser
+      vanishT: 0.2, travelT: 0.12, appearT: 0.3, recover: 0.12, // fundirse en el agua, viajar por el arco, salir del géiser (el agua reconstruye su cuerpo)
       distance: 9.5,
       trailTime: 3.6, trailWidth: 2.0,
       trailSlowF: 0.5, trailSlowT: 1.6, trailForce: 4,

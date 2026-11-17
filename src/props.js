@@ -20,6 +20,8 @@ const FILES = {
   hospital: 'props/hospital.glb', ambulancia: 'props/ambulancia.glb', helicoptero: 'props/helicoptero.glb', arbolseco: 'props/arbolseco.glb',
   arbolfuego: 'props/arbolfuego.glb', troncos: 'props/troncos.glb', rocas: 'props/rocas.glb', montana: 'props/montana.glb',
   // versiones ligeras (menos polígonos) para repartir muchas copias instanciadas por Cenizara
+  // roca de la Transformación en Roca de Jaglion (modelo de Tripo aligerado, con sus texturas PBR)
+  roca: 'props/roca.glb',
   arbolseco_lo: 'props/arbolseco_lo.glb', arbolfuego_lo: 'props/arbolfuego_lo.glb', cristal_lo: 'props/cristal_lo.glb', rocas_lo: 'props/rocas_lo.glb',
 };
 

@@ -159,7 +159,19 @@ export class Player {
     const sc = k.sc || 1; // tamaño (crece desde los pies: no se hunde ni flota)
     const xz2 = sy !== k.sy ? 1 / Math.sqrt(Math.max(0.2, sy)) : xz;
     m.root.scale.set(xz2 * sc, sy * sc, xz2 * sc);
-    if (k.hidden || this._wasHidden) { m.root.visible = !k.hidden; this._wasHidden = k.hidden; }
+    // OCULTAR AL HÉROE (roca, hidroteletransporte…): se ocultan sus mallas pero NO su luz. Si se ocultara la raíz
+    // entera, su luz desaparecería, cambiaría el número de luces de la escena y la tarjeta gráfica tendría que
+    // recompilar los sombreadores de todo el escenario → un tirón de 0,1–0,3 s justo al desaparecer y al volver.
+    if (!!k.hidden !== !!this._wasHidden || (k.hidden && this._hidRoot !== m.root)) {
+      if (this._hidList) for (const o of this._hidList) o.visible = true;
+      this._hidList = null; this._hidRoot = null;
+      if (k.hidden) {
+        this._hidList = []; this._hidRoot = m.root;
+        m.root.traverse((o) => { if (o !== m.root && !o.isLight && o.visible && (o.isMesh || o.isSprite || o.isLine || o.isPoints)) { o.visible = false; this._hidList.push(o); } });
+      }
+      if (!m.root.visible && !k.hidden) m.root.visible = true;
+      this._wasHidden = !!k.hidden;
+    }
   }
 
   get capacity() {
@@ -191,9 +203,9 @@ export class Player {
     const moving = Math.hypot(this.dirX, this.dirZ) > 0.1;
     const hid = this.hero.id;
     if (type === 'dash' && hid === 'kairo') {
-      // Kairo: el cometa (llamas en los pies y estela) es solo un efecto visual durante 5 s:
-      // conserva su movimiento y su velocidad normales, sin impulso hacia delante ni salto
-      this.speedBoost(5, 1, 0.1);
+      // Kairo: CARRERA SUPERSÓNICA durante 5 s (aceleración explosiva hasta ×2 de su velocidad), con dos cometas de
+      // energía bajo los pies; sin impulso de cohete hacia delante ni salto
+      this.speedBoost(5, 2, 0.45);
     } else if (type === 'dash') {
       // Jago: embestida pesada
       this.speedBoost(5, 1.55, 0.6);
@@ -387,6 +399,7 @@ export class Player {
       if (fly.t >= fly.max && !fly.ending) { fly.ending = true; this.events.push({ type: 'flyLevel', level: 0 }); } // se acaba el tiempo: aterriza
       if (!frozen && fly.t > 0.3 && !fly.ending) {
         if (inp.jumpPressed && fly.level < fly.levels.length) { fly.level++; this.events.push({ type: 'flyLevel', level: fly.level }); }
+        else if (inp.landPressed) { fly.ending = true; this.events.push({ type: 'flyLevel', level: 0 }); } // L: aterriza ya, desde cualquier altura
         else if (inp.downPressed) { if (fly.level > 1) fly.level--; else fly.ending = true; this.events.push({ type: 'flyLevel', level: fly.ending ? 0 : fly.level }); }
       }
       const floor = this.floorY(pos.x, pos.z, pos.y), alt = pos.y - floor;
@@ -398,7 +411,8 @@ export class Player {
       fly.t += dt;
       if (fly.t >= fly.max) fly.ending = true; // se acaba el tiempo: desciende suave hasta aterrizar
       const alt = pos.y - this.floorY(pos.x, pos.z, pos.y);
-      let tv = !frozen && inp.jump && !fly.ending ? fly.climb : -fly.sink * (fly.ending ? 2.2 : 1);
+      // al acabarse el tiempo baja suave pero sin eternizarse: más deprisa en lo alto y frenando cerca del suelo
+      let tv = !frozen && inp.jump && !fly.ending ? fly.climb : fly.ending ? -Math.min(6, Math.max(fly.sink * 2.2, 1.2 + alt * 0.8)) : -fly.sink;
       if (alt > fly.ceil && tv > 0) tv = Math.min(tv, (fly.ceil - alt) * 2); // techo de vuelo
       if (fly.t < 0.45) tv = Math.max(tv, fly.climb * 1.2); // despegue
       this.vy = damp(this.vy, tv, 4, dt);

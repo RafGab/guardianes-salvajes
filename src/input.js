@@ -43,6 +43,7 @@ export class Input {
       switch (e.code) {
         case 'Space': this.jumpPressed = true; break;
         case 'KeyV': case 'ControlLeft': this.downPressed = true; break; // bajar de nivel de vuelo / aterrizar
+        case 'KeyL': this.landPressed = true; break; // Ámbar: aterrizar directamente (solo si está volando)
         case 'KeyQ': this.emit('power'); break;
         case 'KeyF': this.emit('rescue'); break;
         case 'KeyE': this.emit('interact'); break;
@@ -239,9 +240,11 @@ export class Input {
       jump,
       jumpPressed: this.jumpPressed,
       downPressed: !!this.downPressed,
+      landPressed: !!this.landPressed,
     };
     this.jumpPressed = false;
     this.downPressed = false;
+    this.landPressed = false;
     return out;
   }
 

@@ -491,6 +491,7 @@ async function buildGame(scenario) {
   player = new Player(world);
   chase = new ChaseCam(camera, world);
   game = new Game({ scene, camera, renderer, world, player, chase, fx, input });
+  game.getMainRT = () => (composer ? composer.renderTarget1 : null); // destino real del dibujo (para precompilar sombreadores con las mismas opciones)
   game.onBossPrep = enterTeam;
   window.__g = { game, world, player, chase, input, camera, scene, renderer, get mode() { return mode; }, setMode: (m) => (mode = m), enterSelect, beginMission, showHero, HEROES, fx, LEVELS, Save, ITEMS, pickMission, enterMissions, buildGame, loadLevel, startNextLevel, get level() { return currentLevel; } };
 }

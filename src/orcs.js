@@ -34,17 +34,12 @@ class Orc extends Soldier {
   }
   get frozen() { return performance.now() < this.frozenUntil; }
   // CONGELADO (Aurora Polar): no se mueve ni ataca durante `secs` segundos reales, cubierto de hielo
+  // (el bloque de hielo, los cristales de los pies y el resplandor azul los pone la congelación general: freeze.js)
   freeze(secs) {
     if (this.dead) return;
+    this.thawed = false;
     this.frozenUntil = Math.max(this.frozenUntil, performance.now() + secs * 1000);
     if (this.state === 'windup' || this.state === 'strike') this.setState('move');
-    if (!this.ice) {
-      const m = new THREE.Mesh(new THREE.IcosahedronGeometry(0.75, 1), new THREE.MeshStandardMaterial({ color: 0xbfeaff, emissive: 0x3ab8e0, emissiveIntensity: 0.25, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.45, flatShading: true, depthWrite: false }));
-      m.scale.set(0.75, 1.25, 0.75); m.position.y = 0.9;
-      this.group.add(m); this.ice = m;
-      this.rig.mats.push(m.material);
-    }
-    this.ice.visible = true;
     const vfx = this.combat.vfx;
     if (vfx.ice) vfx.ice(this.pos.x, this.pos.y + 0.6, this.pos.z, 6);
   }
@@ -58,7 +53,7 @@ class Orc extends Soldier {
     const g = this.combat.game, p = g.player;
     // congelado: inmóvil y sin atacar (el hielo se va al terminar)
     if (this.frozen) { this.speed = 0; this.flash = 0; this.group.position.copy(this.pos); return; }
-    if (this.ice && this.ice.visible) { this.ice.visible = false; if (this.combat.vfx.ice) this.combat.vfx.ice(this.pos.x, this.pos.y + 0.6, this.pos.z, 4); }
+    if (this.frozenUntil && !this.thawed) { this.thawed = true; this.st.slow = Math.max(this.st.slow, 0.9); this.st.slowF = Math.min(this.st.slowF, 0.4); } // recupera el movimiento poco a poco
     // detección del héroe
     if (p && g.state === 'playing') {
       const d = Math.hypot(p.pos.x - this.pos.x, p.pos.z - this.pos.z), dh = Math.hypot(p.pos.x - this.home.x, p.pos.z - this.home.z);
@@ -81,7 +76,7 @@ class Orc extends Soldier {
   kill() {
     if (this.dead) return;
     const fx = this.combat.game.fx;
-    if (fx) for (let i = 0; i < 8; i++) fx.rock(this.pos.x + rnd(-0.4, 0.4), this.pos.y + rnd(0.4, 1.4), this.pos.z + rnd(-0.4, 0.4));
+    if (fx && !this.iced) for (let i = 0; i < 8; i++) fx.rock(this.pos.x + rnd(-0.4, 0.4), this.pos.y + rnd(0.4, 1.4), this.pos.z + rnd(-0.4, 0.4));
     if (this.combat.vfx.dust) this.combat.vfx.dust(this.pos.x, this.pos.y + 0.5, this.pos.z, 8, 1.6);
     if (this.ice) this.ice.visible = false;
     super.kill();

@@ -196,7 +196,19 @@ export class SandStorm {
     P.needsUpdate = true;
     this.pMat.opacity = 0.9 * g * f;
   }
-  dispose() { for (const g of this.geos) g.dispose(); for (const m of this.mats) m.dispose(); }
+  dispose() { for (const g of this.geos) g.dispose(); if (this.arc) this.arc.geometry.dispose(); for (const m of this.mats) m.dispose(); }
+}
+// RESERVA DE PORTALES DE AGUA: el hidroteletransporte reutiliza los mismos (geometrías, texturas y sombreadores ya
+// subidos a la tarjeta gráfica) en lugar de crearlos y destruirlos en cada uso → sin congelones al usarlo seguido
+const GATE_POOL = [];
+export function takeGate() {
+  const g = GATE_POOL.pop() || new WaterGate();
+  g.t = 0;
+  return g;
+}
+export function returnGate(g) {
+  if (g.group.parent) g.group.parent.remove(g.group);
+  if (GATE_POOL.length < 3) GATE_POOL.push(g); else g.dispose();
 }
 
 /* ================================================================== */
@@ -238,13 +250,18 @@ export class WaterGate {
   setArc(a, b, height = 2.2) {
     const pts = [];
     for (let i = 0; i <= 24; i++) { const u = i / 24; pts.push(new THREE.Vector3(a.x + (b.x - a.x) * u, a.y + (b.y - a.y) * u + Math.sin(u * Math.PI) * height + 0.3, a.z + (b.z - a.z) * u)); }
-    const geo = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(pts), 64, 0.22, 10, false);
+    this.curve = new THREE.CatmullRomCurve3(pts);
+    const geo = new THREE.TubeGeometry(this.curve, 64, 0.22, 10, false);
+    if (this.arc) { // reutilizado (hidroteletransporte repetido): solo cambia la forma del tubo
+      this.arc.geometry.dispose();
+      this.arc.geometry = geo;
+      return;
+    }
     this.arcMat = cloudMat({ dark: 0x2a80e8, light: 0xffffff, opacity: 0, scale: 6, rise: 0, swirl: -3.2, puff: 0.08, rim: 0.7, additive: false, vertical: false });
     this.arc = new THREE.Mesh(geo, this.arcMat);
     this.arc.renderOrder = 6; this.arc.frustumCulled = false;
-    this.geos.push(geo); this.mats.push(this.arcMat);
+    this.mats.push(this.arcMat);
     this.group.add(this.arc);
-    this.curve = new THREE.CatmullRomCurve3(pts);
   }
   // k* en 0..1 · cada pieza aparece y desaparece con suavidad
   update(dt, { a, b, vortex = 0, arc = 0, arcHead = 1, geyser = 0, poolA = 0, poolB = 0 }) {
