@@ -46,43 +46,43 @@ export const HEROES = [
 // Toda la interfaz recorre esta lista tal cual: no reordenar.
   {
     id: 'jago', name: 'Jago', species: 'Jaglión', element: 'roca', leader: true, // líder del grupo: siempre el primero
-    power: { type: 'dash', icon: '🪨', name: 'Embestida Pétrea', cd: 4, desc: 'Embiste con todo su peso: sale lanzado, la tierra vibra a cada zancada y deja fragmentos de roca tras sus pies. Sirve para trepar riscos y cruzar huecos.' },
+    power: { type: 'dash', icon: '🥌', name: 'Transformación en Roca', cd: 10, desc: 'Se encoge, se cubre de roca y se convierte en una bola de piedra pesada que rueda a gran velocidad arrollando lo que encuentra (vuelve a pulsar para recuperar su forma).' },
     stats: { speed: 7.6, jump: 9.0, swim: 3.9, carry: 2 },
     bio: 'Jaglión valiente, leal, audaz, resistente y explorador. Su cola es su herramienta principal para escalar, trepar y moverse en terrenos difíciles. "La montaña no es un límite… es mi hogar."',
   },
   {
     id: 'kairo', name: 'Kairo', species: 'Komodo', element: 'fuego',
-    power: { type: 'dash', icon: '🔥', name: 'Propulsión de Fuego', cd: 3.5, desc: 'Llamaradas salen de sus pies y lo lanzan como un cometa: cuanto más corre, más se inclina y más larga es su estela de fuego.' },
+    power: { type: 'dash', icon: '🔥', name: 'Propulsión de Fuego', cd: 10, desc: 'Llamaradas salen de sus pies y lo lanzan como un cometa: cuanto más corre, más se inclina y más larga es su estela de fuego.' },
     stats: { speed: 6.2, jump: 8.4, swim: 3.6, carry: 3 },
     bio: 'Komodo valiente, fuerte, leal, estratégico e indomable. Su piel es casi impenetrable y su aliento puede encender lo que toca. "El fuego también es una forma de sobrevivir."',
   },
   {
     id: 'kyra', name: 'Kyra', species: 'Zorro ártico', element: 'hielo',
-    power: { type: 'ice', icon: '❄️', name: 'Corriente de Nieve', cd: 6, desc: 'Una corriente mágica de nieve se forma bajo sus pies y la lanza a toda velocidad, con remolinos, copos, curvas y pequeños saltos. Sobre la inundación congela el agua y crea una plataforma.' },
+    power: { type: 'ice', icon: '❄️', name: 'Corriente de Nieve', cd: 10, desc: 'Una corriente mágica de nieve se forma bajo sus pies y la lanza a toda velocidad, con remolinos, copos, curvas y pequeños saltos. Sobre la inundación congela el agua y crea una plataforma.' },
     stats: { speed: 7.0, jump: 8.8, swim: 3.8, carry: 2 },
     bio: 'Zorro ártico valiente, curiosa, amigable, leal, inteligente y resistente. Su hacha de hielo cristalino puede crear o manipular el hielo. "El hielo también tiene un corazón."',
   },
   {
     id: 'halley', name: 'Bada', species: 'Fénec', element: 'arena',
-    power: { type: 'surf', icon: '⏳', name: 'Remolino de Arena', cd: 6, desc: 'Inclina el cuerpo y gira mientras corre: se vuelve arena en parte y deja un remolino que se deshace como en un reloj de arena. Sobre el agua o las dunas corre sin hundirse.' },
+    power: { type: 'surf', icon: '⏳', name: 'Remolino de Arena', cd: 10, desc: 'Inclina el cuerpo y gira mientras corre: se vuelve arena en parte y deja un remolino que se deshace como en un reloj de arena. Sobre el agua o las dunas corre sin hundirse.' },
     stats: { speed: 7.8, jump: 8.6, swim: 3.0, carry: 1 },
     bio: 'Fénec siniestra, inteligente, manipuladora, ambiciosa y vengativa. Controla la arena a su alrededor y lee el terreno del desierto. "Pequeña en tamaño… gigante en espíritu."',
   },
   {
     id: 'lira', name: 'Dona', species: 'Lince', element: 'tierra',
-    power: { type: 'pillar', icon: '🌱', name: 'Túnel de Tierra', cd: 5, desc: 'Corriendo, se zambulle bajo tierra, avanza por debajo levantando el terreno y emerge varios metros más adelante con una explosión de tierra y rocas. Quieta, la tierra se alza bajo sus pies: un pilar de roca, una plataforma segura sobre el peligro.' },
+    power: { type: 'pillar', icon: '🌱', name: 'Túnel de Tierra', cd: 10, desc: 'Corriendo, se zambulle bajo tierra, avanza por debajo levantando el terreno y emerge varios metros más adelante con una explosión de tierra y rocas. Quieta, la tierra se alza bajo sus pies: un pilar de roca, una plataforma segura sobre el peligro.' },
     stats: { speed: 7.3, jump: 8.8, swim: 4.6, carry: 2 },
     bio: 'Lince valiente, fuerte, ágil y leal. Su guadaña de energía manipula el terreno, crea barreras y aumenta su fuerza en combate. "La fuerza de la tierra también habita en la agilidad."',
   },
   {
     id: 'ambar', name: 'Ámbar', species: 'Águila', element: 'aire',
-    power: { type: 'rocket', icon: '🚀', name: 'Carrera Supersónica', cd: 6, desc: 'Ráfagas de aire salen de sus pies como propulsores de cohete: acelera de golpe con zancadas rapidísimas y una estela de viento, nubes y remolinos. Doble salto en el aire para volar.' },
+    power: { type: 'rocket', icon: '🚀', name: 'Carrera Supersónica', cd: 10, desc: 'Ráfagas de aire salen de sus pies como propulsores de cohete: acelera de golpe con zancadas rapidísimas y una estela de viento, nubes y remolinos. Doble salto en el aire para volar.' },
     stats: { speed: 7.2, jump: 9.4, swim: 3.4, carry: 1 },
     bio: 'Águila valiente, curiosa, ágil, estratégica y libre. Sus discos de viento y su módulo de alas le permiten volar a grandes alturas. "El viento no me detiene… me lleva más alto."',
   },
   {
     id: 'nilo', name: 'Nilo', species: 'Nutria', element: 'agua',
-    power: { type: 'surf', icon: '💦', name: 'Botas Propulsoras', cd: 7, desc: 'Sus botas tipo flyboard lanzan chorros de agua hacia abajo: avanza a saltos y deslizándose, con estela de burbujas y espuma. Sobre el agua corre sin que la corriente lo arrastre.' },
+    power: { type: 'surf', icon: '💦', name: 'Botas Propulsoras', cd: 10, desc: 'Sus botas tipo flyboard lanzan chorros de agua hacia abajo: avanza a saltos y deslizándose, con estela de burbujas y espuma. Sobre el agua corre sin que la corriente lo arrastre.' },
     stats: { speed: 6.6, jump: 8.4, swim: 5.0, carry: 3 },
     bio: 'Nutria valiente, curiosa, amigable, leal y cariñosa. "La emoción de descubrir el mundo… también se vive en el agua."',
   },
@@ -1367,7 +1367,7 @@ export class HeroModel {
     if (r.ex.weapon && s.surfing) r.ex.weapon.rotation.z = Math.sin(t * 8) * 0.05;
 
     this.glowPulse = damp(this.glowPulse, 0, 3, dt);
-    this.light.intensity = 0.35 + this.glowPulse * 5;
+    this.light.intensity = 0.35 + this.glowPulse * 1.8;
   }
 
   anchorFor(index) {
@@ -1540,7 +1540,7 @@ class GLBHero {
     b.position.y = damp(b.position.y, y, inWater ? 6 : 14, dt);
     if (s.power > 0) this.glowPulse = Math.max(this.glowPulse, Math.sin(clamp(s.power, 0, 1) * Math.PI));
     this.glowPulse = damp(this.glowPulse, 0, 3, dt);
-    this.light.intensity = 0.35 + this.glowPulse * 5;
+    this.light.intensity = 0.35 + this.glowPulse * 1.8; // destello suave al usar un poder (antes ×5: deslumbraba al personaje)
   }
   anchorFor(i) {
     return this.rig.anchors[i] || this.rig.anchors[0];

@@ -6,6 +6,7 @@ import { glowMat } from './vfx2.js';
 import { terrainH } from '../terrain.js';
 import { ui } from '../ui.js';
 import { Trail } from '../weapons/system.js';
+import { SPEED2 } from './speedfx2.js';
 
 // ACTUALIZACIÓN DE BOTONES: animaciones de VELOCIDAD (botón 1), ARMAS (7), Tornados y Garras de Ámbar, Visión de Lira.
 // Números en skills/config.js (HERO_SKILLS / HERO_BUTTONS).
@@ -485,6 +486,16 @@ export class SpeedFxSkill extends Skill {
     }
     if (k > 0.9 && Math.random() < 0.2) this.vfx.ring(p.pos.x, p.pos.y + p.H * 0.5, p.pos.z, { r0: 0.3, r1: 1.6, dur: 0.25, color: 0xffffff, opacity: 0.35 }); // barrera del sonido
   }
+}
+
+// mejoras del botón de velocidad (speedfx2.js): Kairo, Kira (brazos), Bada, Ámbar y Nilo
+{
+  const P = SpeedFxSkill.prototype, kyra0 = P.kyra, nilo0 = P.nilo;
+  Object.assign(P, { kairo: SPEED2.kairo, halley: SPEED2.halley, ambar: SPEED2.ambar, sandBody: SPEED2.sandBody, bubble2: SPEED2.bubble2, kyraArms: SPEED2.kyraArms, niloPlus: SPEED2.niloPlus, cleanup: SPEED2.cleanup });
+  P.kyra = function (dt, k, bx, bz, sp, step, turn) { kyra0.call(this, dt, k, bx, bz, sp, step, turn); this.kyraArms(dt, k, sp); };
+  P.nilo = function (dt, k, bx, bz, sp, step, turn) { nilo0.call(this, dt, k, bx, bz, sp, step, turn); this.niloPlus(dt, k, bx, bz, sp); };
+  // las burbujas de la estela de Nilo usan el nuevo diseño (reflejos, irisaciones y trayectorias variadas)
+  P.bubble = function (x, y, z, r) { const p = this.p, s = Math.hypot(p.vx, p.vz) || 1; this.bubble2(x, y, z, r * 1.15, -p.vx / s * 0.5, -p.vz / s * 0.5); };
 }
 
 /* ====================================================================== */
@@ -1193,53 +1204,127 @@ export class TornadoShieldSkill extends Skill {
 /*  ÁMBAR — GARRAS DE VIENTO: tres cortes de aire con forma de garra       */
 /* ====================================================================== */
 export class WindClawsSkill extends WeaponSkill {
+  // GARRAS DE VIENTO: tres zarpazos encadenados (derecha, izquierda y doble), con las garras como protagonistas.
+  // Cada zarpazo: preparación (el brazo sube y se carga atrás), corte rápido en diagonal con estela en las garras y
+  // recuperación; en el instante del corte salen cuchillas de viento comprimido en la dirección del movimiento.
   begin() { this.aim(this.def.range, 35); this.start(); return true; }
   build() {
     const d = this.def, pose = this.pose;
-    return [
-      { name: 'concentrar', dur: d.prep, enter: () => { this.p.powerAnim = 1; this.sfx('wind'); }, tick: (dt, k) => {
-        pose.rx = -0.25 * k; pose.spin = -0.4 * k;
-        const c = this.center(0.4), f = this.fwd; // las garras se recubren de viento afilado
-        for (let i = 0; i < 2; i++) this.g.fx.mist(c.x + f.x * 0.4 + rnd(-0.2, 0.2), c.y, c.z + f.z * 0.4 + rnd(-0.2, 0.2), 0xe0f4ff, 0.4);
-        if (Math.random() < 0.5) this.vfx.sparks(c.x + f.x * 0.4, c.y, c.z + f.z * 0.4, 0xffffff, 1, 1);
-      } },
-      { name: 'zarpazo', dur: 0.15, enter: this.slash, tick: (dt, k) => { pose.spin = lerp(-0.4, 0.7, back(k)); pose.rx = 0.25; } },
-      { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.spin = lerp(0.7, 0, ease(k)); pose.rx = lerp(0.25, 0, k); } },
+    const SW = [ // brazo, inclinación del corte (rad), cuchillas que lanza
+      { arm: 'R', tilt: 0.75, n: 1 },
+      { arm: 'L', tilt: -0.75, n: 1 },
+      { arm: 'B', tilt: 0, n: 2 },
     ];
+    const st = [{ name: 'concentrar', dur: d.prep, enter: this.enterClaws, tick: (dt, k) => { this.wind = ease(k); pose.rx = 0.12 * k; pose.sy = 1 - 0.05 * k; this.charge(k); } }];
+    SW.forEach((s, i) => {
+      const wind = i === 0 ? 0.08 : 0.11, cut = 0.09, follow = i === SW.length - 1 ? 0.18 : 0.06;
+      st.push({ name: `carga${i}`, dur: wind, enter: () => { this.sw = s; this.phase = 'carga'; }, tick: (dt, k) => { this.swK = -ease(k); pose.spin = (s.arm === 'R' ? -0.35 : s.arm === 'L' ? 0.35 : 0) * ease(k); pose.rx = 0.1; } });
+      st.push({ name: `corte${i}`, dur: cut, enter: () => { this.phase = 'corte'; this.slash(s, i); }, tick: (dt, k) => { this.swK = -1 + 2 * back(k); pose.spin = (s.arm === 'R' ? lerp(-0.35, 0.45, back(k)) : s.arm === 'L' ? lerp(0.35, -0.45, back(k)) : 0); pose.rx = 0.18 + (s.arm === 'B' ? 0.12 * k : 0); } });
+      st.push({ name: `sigue${i}`, dur: follow, enter: () => { this.phase = 'sigue'; }, tick: (dt, k) => { this.swK = 1 - 0.4 * ease(k); } });
+    });
+    st.push({ name: 'recuperacion', dur: d.recover, enter: () => { this.phase = 'fin'; }, tick: (dt, k) => { this.swK = 0.6 * (1 - ease(k)); this.wind = 1 - ease(k); pose.spin = lerp(pose.spin, 0, k); pose.rx = lerp(0.15, 0, k); this.clawK = 1 - ease(k); } });
+    return st;
   }
-  slash() {
-    const d = this.def, p = this.p, combat = this.combat, vfx = this.vfx;
-    this.sfx('snap'); this.shake(0.12);
-    for (let i = 0; i < d.cuts; i++) {
-      const off = (i - (d.cuts - 1) / 2), ang = p.facing + off * d.spreadDeg * DEG * 0.35;
-      const dir = V(Math.sin(ang), 0, Math.cos(ang)), side = V(-dir.z, 0, dir.x);
-      // cada corte: media luna vertical, ligeramente desplazada a un lado (tres zarpas paralelas)
-      const geo = new THREE.RingGeometry(0.75, 1.05, 24, 1, -0.9, 1.8);
-      const mat = new THREE.MeshBasicMaterial({ color: 0xe8f8ff, transparent: true, opacity: 0.95, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending });
-      const m = new THREE.Mesh(geo, mat);
-      m.userData.own = true;
+  // garras de energía en las manos (tres cuchillas curvas por mano) y estelas que siguen su recorrido
+  enterClaws() {
+    this.p.powerAnim = 1; this.sfx('wind');
+    this.swK = 0; this.wind = 0; this.clawK = 1; this.sw = null;
+    const mat = new THREE.MeshBasicMaterial({ color: 0xe8f8ff, transparent: true, opacity: 0.9, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+    mat.userData.own = true;
+    const geo = new THREE.ConeGeometry(0.025, 0.28, 4); geo.translate(0, 0.14, 0); geo.rotateX(Math.PI / 2);
+    this._cgeo = geo;
+    this.claws = {};
+    for (const S of ['L', 'R']) {
       const g = new THREE.Group();
-      m.rotation.y = Math.PI / 2; m.rotation.z = -0.5;
-      g.add(m);
-      g.position.set(p.pos.x + side.x * off * 0.55 + dir.x * 0.8, p.pos.y + p.H * 0.55, p.pos.z + side.z * off * 0.55 + dir.z * 0.8);
+      for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(geo, mat); m.position.set((i - 1) * 0.05, 0, 0); m.rotation.set(-0.35, (i - 1) * 0.18, 0); g.add(m); }
+      this.prop(g); this.claws[S] = g;
+    }
+    this.clawMat = mat;
+    this.trails = ['L', 'R'].map(() => new Trail(this.g.scene, 0xbfe8ff, 0xffffff, 14, 0.5));
+    this.track({ kill: () => { for (const t of this.trails) t.dispose(); if (this._cgeo) this._cgeo.dispose(); } });
+    // brazos: guardia con las garras delante → carga (brazo atrás y arriba) → corte en diagonal hacia el lado contrario
+    this.setBones((B, dt, t, fx) => {
+      const w = this.wind || 0, s = this.sw, k = this.swK || 0;
+      for (const S of ['L', 'R']) {
+        const sg = S === 'L' ? 1 : -1, act = s && (s.arm === S || s.arm === 'B') ? 1 : 0;
+        const up = act ? (k < 0 ? -k : 0) : 0, cut = act ? Math.max(0, k) : 0;
+        fx.rot(B[`upper_arm_${S}`], 1, 0, 0, -0.7 * w - 1.0 * up - 0.5 * cut);          // sube el brazo al cargar
+        fx.rot(B[`upper_arm_${S}`], 0, 0, 1, sg * (0.25 * w + 0.6 * up - 0.75 * cut));   // y lo cruza por delante al cortar
+        fx.rot(B[`forearm_${S}`], 1, 0, 0, -0.9 * w - 0.6 * up + 0.7 * cut);           // el codo se abre en el golpe (latigazo)
+        fx.rot(B[`hand_${S}`], 0, 0, 1, sg * (0.3 * up - 0.4 * cut));                   // la muñeca acompaña el arco
+      }
+      fx.rot(B.spine || B.spine_1, 0, 1, 0, s ? (s.arm === 'R' ? -0.3 : s.arm === 'L' ? 0.3 : 0) * k : 0); // el torso gira con el zarpazo
+    });
+  }
+  charge(k) {
+    for (const S of ['L', 'R']) {
+      const h = boneWorld(this, `hand_${S}`);
+      if (h && Math.random() < 0.6) this.g.fx.spark.emit(h.x + rnd(-0.08, 0.08), h.y + rnd(-0.08, 0.08), h.z + rnd(-0.08, 0.08), rnd(-0.6, 0.6), rnd(0, 0.8), rnd(-0.6, 0.6), 0.25, 0.06, 0.02, 0xffffff, 0x8ad0ff, 0.8, 0, 0, 2);
+    }
+    void k;
+  }
+  update(dt) {
+    const done = super.update(dt);
+    // garras y estelas pegadas a las manos (siguen cualquier animación)
+    if (this.claws) for (const [i, S] of ['L', 'R'].entries()) {
+      const h = boneWorld(this, `hand_${S}`), g = this.claws[S];
+      if (!h) { g.visible = false; continue; }
+      const f = this.p.facing;
+      g.visible = (this.clawK ?? 1) > 0.05;
+      g.position.copy(h).add(V(Math.sin(f) * 0.06, 0, Math.cos(f) * 0.06));
+      g.rotation.set(0, f, 0);
+      g.scale.setScalar(Math.max(0.001, (this.wind || 0.2) * (this.clawK ?? 1)));
+      const tip = V(h.x + Math.sin(f) * 0.32, h.y, h.z + Math.cos(f) * 0.32);
+      this.trails[i].push(h, tip);
+      const s = this.sw, on = this.phase === 'corte' && s && (s.arm === S || s.arm === 'B');
+      this.trails[i].update(dt, on || this.phase === 'sigue' && s && (s.arm === S || s.arm === 'B'));
+    }
+    if (this.clawMat) this.clawMat.opacity = 0.9 * (this.clawK ?? 1);
+    return done;
+  }
+  // en el instante del corte: cuchillas de viento comprimido que salen en la dirección de la garra
+  slash(s, i) {
+    const d = this.def, p = this.p, combat = this.combat, vfx = this.vfx;
+    this.sfx('snap'); this.shake(0.08 + 0.05 * i);
+    const t = this.combat.aimTarget(p.pos.x, p.pos.z, p.facing, 30 * DEG, d.range);
+    if (t) this.face(t.pos.x, t.pos.z);
+    for (let j = 0; j < s.n; j++) {
+      const off = s.n > 1 ? (j - 0.5) : 0, ang = p.facing + off * d.spreadDeg * DEG * 0.5;
+      const dir = V(Math.sin(ang), 0, Math.cos(ang)), side = V(-dir.z, 0, dir.x);
+      const g = new THREE.Group();
+      // filo: media luna estrecha y nítida + halo de aire más ancho y suave (sin deslumbrar)
+      const edgeG = new THREE.RingGeometry(0.92, 1.0, 32, 1, -1.0, 2.0), airG = new THREE.RingGeometry(0.62, 1.0, 32, 1, -1.0, 2.0);
+      const edge = new THREE.MeshBasicMaterial({ color: 0xf2fbff, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+      const air = new THREE.MeshBasicMaterial({ color: 0x9fd8f8, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide });
+      edge.userData.own = air.userData.own = true;
+      const m1 = new THREE.Mesh(edgeG, edge), m2 = new THREE.Mesh(airG, air);
+      for (const m of [m1, m2]) { m.rotation.y = Math.PI / 2; m.rotation.z = -0.4; }
+      const tiltG = new THREE.Group(); tiltG.rotation.z = s.tilt + off * 0.4; // inclinado como el zarpazo
+      tiltG.add(m1, m2); g.add(tiltG);
+      const sx = s.arm === 'R' ? -0.25 : s.arm === 'L' ? 0.25 : off * 0.5;
+      g.position.set(p.pos.x + side.x * sx + dir.x * 0.9, p.pos.y + p.H * 0.6, p.pos.z + side.z * sx + dir.z * 0.9);
       g.rotation.y = ang;
       const hits = new Set(), life = d.range / d.speed;
       vfx.add(g, life, (it, dt) => {
         g.position.addScaledVector(dir, d.speed * dt);
         const k = it.t / life;
-        mat.opacity = 0.95 * (1 - k * k);
-        g.scale.setScalar(1 + 0.4 * k);
-        if (Math.random() < 0.5) this.g.fx.mist(g.position.x, g.position.y, g.position.z, 0xf0f8ff, 0.4);
-        for (const t of combat.inCircle(g.position.x, g.position.z, d.width * 0.5)) {
-          if (hits.has(t)) continue;
-          hits.add(t);
-          combat.damage(t, d.damage);
-          combat.push(t, dir.x, dir.z, d.force);
-          vfx.sparks(g.position.x, g.position.y, g.position.z, 0xffffff, 6, 2.6);
+        edge.opacity = 0.85 * (1 - k * k); air.opacity = 0.28 * (1 - k);
+        g.scale.setScalar(1 + 0.5 * k);
+        tiltG.rotation.x += dt * 2; // gira un poco sobre sí misma (aire en movimiento)
+        if (Math.random() < 0.35) this.g.fx.mist(g.position.x - dir.x * 0.5, g.position.y, g.position.z - dir.z * 0.5, 0xeef8ff, 0.35);
+        for (const tg of combat.inCircle(g.position.x, g.position.z, d.width * 0.5)) {
+          if (hits.has(tg)) continue;
+          hits.add(tg);
+          combat.damage(tg, d.damage);
+          combat.push(tg, dir.x, dir.z, d.force);
+          vfx.sparks(g.position.x, g.position.y, g.position.z, 0xffffff, 6, 2.4);
         }
-        if (it.t >= life - 0.02) geo.dispose();
+        if (it.t >= life - 0.02) { edgeG.dispose(); airG.dispose(); }
       });
     }
+    // corte en el aire junto a la garra (arco blanco breve)
+    const h = boneWorld(this, s.arm === 'L' ? 'hand_L' : 'hand_R');
+    if (h) this.vfx.ring(h.x, h.y, h.z, { r0: 0.2, r1: 1.2, dur: 0.18, color: 0xe8f8ff, opacity: 0.4 });
   }
 }
 

@@ -680,7 +680,7 @@ export const ui = {
     this._abKey = null;
   },
   // r: fracción de recarga (1 = recién usado) · secs: segundos que faltan · live: poder activo que admite otra pulsación
-  setAbilityCds(arr, secs = [], live = []) {
+  setAbilityCds(arr, secs = [], live = [], act = []) {
     const btns = $('skillbar').querySelectorAll('.skill');
     arr.forEach((r, i) => {
       const b = btns[i];
@@ -694,6 +694,12 @@ export const ui = {
       b._cool = cooling;
       b.classList.toggle('cooling', cooling);
       b.classList.toggle('live', !!live[i]);
+      // ACTIVA: borde luminoso y una barra que se vacía con el tiempo que le queda
+      const a = act[i] || 0;
+      b.classList.toggle('active', a > 0);
+      let bar = b.querySelector('.actb');
+      if (a > 0 && !bar) { bar = document.createElement('i'); bar.className = 'actb'; b.appendChild(bar); }
+      if (bar) bar.style.width = `${Math.round(Math.min(1, a) * 100)}%`;
     });
   },
   setRescued(n, total) {
@@ -709,6 +715,11 @@ export const ui = {
     const el = $('hud-time');
     el.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
     el.classList.toggle('low', s <= 30);
+  },
+  // cronómetro detenido (visión del Lince): se queda quieto y se tiñe de verde-dorado con ⏸
+  timeFrozen(on) {
+    const el = $('hud-time');
+    if (el) el.classList.toggle('frozen', !!on);
   },
   setScore(v) {
     $('score-val').textContent = v.toLocaleString('es-ES');

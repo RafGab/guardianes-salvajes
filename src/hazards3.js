@@ -197,7 +197,7 @@ export class RockslideHazard {
         player.vx = b.dirx * 10 - b.dirz * 4; player.vz = b.dirz * 10 + b.dirx * 4; player.vy = Math.max(player.vy, 5);
         chase.shake(0.45);
         audio.noiseBurst(0.35, 260, 0.45, 'lowpass');
-        ctx.game.hurtHero(HEALTH.debris * (b.size > 1.1 ? 1.5 : 1), { from: { x, z }, label: '🪨 ¡Roca rodando!', sub: 'No te quedes en los canales de las pedreras · usa un escudo' });
+        if (ctx.game.hurtHero(HEALTH.debris * (b.size > 1.1 ? 1.5 : 1), { from: { x, z }, label: '🪨 ¡Roca rodando!', sub: 'No te quedes en los canales de las pedreras · usa un escudo' })) player.crushT = 0.75; // la roca lo aplasta
       }
     }
   }

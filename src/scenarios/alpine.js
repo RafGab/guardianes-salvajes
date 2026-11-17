@@ -6,7 +6,7 @@ export const seed = 7707;
 const look = {
   horizon: 0xb8c8d8, zenith: 0x5a6e88, cloudLo: [0.4, 0.44, 0.5], cloudHi: [0.9, 0.94, 1.0], cover: 0.75, fog: 0xb0c0d0, fogD: 0.0062,
   hemi: [0xd4e2f2, 0x5a6a80, 0.78], sun: [0xf0f6ff, 1.8], exposure: 0.92, lightning: false, birds: false,
-  precip: { color: [0.95, 0.97, 1.0], alpha: 0.5, speed: 7, len: 0.22, wind: [7, 0, 2.5] },
+  precip: { color: [0.95, 0.97, 1.0], alpha: 0.3, speed: 7, len: 0.18, wind: [7, 0, 2.5] }, // nevada visible pero ligera
 };
 
 const LAKE = { x: 16, z: -14, r: 26 };

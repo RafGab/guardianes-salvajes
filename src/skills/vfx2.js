@@ -142,7 +142,8 @@ export class Vfx2 {
 
   /* ---------------- CIELO: astro que mira a la cámara ---------------- */
   // Se coloca detrás del héroe (visto desde la cámara), alto en el cielo. kind: sun | moon | blood
-  skyBody(kind, { size = 9, dist = 46, life = 4, glow = 0xffc860, side = 0 } = {}) {
+  // hold: true → sin duración fija; aparece y se queda hasta h.end() (se apaga en 1 s)
+  skyBody(kind, { size = 9, dist = 46, life = 4, glow = 0xffc860, side = 0, hold = false } = {}) {
     const g = new THREE.Group();
     // siempre visible (va en la franja alta del encuadre, lejos del héroe): no lo tapan árboles ni edificios
     const disc = new THREE.Mesh(new THREE.PlaneGeometry(size, size), new THREE.MeshBasicMaterial({ map: discTex(kind), transparent: true, depthWrite: false, depthTest: false, fog: false, opacity: 0 }));
@@ -163,10 +164,18 @@ export class Vfx2 {
       g.position.copy(cam.position).addScaledVector(fwd, dist);
       g.quaternion.copy(cam.quaternion);
     };
-    h.it = this.vfx.add(g, life, (it) => {
-      const k = it.t / life;
-      h.k = k < 0.15 ? k / 0.15 : k > 0.85 ? (1 - k) / 0.15 : 1;
-      h.rise = ease(clamp(k / 0.25, 0, 1));
+    h.endAt = 0;
+    h.end = () => { if (!h.endAt && h.it) h.endAt = h.it.t + 0.001; };
+    h.it = this.vfx.add(g, hold ? 0 : life, (it) => {
+      const k = hold ? Math.min(0.5, it.t / 4) : it.t / life;
+      if (hold) {
+        h.k = Math.min(1, it.t / 0.6) * (h.endAt ? Math.max(0, 1 - (it.t - h.endAt)) : 1);
+        h.rise = ease(clamp(it.t / 1.2, 0, 1));
+        if (h.endAt && it.t - h.endAt > 1) { this.vfx.kill(it); return; }
+      } else {
+        h.k = k < 0.15 ? k / 0.15 : k > 0.85 ? (1 - k) / 0.15 : 1;
+        h.rise = ease(clamp(k / 0.25, 0, 1));
+      }
       place();
       disc.material.opacity = h.k;
       halo.material.opacity = 0.55 * h.k * (h.haloMul ?? 1);

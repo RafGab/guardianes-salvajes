@@ -177,7 +177,7 @@ export class SandstormHazard {
     this.clearT = Math.max(0, this.clearT - dt);
     const target = this.clearT > 0 ? 0 : clamp(wave, 0, 1);
     this.whiteout = damp(this.whiteout, target, 1.5, dt);
-    world.setFog(world.fogBase * (1 + this.whiteout * 3.4));
+    world.setFog(world.fogBase * (1 + this.whiteout * 1.3)); // antes ×3,4: la niebla de arena ocultaba enemigos y personas
     if (this.whiteout > 0.55) ctx.tip('lost');
     const ang = 0.4 + Math.sin(t * 0.07) * 0.25;
     const s = 0.4 + this.whiteout * 0.7;
@@ -230,8 +230,9 @@ export class SandstormHazard {
         ctx.ui.banner('find', '🏜️ ¡Una duna tapa el camino!', 'El viento 🌀 la despeja');
       }
     }
-    if (Math.random() < dt * 30) fx.dustPuff(player.pos.x + rnd(-18, 18), 0.4 + terrainH(player.pos.x, player.pos.z), player.pos.z + rnd(-18, 18), 2.4);
-    ctx.ui.setOverlay('dust', this.whiteout * 0.5);
+    // nubes de polvo a ras de suelo, lejos de la cámara (no delante de la vista)
+    if (Math.random() < dt * 12) { const a = rnd(0, Math.PI * 2), r = rnd(7, 20), x = player.pos.x + Math.cos(a) * r, z = player.pos.z + Math.sin(a) * r; if ((x - player.pos.x) * (ctx.camera.position.x - player.pos.x) + (z - player.pos.z) * (ctx.camera.position.z - player.pos.z) < 0) fx.dustPuff(x, 0.3 + terrainH(x, z), z, 1.8); }
+    ctx.ui.setOverlay('dust', this.whiteout * 0.18); // velo de polvo en pantalla muy suave
   }
 
   dispose() {

@@ -13,7 +13,7 @@ export const TOON = {
   gradeSat: 1.22, gradeCon: 1.06, gradeVig: 0.2, // corrección de color final (main.js)
   gradeLift: [0.02, 0.015, 0.045], // tinte frío en las sombras (aspecto pintado)
   gradeWarm: [1.05, 1.0, 0.93],   // tinte cálido en las luces
-  bloom: { strength: 0.78, radius: 0.95, threshold: 0.88 }, // resplandor suave de las luces y los efectos
+  bloom: { strength: 0.46, radius: 0.6, threshold: 0.92 }, // resplandor suave y contenido: las luces y los efectos brillan sin deslumbrar ni tapar personajes (antes 0.78 · 0.95 · 0.88)
 };
 
 let _grad = null;
@@ -36,7 +36,7 @@ export function toonMat(params = {}) {
 // Cielo de cada región: [cénit, horizonte]. Se mezcla con el cielo propio del escenario (SKY_MIX) para conservar su ambiente.
 const SKY = {
   campfire: [0x4a78c8, 0xffb27a], flood: [0x4a7fc8, 0xbcd8e8], fire: [0x7a3a6a, 0xff9a5a], quake: [0x4f9be0, 0xf7dcb0], rockslide: [0x55667e, 0xc8ccd6],
-  hurricane: [0x3a6fb0, 0xa8d4e4], sandstorm: [0x6aa8d8, 0xf6d89a], ice: [0x6aa6e8, 0xe4f2ff], extreme: [0x5a4fc0, 0xd6a8f0],
+  hurricane: [0x3a6fb0, 0xa8d4e4], sandstorm: [0x6aa8d8, 0xf6d89a], ice: [0x6aa6e8, 0xe4f2ff], extreme: [0x2a1416, 0xc8602a], // Apocalia: cielo de humo rojizo
 };
 const SKY_MIX = 0.6;
 

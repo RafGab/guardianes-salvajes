@@ -7,8 +7,8 @@ export const HERO_SKILLS = {
   jago: {
     // TRANSFORMACIÓN EN ROCA: se hace bola y rueda a gran velocidad (lo controla el jugador); arrolla enemigos
     rock: {
-      id: 'rock', name: 'Transformación en Roca', icon: '🥌', cd: 12,
-      transformT: 0.5, rollT: 5, recover: 0.45,  // transformación, rodar, volver a su forma (vuelve a pulsar para salir antes)
+      id: 'rock', name: 'Transformación en Roca', icon: '🥌', cd: 10,
+      transformT: 0.62, rollT: 4.4, recover: 0.5, // anticipación + transformación, rodar, volver a su forma (≈ 5 s; vuelve a pulsar para salir antes)
       speedMul: 2.2, radius: 0.95,                // velocidad (× la normal) y radio de la bola (× media altura del héroe)
       hitDamage: 10, hitForce: 12, hitEvery: 0.6, // golpe al arrollar (por objetivo, cada hitEvery s)
       shake: 0.08,
@@ -16,7 +16,7 @@ export const HERO_SKILLS = {
     skill: {
       id: 'tail', name: 'Cola Elástica', icon: '🪢', cd: 7,
       prep: 0.16, recover: 0.25,
-      delay: 0.5,                   // espera de activación (s): la cola empieza a moverse medio segundo después de pulsar
+      delay: 0.22,                  // espera de activación (s): la cola responde casi al instante (antes 0,5 s)
       range: 16, coneDeg: 55,       // alcance y ángulo de puntería (grados a cada lado)
       hookSpeed: 38,                // velocidad a la que la cola sale disparada
       swingSpeed: 19,               // velocidad del balanceo hacia el anclaje
@@ -33,11 +33,21 @@ export const HERO_SKILLS = {
     // OBSIDIANA — AVALANCHA: oleada de fragmentos de obsidiana que avanza por el escenario
     obsidian: {
       id: 'obsidian', name: 'Obsidiana: Avalancha', icon: '🖤', cd: 18,
-      prep: 1.25, exec: 2.4, recover: 0.5, // prep: postura de combate y armadura de roca en los brazos
+      prep: 1.0, exec: 2.4, recover: 0.45, // prep: postura de combate y armadura de roca en los brazos
       length: 22, width: 8,         // recorrido y anchura de la avalancha
       shards: 110,                  // fragmentos
       damage: 24, force: 16, rootT: 0.8,
       shake: 0.45,
+    },
+    // GIGANTE DE ROCA (escudo): Jaglion crece ×1,75 y su cuerpo se vuelve piedra (sin cambiar su diseño); 4 s de protección.
+    // Pisadas que hacen temblar el suelo, empuja a los enemigos al chocar y termina con un golpe al suelo.
+    giant: {
+      id: 'giant', name: 'Gigante de Roca', icon: '🗿', cd: 12, ownShield: true,
+      prep: 0.9, exec: 2.7, recover: 0.6,   // posición firme + roca + crecer · forma gigante · recuperar su tamaño
+      scale: 1.75,                          // altura final (× la normal): imponente pero cabe en el escenario y en cámara
+      speedMul: 0.82,                       // pasos pesados: algo más lento, pero zancadas largas
+      stepShake: 0.12, bodyPush: 9, bodyDamage: 4,
+      slamRadius: 5.5, slamDamage: 16, slamForce: 14,
     },
     // ARMA — KATANA: tajo rápido en arco delante del héroe
     katana: { id: 'katana', name: 'Katana', icon: '🗡️', cd: 1.3, prep: 0.12, swing: 0.22, recover: 0.2, range: 3.4, arcDeg: 120, damage: 8, force: 5, color: 0xd8e8ff },
@@ -47,8 +57,8 @@ export const HERO_SKILLS = {
   halley: {
     skill: {
       id: 'haboob', name: 'Haboob Auricular', icon: '🌪️', cd: 12,
-      prep: 0.55, exec: 3.4, recover: 0.5,
-      rootT: 1.4,                   // segundos (tras la preparación) que el héroe permanece plantado
+      prep: 0.4, exec: 3.4, recover: 0.4,
+      rootT: 0.9,                   // segundos (tras la preparación) que controla la tormenta con las orejas
       speed: 7.5,                   // avance de la tormenta
       width: 6.5,                   // anchura (diámetro) de la tormenta
       push: 9, damage: 5,           // empuje (m/s) y daño por segundo a pesados
@@ -61,13 +71,14 @@ export const HERO_SKILLS = {
     // Vuelve a pulsar para teletransportarte a una (la copia estalla en arena y ciega)
     mirage: {
       id: 'mirage', name: 'Espejismos', icon: '🪞', cd: 11,
-      prep: 0.45, copies: 3, radius: 2.3, life: 6.5, // número de copias (= golpes que absorbe), radio de la órbita y duración
+      ownShield: true,
+      prep: 0.3, copies: 3, radius: 2.3, life: 4, // número de copias (= golpes que absorbe), radio de la órbita y duración (escudo: 4 s)
       burstRadius: 3.6, blindT: 2.6, damage: 6,                // estallido de arena al usar una copia
     },
     // VUELO DE OREJAS: despega con sus enormes orejas, vuela un tiempo limitado
     ears: {
       id: 'ears', name: 'Vuelo de Orejas', icon: '👂', cd: 14,
-      takeoffT: 0.5, flyT: 6,       // despegue y tiempo de vuelo
+      takeoffT: 0.5, flyT: 12,      // despegue y tiempo de vuelo (el doble que antes: 6 → 12 s)
       speed: 7, climb: 5.5, sink: 1.1, ceil: 7.5, // velocidad, subida (mantén SALTAR), descenso suave y altura máxima
       flap: 26,                     // velocidad del aleteo de las orejas
     },
@@ -91,7 +102,7 @@ export const HERO_SKILLS = {
     },
     special: {
       id: 'wheel', name: 'Rueda de las Estaciones', icon: '☸️', cd: 22,
-      prep: 0.5, exec: 2.6, recover: 0.5,
+      prep: 0.35, exec: 2.6, recover: 0.4,
       radius: 6.8, tick: 0.35,      // radio y cada cuánto aplica los cuatro efectos
       spinSpeed: 7,                 // vueltas del héroe (rad/s)
       damage: 3, force: 5, rootT: 0.7, slowF: 0.6, slowT: 2.0,
@@ -99,7 +110,7 @@ export const HERO_SKILLS = {
     // AURORA POLAR: cortinas de aurora en el cielo y una zona de energía polar que congela
     aurora: {
       id: 'aurora', name: 'Aurora Polar', icon: '🌌', cd: 20,
-      prep: 0.7, exec: 3.2, recover: 0.6,    // duración total 4,5 s (antes 7,9 s), como las demás habilidades
+      prep: 0.5, exec: 3.2, recover: 0.5,    // la aurora responde antes (prep 0,7 → 0,5 s)
       radius: 8, tick: 0.5,         // zona y frecuencia de los pulsos
       slowF: 0.35, damage: 2.5, freezeEvery: 2.0, freezeT: 1.1, // ralentiza, daña y congela cada cierto tiempo
       cdHeal: 0.35,                 // dentro de la zona, las recargas del héroe avanzan un 35 % más rápido
@@ -107,7 +118,7 @@ export const HERO_SKILLS = {
     // SOLSTICIO DE VERANO: aura solar dorada y expansión de luz cálida
     solstice: {
       id: 'solstice', name: 'Solsticio de Verano', icon: '🌞', cd: 20,
-      prep: 1.1, exec: 1.1, recover: 0.6,
+      prep: 0.75, exec: 1.1, recover: 0.5,
       radius: 10, damage: 20, force: 15, burnT: 3, burnDps: 3, // expansión: daño, empuje y quemadura
       rays: 10,
     },
@@ -119,7 +130,7 @@ export const HERO_SKILLS = {
   ambar: {
     skill: {
       id: 'dive', name: 'Picado del Trueno', icon: '⚡', cd: 9,
-      prep: 0.55, charge: 0.7, recover: 0.45,
+      prep: 0.4, charge: 0.55, recover: 0.4,
       ascendHeight: 9.5,            // altura a la que asciende
       range: 20,                    // distancia máxima del objetivo
       diveSpeed: 38,
@@ -134,7 +145,7 @@ export const HERO_SKILLS = {
       camDist: 15, camPitch: 0.62,  // cámara aérea
     },
     // ESCUDO — TORNADOS ENVOLVENTES: varios tornados giran a su alrededor; la protegen y apartan a los enemigos
-    tornado: { id: 'tornado', name: 'Tornados Envolventes', icon: '🌪️', cd: 15, prep: 0.4, exec: 5, recover: 0.4, count: 4, orbit: 2.6, radius: 4.2, push: 9, damage: 1.5 },
+    tornado: { id: 'tornado', name: 'Tornados Envolventes', icon: '🌪️', cd: 15, ownShield: true, prep: 0.3, exec: 3.7, recover: 0.4, count: 4, orbit: 2.6, radius: 4.2, push: 9, damage: 1.5 },
     // ARMA — DOS DISCOS: lanza uno de sus dos discos de fuego; rebota entre enemigos y vuelve a su mano
     disc: { id: 'disc', name: 'Dos Discos', icon: '🥏', cd: 1.6, prep: 0.15, recover: 0.2, range: 16, speed: 30, bounces: 2, bounceRange: 8, damage: 6 },
     // GARRAS DE VIENTO: zarpazo que lanza tres cortes de aire con forma de garra
@@ -146,7 +157,7 @@ export const HERO_SKILLS = {
     // GÉISER: grietas de magma en el suelo y columnas volcánicas que golpean a los enemigos cercanos
     geyser: {
       id: 'geyser', name: 'Géiser', icon: '🌋', cd: 11,
-      prep: 0.55, crackT: 0.75, exec: 1.6, recover: 0.4,
+      prep: 0.4, crackT: 0.55, exec: 1.6, recover: 0.35,
       count: 7, ring: 5.5,          // géiseres y radio del anillo (más uno bajo cada enemigo cercano)
       radius: 1.7, height: 8, damage: 9, force: 7, burnT: 2, burnDps: 2.5,
       shake: 0.35,
@@ -154,14 +165,14 @@ export const HERO_SKILLS = {
     // LAVA NEGRA: corriente de lava oscura que se extiende por el suelo y deja una zona ardiente
     lava: {
       id: 'blacklava', name: 'Lava Negra', icon: '🌑', cd: 12,
-      prep: 0.5, spreadT: 1.7, recover: 0.4,
+      prep: 0.38, spreadT: 1.7, recover: 0.35,
       length: 24, width: 8, zoneT: 8,     // recorrido, anchura y vida de la zona (río principal; salen dos brazos a los lados)
       damage: 10, dps: 4, slowF: 0.5, force: 5,
     },
     skill: {
       id: 'tongue', name: 'Lengua Camaleónica', icon: '👅', cd: 6.5,
       prep: 0.14, recover: 0.2,
-      delay: 0.5,                   // espera de activación (s): igual que la cola de Jaglion
+      delay: 0.22,                  // espera de activación (s): igual que la cola de Jaglion (antes 0,5 s)
       range: 15, coneDeg: 40,
       shootT: 0.16, retractT: 0.3,  // extensión y retracción de la lengua
       pullSpeed: 24, propelSpeed: 26,
@@ -188,7 +199,7 @@ export const HERO_SKILLS = {
     // TSUNAMI: una ola enorme se forma detrás de la Nutria y arrasa hacia delante
     tsunami: {
       id: 'tsunami', name: 'Tsunami', icon: '🌊', cd: 16,
-      gatherT: 1.0, formT: 0.6, travelT: 2.3, crashT: 0.6, recover: 0.4,
+      gatherT: 0.7, formT: 0.45, travelT: 2.3, crashT: 0.6, recover: 0.35,
       length: 22, width: 12, height: 5,    // recorrido, anchura y altura de la ola (zona de impacto)
       visH: 6.5,                           // altura visual de la ola
       damage: 18, carry: 13,               // daño (una vez por enemigo) y arrastre (m/s)
@@ -197,7 +208,8 @@ export const HERO_SKILLS = {
     // sobre un remolino gigante con núcleo oscuro que absorbe enemigos y objetos hacia su centro
     maelstrom: {
       id: 'maelstrom', name: 'Maelstrom', icon: '🌀', cd: 20,
-      prep: 0.6, exec: 4.6, recover: 0.5,          // formarse, proteger y romperse
+      ownShield: true,
+      prep: 0.5, exec: 3.5, recover: 0.5,          // formarse, proteger y romperse (escudo: 4 s)
       shieldR: 1.9, shieldH: 1.7,                  // radio de la cúpula y altura (× altura del héroe)
       hover: 1.3,                                  // la Nutria flota sobre el remolino (m)
       radius: 7.5, pull: 7, dps: 3.5, coreRadius: 1.4, // remolino de absorción: radio, succión, daño y núcleo (los esbirros desaparecen)
@@ -212,34 +224,46 @@ export const HERO_SKILLS = {
     // UMBRA — ECLIPSE SOLAR: el mundo se oscurece, la luna tapa el sol y libera energía oscura (ciega y marca)
     umbra: {
       id: 'umbra', name: 'Umbra · Eclipse Solar', icon: '🌘', cd: 15,
-      prep: 1.3, exec: 2.6, recover: 0.5,
+      ownShield: true,
+      prep: 0.8, exec: 3.2, recover: 0.4, // 4 s de escudo solar
       radius: 9, pulses: 3, damage: 6, blindT: 3, markT: 6, // pulsos de oscuridad: daño, cegar y marcar (+50 % daño recibido)
     },
     // PENUMBRA — ECLIPSE LUNAR: esfera de luz lunar que protege y frena a los enemigos
     penumbra: {
       id: 'penumbra', name: 'Penumbra · Eclipse Lunar', icon: '🌑', cd: 16,
-      prep: 0.6, exec: 5, recover: 0.4,
+      ownShield: true,
+      prep: 0.5, exec: 3.5, recover: 0.4, // 4 s de escudo lunar
       radius: 5.5, wave: 0.9,       // radio de la esfera y cada cuánto sale una onda plateada
       slowF: 0.4, damage: 2, force: 6, speedMul: 1.2, // dentro: el héroe es intocable y más rápido; los enemigos se frenan
     },
     // LUNA DE SANGRE: luna roja gigante, el cielo se tiñe de rojo y una onda carmesí devastadora
     blood: {
       id: 'bloodmoon', name: 'Luna de Sangre', icon: '🔴', cd: 26,
-      prep: 1.8, exec: 1.4, recover: 0.7,
+      prep: 1.3, exec: 1.4, recover: 0.5, // carga en 1,3 s y queda esperando la orden de lanzar
       radius: 13, damage: 22, force: 18, bolts: 6, boltDamage: 4, markT: 5,
     },
     // ARMA — GUADAÑA DE RAYO: barrido amplio y onda de rayo en media luna que atraviesa
     scythe: { id: 'scythe', name: 'Guadaña', icon: '⚡', cd: 1.4, prep: 0.22, swing: 0.24, recover: 0.25, reach: 3.4, arcDeg: 170, range: 16, speed: 26, damage: 8, waveDamage: 5, force: 5 },
     // VISIÓN ESPECIAL: ve enemigos, trampas, personas ocultas y puntos débiles a través de las paredes
-    // + DETENCIÓN DEL TIEMPO: el entorno se para timeStop s (fijo, no se alarga); el cronómetro de la misión sigue. Dura la mitad que antes (9,8 → 4,9 s)
-    vision: { id: 'vision', name: 'Visión Especial', icon: '👁️', cd: 16, prep: 0.25, exec: 4.5, recover: 0.15, range: 130, weakMul: 1.5, timeStop: 10 }, // 10 s de tiempo detenido (5 + 5) para buscar a las personas
+    // + DETENCIÓN DEL TIEMPO: el entorno y el cronómetro de la misión se paran timeStop s (fijo, no se alarga ni se acumula)
+    vision: { id: 'vision', name: 'Visión Especial', icon: '👁️', cd: 16, prep: 0.25, exec: 4.5, recover: 0.15, range: 130, weakMul: 1.5, timeStop: 5 }, // 5 s EXACTOS: se detiene el entorno y el CRONÓMETRO REAL de la misión
   },
 };
 
-// ORDEN DE LOS BOTONES de cada héroe (el botón 1, VELOCIDAD, es el poder base de heroes.js).
+// TIEMPOS DE LOS BOTONES (temporizadores independientes; nunca pausan el juego ni bloquean el movimiento).
+// act = segundos que dura activa · rec = recarga que empieza al terminar. ARMA y ESPECIAL conservan su propia recarga.
+export const BUTTON_TIMES = {
+  velocidad: { act: 5, rec: 5 },
+  poder: { act: 6, rec: 7 },   // PODER: además de su ataque, 6 s de poder aumentado (+25 % de daño)
+  escudo: { act: 4, rec: 8 },  // ESCUDO: 4 s de protección total (golpes, peligros y aplastamiento)
+};
+export const POWER_BUFF = 1.25;
+
+// ORDEN DE LOS BOTONES de cada héroe (el botón 1, VELOCIDAD, es el poder base de heroes.js, salvo que el héroe
+// tenga una habilidad con papel 'velocidad': Jaglion usa su Transformación en Roca).
 // 1 Velocidad · 2 Poder principal · 3 Escudo · 4 Arma · 5 Especial. Kyra tiene dos ataques y Lira dos escudos (6 botones).
 export const HERO_BUTTONS = {
-  jago: [['obsidian', 'poder'], ['rock', 'escudo'], ['katana', 'arma'], ['skill', 'especial']],
+  jago: [['rock', 'velocidad'], ['obsidian', 'poder'], ['giant', 'escudo'], ['katana', 'arma'], ['skill', 'especial']],
   kairo: [['lava', 'poder'], ['geyser', 'escudo'], ['hammer', 'arma'], ['skill', 'especial']],
   halley: [['skill', 'poder'], ['mirage', 'escudo'], ['spear', 'arma'], ['ears', 'especial']],
   nilo: [['tsunami', 'poder'], ['maelstrom', 'escudo'], ['boomerang', 'arma'], ['skill', 'especial']],
@@ -342,6 +366,7 @@ export const HEALTH = {
   weed: 4,               // planta rodadora / objeto ligero
   fireDps: 7,            // fuego (por segundo, dentro de las llamas)
   lavaDps: 9,            // lava (por segundo)
+  crush: 18,             // objeto pesado que cae y aplasta (el escudo lo anula)
 };
 
 // BOTIQUINES Y BEBIDAS: recuperación, capacidad de la mochila y aspecto. `flat` = puntos; `pct` = % de la vida máxima.

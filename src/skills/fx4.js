@@ -632,7 +632,10 @@ export class WaterShield {
         float flick = 1.0 - uWarn * (0.5 + 0.5 * sin(uT * 26.0));
         vec3 c = mix(uDeep, uLight, clamp(flow * 0.9 + edge * 0.8, 0.0, 1.0));
         c += uFoam * (streak * 0.55 + caus * 0.35 + vRip * 1.4 + lip * 1.2);
-        float a = (0.16 + edge * 0.62 + streak * 0.22 + caus * 0.12) * flick + vRip * 0.9 + lip * 0.8;
+        // centro de la cúpula casi transparente (se ve a la Nutria y su animación); el agua se concentra en los bordes
+        float clearC = 0.25 + 0.75 * edge;
+        float a = (0.05 + edge * 0.62 + (streak * 0.22 + caus * 0.12) * clearC) * flick + vRip * 0.9 * clearC + lip * 0.8;
+        c = mix(c, uLight, 0.0) * mix(0.75, 1.0, edge); // menos brillo en el centro
         a *= vis * uOp * mix(1.0, 0.45, uBack);
         gl_FragColor = vec4(c, clamp(a, 0.0, 0.95));
       }`;
@@ -739,7 +742,7 @@ export class WaterShield {
     for (const m of [this.back, this.front]) m.position.y = this.Hh / 2 - 0.12;
     for (const h of u.uHits.value) h.w = Math.min(9, h.w + dt);
     this.curU.uT.value = t; this.curU.uGrow.value = grow; this.curU.uFall.value = fall;
-    this.curU.uOp.value = (1 - warn * 0.5 * (0.5 + 0.5 * Math.sin(t * 26))) * (1 - fall);
+    this.curU.uOp.value = 0.6 * (1 - warn * 0.5 * (0.5 + 0.5 * Math.sin(t * 26))) * (1 - fall); // corrientes más suaves: no tapan a la Nutria
     this.currents.rotation.y += dt * (2.6 + (1 - grow) * 6);
     this.currents.scale.setScalar(pop * spread);
     this.foamU.uT.value = t; this.foamU.uOp.value = Math.min(1, grow * 1.5) * (1 - fall * 0.5);

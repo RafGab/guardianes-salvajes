@@ -15,7 +15,7 @@ const THEMES = {
   hurricane: { shape: 'round', col: [0x3a9f9c, 0x66bfc2, 0xa6e0e4], cloud: 0xeaf6ff },
   sandstorm: { shape: 'dune',  col: [0xd8a042, 0xe9c476, 0xf4dcaa], cloud: 0xfff2d6 },
   ice:       { shape: 'peak',  col: [0x86b8e0, 0xb4d6f0, 0xe2f1fb], cloud: 0xffffff },
-  extreme:   { shape: 'round', col: [0x6a7bd0, 0x9a9ae2, 0xc8c2f2], cloud: 0xf4eeff },
+  extreme:   { shape: 'cone',  col: [0x2e2220, 0x4a302a, 0x6a4232], cloud: 0x5a4440, glow: true }, // Apocalia: montañas fracturadas bajo nubes de humo y ceniza
 };
 
 // Capas: radio del anillo, nº de formas, tamaño base, factor de parallax (más lejos = sigue más a la cámara)

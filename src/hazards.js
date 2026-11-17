@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { CrushHazard } from './crush.js';
 import { CFG, terrainH } from './terrain.js';
 import { clamp, damp, smoothstep, makeRng, TAU } from './utils.js';
 import { HurricaneHazard, SandstormHazard } from './hazards2.js';
@@ -623,8 +624,8 @@ class IceHazard {
       }
       if (w.light) w.light.intensity = damp(w.light.intensity, 9 + Math.sin(performance.now() / 110) * 2, 6, dt);
     }
-    // copos brillantes cerca
-    if (Math.random() < dt * 18) fx.snow(player.pos.x, player.pos.y + 1, player.pos.z);
+    // copos brillantes cerca (pocos: no se quedan delante de la vista)
+    if (Math.random() < dt * 6) fx.snow(player.pos.x, player.pos.y + 1, player.pos.z);
   }
 
   // efectos de ambiente del glaciar (ligeros): ráfagas visibles, nieve en movimiento, pequeños aludes de nieve,
@@ -634,10 +635,12 @@ class IceHazard {
     // ráfagas visibles (más cuanto más fuerte sopla)
     for (const q of this.streaks) {
       if (q.life <= 0) {
-        if (Math.random() < dt * 22 * gust * gust) {
+        if (Math.random() < dt * 10 * gust * gust) {
           q.life = 0.5 + Math.random() * 0.4; q.t = 0; q.len = 1.5 + 3 * gust + Math.random() * 1.5;
-          const a = Math.random() * TAU, r = 3 + Math.random() * 14;
-          q.x = P.x + Math.cos(a) * r - wx * 6; q.z = P.z + Math.sin(a) * r - wz * 6; q.y = terrainH(q.x, q.z) + 0.4 + Math.random() * 3;
+          const a = Math.random() * TAU, r = 6 + Math.random() * 14;
+          q.x = P.x + Math.cos(a) * r - wx * 6; q.z = P.z + Math.sin(a) * r - wz * 6; q.y = terrainH(q.x, q.z) + 0.3 + Math.random() * 2;
+          const cam = this.ctx.camera; // nunca entre la cámara y el héroe
+          if (cam && (q.x - P.x) * (cam.position.x - P.x) + (q.z - P.z) * (cam.position.z - P.z) > 0) { q.life = 0; continue; }
           q.m.rotation.set(Math.random() * Math.PI, -ang, 0); q.m.visible = true;
         }
         continue;
@@ -647,10 +650,10 @@ class IceHazard {
       const sp = 9 + 8 * gust;
       q.m.position.set(q.x + wx * sp * q.t, q.y + Math.sin(q.t * 6) * 0.08, q.z + wz * sp * q.t);
       q.m.scale.set(q.len * (0.4 + 0.6 * Math.min(1, u * 3)), 1, 1);
-      q.m.material.opacity = 0.45 * Math.sin(u * Math.PI) * (0.4 + 0.6 * gust);
+      q.m.material.opacity = 0.26 * Math.sin(u * Math.PI) * (0.4 + 0.6 * gust);
     }
     // nieve arrastrada por el viento a ras de suelo
-    if (Math.random() < dt * (6 + 20 * gust)) { const a = Math.random() * TAU, r = 2 + Math.random() * 10, x = P.x + Math.cos(a) * r, z = P.z + Math.sin(a) * r; fx.spray(x, terrainH(x, z) + 0.1, z, wx * (3 + 5 * gust), 0.4 + Math.random(), wz * (3 + 5 * gust), 0.5); }
+    if (Math.random() < dt * (3 + 9 * gust)) { const a = Math.random() * TAU, r = 2 + Math.random() * 10, x = P.x + Math.cos(a) * r, z = P.z + Math.sin(a) * r; fx.spray(x, terrainH(x, z) + 0.1, z, wx * (3 + 5 * gust), 0.4 + Math.random(), wz * (3 + 5 * gust), 0.5); }
     // pequeños desprendimientos de nieve en las laderas cercanas
     this.slideT -= dt;
     if (this.slideT <= 0) {
@@ -752,7 +755,18 @@ class ExtremeHazard {
   dispose() { this.parts.forEach((p) => p.dispose()); }
 }
 
+// Cada mundo tiene sus peligros de siempre y, además, objetos que pueden APLASTAR al héroe (crush.js)
 export function createHazards(scenario, ctx) {
+  const h = makeHazards(scenario, ctx);
+  const crush = new CrushHazard(ctx, scenario);
+  const up = h.update.bind(h), rs = h.reset.bind(h), ds = h.dispose ? h.dispose.bind(h) : null;
+  h.update = (dt, t) => { up(dt, t); crush.update(dt, t); };
+  h.reset = () => { rs(); crush.reset(); };
+  h.dispose = () => { if (ds) ds(); crush.dispose(); };
+  h.crush = crush;
+  return h;
+}
+function makeHazards(scenario, ctx) {
   switch (scenario) {
     case 'fire': case 'campfire': return new FireHazard(ctx);
     case 'quake': return new QuakeHazard(ctx);

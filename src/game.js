@@ -14,10 +14,11 @@ import { createBoss, createAlly, preloadBoss, preloadAlly } from './bosses.js';
 import { bossScale, bossCameraFor } from './scale.js';
 import { Vfx } from './skills/vfx.js';
 import { Combat } from './combat.js';
+import { FrostFreeze } from './freeze.js';
 import { HeroSkills } from './skills/hero.js';
 import { Vfx2 } from './skills/vfx2.js';
 import { Team } from './team.js';
-import { TEAM, HERO_SKILLS, HEALTH, HEAL_ITEMS, MINIONS, DESTRUCTIBLE } from './skills/config.js';
+import { TEAM, HERO_SKILLS, HEALTH, HEAL_ITEMS, MINIONS, DESTRUCTIBLE, BUTTON_TIMES } from './skills/config.js';
 import { Bag, healAmount } from './health.js';
 import { Pickups } from './pickups.js';
 import { WeaponSystem } from './weapons/system.js';
@@ -98,12 +99,13 @@ export class Game {
     this.slowT = 0;
     this.abilities = [];
     this.abIndex = 0;
-    this.toolCd = {};
+    this.toolCd = {}; this.actT = {}; this.actMax = {}; this._wasAct = [];
     // habilidades de héroe y ataques de jefe: capa visual, combate compartido y gestor de habilidades
     this.vfx = new Vfx(scene, fx);
     this.vfx2 = new Vfx2(this); // cielo, aurora, lava, olas... de los poderes especiales
     this.impactFx = new ImpactFx(this); // impacto visible de poderes y armas sobre el jefe y sus soldados
     this.combat = new Combat(this);
+    this.frost = new FrostFreeze(this); // Aurora Polar: congela a todos los personajes de la escena
     this.skills = new HeroSkills(this);
     this.weapons = new WeaponSystem(this); // arma 3D de cada héroe (botón ARMA), unida al hueso de su mano
     this.portal = new RescuePortal(this);  // portal de rescate del refugio: su aspecto depende del héroe activo
@@ -179,6 +181,11 @@ export class Game {
     );
     this.shieldMesh.visible = false;
     this.scene.add(this.shieldMesh);
+    // BOTÓN PODER: anillo de energía del color del elemento del héroe a sus pies mientras dura el poder aumentado
+    this.powerRing = new THREE.Mesh(new THREE.RingGeometry(0.75, 0.95, 48), new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false }));
+    this.powerRing.rotation.x = -Math.PI / 2;
+    this.powerRing.visible = false;
+    this.scene.add(this.powerRing);
     this.torch = new THREE.SpotLight(0xfff0c0, 0, 36, 0.55, 0.6, 1.1);
     this.torchTarget = new THREE.Object3D();
     this.scene.add(this.torch, this.torchTarget);
@@ -257,8 +264,12 @@ export class Game {
   /* ---------- habilidades (poder del héroe + herramientas) ---------- */
   buildAbilities() {
     const base = heroPowerItem(this.hero);
-    this.abilities = [{ id: 'power', icon: base.icon, name: base.name, cd: this.hero.power.cd, role: 'velocidad' }]; // botón 1: VELOCIDAD
-    this.abilities.push(...this.skills.entries(this.hero.id)); // habilidad propia del héroe (y especial, si la tiene)
+    const own = this.skills.entries(this.hero.id);
+    const vel = own.find((e) => e.role === 'velocidad');
+    // botón 1: VELOCIDAD (el poder base del héroe, o su propia habilidad de velocidad si la tiene)
+    this.abilities = vel ? [vel] : [{ id: 'power', icon: base.icon, name: base.name, cd: this.hero.power.cd, role: 'velocidad' }];
+    this.abilities.push(...own.filter((e) => e !== vel)); // habilidades propias del héroe
+    this.actT = {}; this.actMax = {}; this._wasAct = [];
     for (const id of Save.items) {
       const it = ITEMS[id];
       if (it && !it.passive) this.abilities.push({ id: it.id, icon: it.icon, name: it.name, cd: it.cd, tool: true }); // herramientas: grupo aparte
@@ -311,7 +322,7 @@ export class Game {
     if (a.hs) { // habilidad propia del héroe (skills/hero.js)
       const res = this.skills.use(a.key);
       if (!res) return false;
-      this.toolCd[a.id] = a.cd * this.player.cdMul * res.cdFactor;
+      if (!this.armButton(a.key)) this.toolCd[a.id] = a.cd * this.player.cdMul * res.cdFactor;
       if (this.boss) ui.battleLog(`✨ ${this.hero.name}: ${a.name}`, 'hero');
       return true;
     }
@@ -324,6 +335,27 @@ export class Game {
       return true;
     }
     return false;
+  }
+  // Temporizadores INDEPENDIENTES de los botones VELOCIDAD, PODER y ESCUDO (BUTTON_TIMES): cada uno dura activo
+  // `act` s y después recarga `rec` s. No pausan nada ni bloquean al héroe. Devuelve false si el botón no tiene papel.
+  armButton(key) {
+    const a = this.abilities.find((x) => x.hs && x.key === key);
+    const T = a && BUTTON_TIMES[a.role];
+    if (!T) return false;
+    const p = this.player, def = HERO_SKILLS[this.hero.id][key];
+    this.toolCd[a.id] = (T.act + T.rec) * p.cdMul;
+    this.actT[a.id] = T.act; this.actMax[a.id] = T.act;
+    if (a.role === 'poder') p.powerBuffT = Math.max(p.powerBuffT, T.act);
+    if (a.role === 'escudo') { p.shieldT = Math.max(p.shieldT, T.act); if (def && def.ownShield) p.shieldOwnT = Math.max(p.shieldOwnT, T.act); }
+    return true;
+  }
+  // ¿Está activo el botón i? → fracción de tiempo activo que queda (0 = no)
+  abilityActive(ab) {
+    const p = this.player;
+    if (ab.id === 'power') return p.boostT > 0 ? p.boostT / Math.max(0.01, p.boostDur) : p.surfT > 0 ? p.surfT / 5 : 0;
+    const t = this.actT[ab.id] || 0;
+    if (t > 0) return t / (this.actMax[ab.id] || 1);
+    return ab.hs && this.skills.isActive(ab.key) ? 1 : 0;
   }
   // Tecla G o mantener pulsado el botón ARMA: sacar / guardar el arma del héroe
   toggleWeapon() {
@@ -485,6 +517,7 @@ export class Game {
     this.timeScale = 1;
     this.slowT = 0;
     this.timeStopT = 0; // detención del tiempo (visión del Lince): nunca pasa de un nivel a otro
+    if (this.frost) { this.frost.T = 0; this.frost.clear(); }
     this.pingT = 0;
     this.pingCd = 0;
     this.playerHitT = 0;
@@ -680,7 +713,7 @@ export class Game {
     audio.power(type);
     chase.fovKick = 7;
     if (type === 'dash') {
-      fx.flameRing(p.x, p.y + 0.4, p.z, 30);
+      fx.flameRing(p.x, p.y + 0.05, p.z, 12); // arranque: llamas a ras de suelo (no tapan al héroe)
       chase.shake(0.15);
     } else if (type === 'glide') {
       for (let i = 0; i < 30; i++) fx.mist(p.x + (Math.random() - 0.5) * 1.5, p.y + 0.3, p.z + (Math.random() - 0.5) * 1.5, 0xe8f6ff, 1.8);
@@ -1119,7 +1152,7 @@ export class Game {
   // Golpe detenido por el escudo: destello azul, anillo y texto «BLOQUEADO»
   shieldBlock(from) {
     if (this.blockT > 0) return;
-    this.blockT = 0.35;
+    this.blockT = 0.35; this.player.blockT = 0.35; // el héroe también reacciona al golpe parado (gigante de roca)
     const p = this.player.pos, H = this.player.H;
     // ESPEJISMOS de Halley: un espejismo se interpone y absorbe el golpe
     const mg = this.player.mirageGuard;
@@ -1379,7 +1412,8 @@ export class Game {
     this.vfx.ring(o.x, o.y + 1.2, o.z, { r0: 0.3, r1: 22, dur: 0.7, color: 0xffe38a, opacity: 0.55 });
     this.tsDial = this.makeTimeDial(sec);
     audio.power && audio.power('ice');
-    ui.banner('find', '⏳ Tiempo detenido', `El entorno se para ${sec} s · el cronómetro de la misión sigue corriendo`);
+    ui.banner('find', '⏳ Tiempo detenido', `El cronómetro de la misión y el entorno se paran ${sec} s`);
+    ui.timeFrozen(true);
     return true;
   }
   endTimeStop() {
@@ -1387,7 +1421,8 @@ export class Game {
     this.vfx.ring(p.x, null, p.z, { r0: 30, r1: 0.5, dur: 0.6, color: 0xd8ffa0, opacity: 0.5 }); // el tiempo "vuelve" hacia ella
     for (const L of this.tsLayers || []) L.end();
     this.tsLayers = null;
-    ui.banner('find', '⏱️', 'El tiempo vuelve a correr');
+    ui.timeFrozen(false);
+    ui.banner('find', '⏱️', 'El cronómetro vuelve a correr');
   }
   // esfera de reloj luminosa a los pies del héroe: 12 marcas y dos agujas que avanzan a saltos; se apaga al terminar
   makeTimeDial(sec) {
@@ -1425,14 +1460,18 @@ export class Game {
     const { world, player, chase, input, camera } = this;
     const real = dt;
     this.slowT = Math.max(0, this.slowT - real);
-    // DETENCIÓN DEL TIEMPO (visión del Lince): cuenta en tiempo REAL y dura exactamente lo que se pidió (5 s).
-    // Solo se congela el ENTORNO (enemigos, jefe, peligros, escenario y personas que esperan); el héroe, sus poderes
-    // y el CRONÓMETRO DE LA MISIÓN siguen igual (this.t usa dtg, nunca envDt).
+    // DETENCIÓN DEL TIEMPO (visión del Lince): cuenta en tiempo REAL y dura exactamente 5 s.
+    // Se congela el CRONÓMETRO REAL DE LA MISIÓN (this.t, del que salen el tiempo restante, los avisos y el fin de la
+    // misión) y el ENTORNO; el héroe y sus poderes siguen. Al terminar, el reloj sigue desde el mismo valor.
+    const clockStopped = this.timeStopT > 0;
     if (this.timeStopT > 0) { this.timeStopT = Math.max(0, this.timeStopT - real); if (this.timeStopT === 0) this.endTimeStop(); }
     const targetScale = this.slowT > 0 ? 0.45 : this.state === 'ending' ? 0.55 : 1;
     this.timeScale = damp(this.timeScale, targetScale, 10, real);
     const dtg = dt * this.timeScale;
     const envDt = this.timeStopT > 0 ? 0 : dtg; // tiempo del entorno (0 mientras está detenido)
+    // CONGELACIÓN MASIVA (Aurora Polar): el tiempo de los personajes (no el del jugador) se frena hasta pararse
+    const fk = this.frost ? this.frost.update(real) : 0;
+    const charDt = envDt * (1 - fk), allyDt = dtg * (1 - fk);
 
     const introLocked = this.state === 'intro';
     if (introLocked) {
@@ -1450,7 +1489,7 @@ export class Game {
         this.tip('start');
       }
     }
-    if (this.state === 'playing' && !this.ended && !this.boss) this.t += dtg; // el reloj de la misión se detiene durante el jefe
+    if (this.state === 'playing' && !this.ended && !this.boss && !clockStopped) this.t += dtg; // el reloj se detiene durante el jefe y con la visión del Lince
     const missionT = this.t;
 
     const move = input.getMove();
@@ -1465,6 +1504,7 @@ export class Game {
 
     // recargas de herramientas
     for (const k in this.toolCd) if (this.toolCd[k] > 0) this.toolCd[k] = Math.max(0, this.toolCd[k] - dtg);
+    for (const k in this.actT) if (this.actT[k] > 0) this.actT[k] = Math.max(0, this.actT[k] - dtg);
 
     // cuerda: movimiento guiado
     if (this.rope) {
@@ -1510,11 +1550,11 @@ export class Game {
       this.updateBossHud(real);
     }
     if (this.boss && this.state === 'playing') {
-      this.boss.update(envDt);
-      this.allies.update(dtg); // los otros dos héroes del equipo combaten a la vez
+      this.boss.update(charDt);
+      this.allies.update(allyDt); // los otros dos héroes del equipo combaten a la vez
       this.updateVictory(real);
     }
-    if (this.ally && this.state === 'playing') this.ally.update(dtg);
+    if (this.ally && this.state === 'playing') this.ally.update(allyDt);
     // derrota del jefe: estallido de victoria
     if (this.boss && this.boss.state === 'dead' && !this.bossFxDone) {
       this.bossFxDone = true;
@@ -1529,7 +1569,7 @@ export class Game {
     if (this.state === 'playing') this.pickups.update(dtg, player, (p) => this.onPickup(p), (p) => this.onPickupFull(p));
     this.hpSaveT = (this.hpSaveT || 0) + real;
     if (this.hpSaveT > 1.5) { this.hpSaveT = 0; this.saveHp(); }
-    this.combat.update(envDt);
+    this.combat.update(charDt);
     this.vfx.update(dtg);
     this.vfx2.update(dtg);
     this.impactFx.update(dtg);
@@ -1542,7 +1582,7 @@ export class Game {
 
     // víctimas
     for (const v of this.victims) {
-      v.update(v.state === 'carried' ? dtg : envDt); // las que esperan o caminan se detienen con el tiempo
+      v.update(v.state === 'carried' ? dtg : charDt); // las que esperan o caminan se detienen con el tiempo (y con la aurora)
       v.root.getWorldPosition(v.wpos);
       if (v.state === 'waiting') {
         if (v.hidden) {
@@ -1646,11 +1686,36 @@ export class Game {
     }
   }
 
+  // recarga del botón: segundos que faltan (sin contar el tiempo que aún está activo) y fracción 0..1
+  cdSecs(ab) {
+    const p = this.player;
+    if (ab.id === 'power') return p.cd;
+    const T = BUTTON_TIMES[ab.role];
+    const s = this.toolCd[ab.id] || 0;
+    return T && ab.hs ? Math.min(s, T.rec * p.cdMul) : s;
+  }
+  cdRatio(ab) {
+    const p = this.player, T = BUTTON_TIMES[ab.role];
+    if (ab.id === 'power') return T ? Math.min(1, p.cd / (T.rec * p.cdMul)) : p.cdMaxEff > 0 ? p.cd / p.cdMaxEff : 0;
+    if (T && ab.hs) return Math.min(1, (this.toolCd[ab.id] || 0) / (T.rec * p.cdMul));
+    return ab.cd > 0 ? (this.toolCd[ab.id] || 0) / (ab.cd * p.cdMul) : 0;
+  }
+
   updateToolVisuals(real) {
     const { player, world, camera } = this;
     const p = player.pos;
-    // escudo
-    if (player.shieldT > 0) {
+    // poder aumentado: anillo de energía del elemento a sus pies (se apaga al terminar)
+    if (player.powerBuffT > 0) {
+      const r = this.powerRing, tt = performance.now() / 1000;
+      if (!r.visible) { r.visible = true; r.material.color.set(ELEMENTS[this.hero.element] ? ELEMENTS[this.hero.element].color : 0xffd24a); }
+      const k = Math.min(1, player.powerBuffT / 0.6);
+      r.position.set(p.x, player.floorY ? player.floorY(p.x, p.z, p.y + 0.5) + 0.07 : p.y + 0.07, p.z);
+      r.scale.setScalar(player.R / 0.45 * (1 + 0.06 * Math.sin(tt * 6)));
+      r.rotation.z = tt * 1.5;
+      r.material.opacity = 0.5 * k;
+    } else if (this.powerRing.visible) this.powerRing.visible = false;
+    // escudo (burbuja genérica; si la habilidad dibuja su propio escudo, no se superpone)
+    if (player.shieldT > 0 && !(player.shieldOwnT > 0) && !(player.shieldFx > 0)) {
       this.shieldMesh.visible = true;
       this.shieldMesh.position.set(p.x, p.y + 1.0, p.z);
       const s = 1 + Math.sin(performance.now() / 120) * 0.04 + (player.shieldT < 1.5 ? Math.sin(performance.now() / 50) * 0.05 : 0);
@@ -1874,7 +1939,7 @@ export class Game {
     // anillo de recarga de la habilidad seleccionada
     const a = this.abilities[this.abIndex];
     let ratio = 0;
-    if (a) ratio = a.id === 'power' ? (player.cdMaxEff > 0 ? player.cd / player.cdMaxEff : 0) : (a.cd > 0 ? (this.toolCd[a.id] || 0) / (a.cd * player.cdMul) : 0);
+    if (a) ratio = this.cdRatio(a);
     ui.setPower(ratio, a);
     this.gaugeAcc += real;
     if (this.gaugeAcc > 0.25) {
@@ -1883,11 +1948,20 @@ export class Game {
       if (gg) ui.setGauge(gg);
       else ui.setWater(world.waterY, 8, this.victims);
       ui.setCarry(player.carrying, player.capacity);
+      const act = this.abilities.map((ab) => this.abilityActive(ab));
       ui.setAbilityCds(
-        this.abilities.map((ab, i) => (i === 0 ? (player.cdMaxEff > 0 ? player.cd / player.cdMaxEff : 0) : ab.cd > 0 ? (this.toolCd[ab.id] || 0) / (ab.cd * player.cdMul) : 0)),
-        this.abilities.map((ab, i) => (i === 0 ? player.cd : this.toolCd[ab.id] || 0)),
+        this.abilities.map((ab, i) => (act[i] > 0 ? 0 : this.cdRatio(ab))),
+        this.abilities.map((ab, i) => (act[i] > 0 ? 0 : this.cdSecs(ab))),
         this.abilities.map((ab) => !!(ab.hs && this.skills.canRecast(ab.key))),
+        act,
       );
+      // aviso claro cuando TERMINA una habilidad de velocidad, poder o escudo
+      const END = { velocidad: '⚡ Velocidad: fin', poder: '💥 Poder: fin', escudo: '🛡️ Escudo: fin' };
+      act.forEach((v, i) => {
+        const ab = this.abilities[i], was = this._wasAct[i];
+        if (was && v <= 0 && END[ab.role] && this.state === 'playing') this.floatAt(player.pos, player.H + 0.6, END[ab.role], 'block');
+        this._wasAct[i] = v > 0;
+      });
     }
     ui.minimap.draw(real, {
       waterY: world.waterY,

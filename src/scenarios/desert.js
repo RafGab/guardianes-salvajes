@@ -6,7 +6,7 @@ export const seed = 6606;
 const look = {
   horizon: 0xc89a5c, zenith: 0x7a5a3a, cloudLo: [0.3, 0.2, 0.12], cloudHi: [0.8, 0.6, 0.4], cover: 0.5, fog: 0xc0965a, fogD: 0.0105,
   hemi: [0xf0c890, 0x6a4a2a, 1.3], sun: [0xffd090, 2.5], exposure: 1.0, lightning: false, birds: false,
-  precip: { color: [0.9, 0.72, 0.45], alpha: 0.4, speed: 9, len: 0.35, wind: [14, 0, 5] },
+  precip: { color: [0.9, 0.72, 0.45], alpha: 0.2, speed: 9, len: 0.3, wind: [14, 0, 5] }, // arena en el aire más ligera
 };
 
 const OASIS = { x: 8, z: -18 };

@@ -1,12 +1,34 @@
 import { CFG, terrainH, setTerrain, smoothstep, lerp, n2, pathDist, pathPoint, refugeHeight, startFlat, setStartSafe, makeDescriptor, placeSigns, paintRefugeAndStart } from './common.js';
+import { createValleyFX } from './valley_fx.js';
+
+// APOCALIA — EXTINCIÓN POR METEORITO: el Valle Titán tras el impacto de un meteorito gigantesco.
+// Se conservan el valle, el río, la carretera, la ciudad de la ladera, la salida y el refugio (la esencia de
+// Apocalia); el paisaje cambia: cráter con el núcleo fundido, cráteres menores, grietas que desprenden calor,
+// restos del meteorito, rocas desplazadas por la onda expansiva, bosque calcinado y cielo de humo y ceniza.
 
 export const seed = 9909;
 
 const look = {
-  horizon: 0x7a5a4a, zenith: 0x1e1a22, cloudLo: [0.1, 0.07, 0.07], cloudHi: [0.5, 0.36, 0.3], cover: 0.8, fog: 0x6a5048, fogD: 0.0088,
-  hemi: [0xb89484, 0x3a3038, 1.0], sun: [0xf0b48a, 1.9], exposure: 0.95, lightning: true,
-  precip: { color: [0.62, 0.6, 0.62], alpha: 0.4, speed: 30, len: 0.9, wind: [7, 0, 3] },
+  horizon: 0xa0502a, zenith: 0x1a1214, cloudLo: [0.12, 0.07, 0.05], cloudHi: [0.55, 0.3, 0.18], cover: 0.92, fog: 0x6a3a2a, fogD: 0.0078,
+  hemi: [0xc0846a, 0x2a2024, 0.95], sun: [0xff9a5a, 1.75], exposure: 0.95, lightning: true,
+  precip: { color: [0.5, 0.46, 0.44], alpha: 0.22, speed: 4, len: 0.12, wind: [2.2, 0, 0.8] }, // ceniza que cae despacio (no lluvia)
 };
+// cráter principal (lejos de la salida, del refugio, de la carretera y del río) y cráteres menores
+const CRATER = { x: 36, z: 10, r: 21, core: 6 };
+const MINI = [
+  { x: -62, z: -6, r: 6 }, { x: 58, z: 52, r: 7 }, { x: -58, z: -58, r: 5 }, { x: 14, z: 64, r: 5 }, { x: 54, z: -34, r: 6 },
+  { x: -70, z: 34, r: 5 }, { x: 22, z: -40, r: 4.5 }, { x: 74, z: -4, r: 5 },
+];
+// perfil de un cráter: cuenco hundido, borde levantado y anillo de material expulsado
+const DRY = 3.25; // por encima del agua más alta del valle: el fondo de los cráteres no se inunda
+function craterH(h, x, z, C, depth, rim, uplift = 0) {
+  const d = Math.hypot(x - C.x, z - C.z), u = d / C.r;
+  h += uplift * Math.exp(-((d / (C.r * 1.35)) ** 2));                       // el terreno se abomba alrededor del impacto
+  h += rim * Math.exp(-(((d - C.r) / (C.r * 0.22)) ** 2));                   // borde levantado
+  h += rim * 0.3 * Math.exp(-(((d - C.r * 1.5) / (C.r * 0.35)) ** 2));       // anillo de material expulsado
+  if (u < 1) h = Math.max(h - depth * (1 - u * u) - rim * 0.4 * (1 - u), Math.min(h, DRY + (uplift ? 0.4 * u : 0))); // cuenco
+  return h;
+}
 
 const RIVER = [[-6, 100], [-16, 60], [-4, 24], [-16, -10], [-4, -44], [-14, -80], [-10, -110]];
 const ROAD = [[-40, 70], [-30, 40], [-34, 8], [-30, -24], [-24, -52], [10, -66], [50, -66], [62, -68]];
@@ -15,6 +37,11 @@ function valleyTerrain(x, z) {
   let h = 1.4 + 2.2 * n2(x, z, 0.03);
   h += smoothstep(38, 96, Math.abs(x + 4)) * (15 + 11 * n2(x, z, 0.03));      // paredes del valle
   h += 42 * Math.exp(-(((x - 30) ** 2 + (z + 122) ** 2) / (2 * 26 * 26)));   // volcán lejano
+  // montañas fracturadas: crestas rotas en las paredes del valle
+  h += smoothstep(55, 90, Math.abs(x + 4)) * 6 * Math.abs(Math.sin(z * 0.11 + n2(x, z, 0.05) * 3));
+  // el impacto: cráter principal y cráteres menores
+  h = craterH(h, x, z, CRATER, 9, 5.5, 4.5);
+  for (const m of MINI) h = craterH(h, x, z, m, 2, 1.1);
   const rd = pathDist(x, z, RIVER).d;
   h = lerp(h, -2.6, smoothstep(11, 5, rd));
   h += 0.5 * smoothstep(11, 16, rd) * smoothstep(20, 14, rd);
@@ -41,6 +68,7 @@ export function build(K, { scene }) {
     const x = gx + rr(-3, 3), z = gz + rr(-3, 3);
     if (!free(x, z) || rd(x, z) < 14 || Math.hypot(x - 42, z - 32) < 0 || terrainH(x, z) > 11) continue;
     if (Math.abs(x + 40) < 6 && z > 20) continue; // deja el arranque libre
+    if (Math.hypot(x - CRATER.x, z - CRATER.z) < CRATER.r + 9 || MINI.some((m) => Math.hypot(x - m.x, z - m.z) < m.r + 6)) continue; // el cráter arrasó esta zona
     const w = rr(8, 11), d = rr(7, 9), tall = rng.chance(0.35);
     const g = Math.max(terrainH(x, z), terrainH(x + w / 2, z), terrainH(x - w / 2, z));
     if (rng.chance(0.25)) {
@@ -78,14 +106,15 @@ export function build(K, { scene }) {
   // riscos y torre de agua (cuerda / piolet)
   for (let i = 0; i < 6; i++) {
     const x = (i % 2 ? 1 : -1) * rr(44, 64) - 4, z = rr(-70, 50);
-    if (!free(x, z) || terrainH(x, z) > 16 || rd(x, z) < 14) continue;
+    if (!free(x, z) || terrainH(x, z) > 16 || rd(x, z) < 14 || Math.hypot(x - CRATER.x, z - CRATER.z) < CRATER.r + 6) continue;
     const g = terrainH(x, z);
     K.box(x, g - 0.5, z, 4.2, 3.8, 4.2, 0x7a746a, { tag: 'rock' });
     K.cand('ledge', x, g + 3.32, z, { zone: 'riscos', needsTool: i % 2 ? 'rope' : 'piolet' });
   }
   // bosque y rocas
-  for (const p of K.scatter(200, { x0: -108, x1: 108, z0: -108, z1: 108 }, { minDist: 4, accept: (x, z, h) => free(x, z) && rd(x, z) > 12 && h < 18 && pathDist(x, z, ROAD).d > 6 && cells.every((c) => Math.hypot(c.x - x, c.z - z) > 9) })) K.tree(rng.chance(0.6) ? 'pine' : rng.chance(0.5) ? 'broad' : 'dead', p.x, p.z, rr(0.85, 1.3));
-  for (const p of K.scatter(40, { x0: -100, x1: 100, z0: -100, z1: 100 }, { minDist: 7, accept: (x, z) => free(x, z) && rd(x, z) > 11 })) K.rock(p.x, p.z, rr(0.9, 2.4), 0x7a706a);
+  const inCrater = (x, z) => Math.hypot(x - CRATER.x, z - CRATER.z) < CRATER.r + 5 || MINI.some((m) => Math.hypot(x - m.x, z - m.z) < m.r + 2);
+  for (const p of K.scatter(170, { x0: -108, x1: 108, z0: -108, z1: 108 }, { minDist: 4.5, accept: (x, z, h) => free(x, z) && !inCrater(x, z) && rd(x, z) > 12 && h < 18 && pathDist(x, z, ROAD).d > 6 && cells.every((c) => Math.hypot(c.x - x, c.z - z) > 9) })) K.tree('dead', p.x, p.z, rr(0.85, 1.3)); // bosque calcinado
+  for (const p of K.scatter(40, { x0: -100, x1: 100, z0: -100, z1: 100 }, { minDist: 7, accept: (x, z) => free(x, z) && rd(x, z) > 11 && !inCrater(x, z) })) K.rock(p.x, p.z, rr(0.9, 2.4), rng.chance(0.5) ? 0x3a3432 : 0x4a3e38); // rocas quemadas
   placeSigns(K, [[-36, 62], [-30, 34], [-28, 6], [-24, -24], [6, -60], [46, -66]]);
 
   // ---- datos para los peligros combinados ----
@@ -95,15 +124,31 @@ export function build(K, { scene }) {
   const paint = () => K.paintGround({
     colorAt: (x, z, h, sl) => {
       const r = rd(x, z);
-      if (r < 6) return [118, 104, 84];
-      if (h < -0.3) return [110, 100, 82];
+      if (r < 6) return [92, 80, 70];                                   // cauce turbio de ceniza
+      if (h < -0.3 && Math.hypot(x - CRATER.x, z - CRATER.z) > CRATER.r) return [88, 78, 68];
       const pd = pathDist(x, z, ROAD);
-      if (pd.d < 3) return [126, 120, 112];
-      if (sl > 1.2 || h > 14) return [94, 88, 82];
+      if (pd.d < 3) return [98, 92, 88];                                // carretera cubierta de ceniza
+      const dc = Math.hypot(x - CRATER.x, z - CRATER.z), v = n2(x, z, 0.09);
+      if (dc < CRATER.core + 2.5) return [150, 52, 18];                 // roca fundida
+      if (dc < CRATER.r) { const k = dc / CRATER.r; return [lerp(70, 44, k) + 18 * v, lerp(34, 36, k) + 8 * v, lerp(22, 32, k) + 6 * v]; } // fondo del cráter, ennegrecido y aún caliente
+      for (const m of MINI) { const dm = Math.hypot(x - m.x, z - m.z); if (dm < m.r) return [46 + 10 * v, 38 + 6 * v, 34]; }
+      if (sl > 1.2 || h > 14) return [72 + 14 * v, 62 + 10 * v, 58 + 8 * v];  // roca quemada
       if (Math.hypot(x - 30, z + 122) < 40) return [40, 34, 32];
-      return [78 + 30 * n2(x, z, 0.07), 96 + 26 * n2(x, z, 0.07), 62 + 14 * n2(x, z, 0.1)];
+      // estelas de la onda expansiva: rayos oscuros que salen del cráter
+      const ang = Math.atan2(z - CRATER.z, x - CRATER.x), ray = Math.pow(Math.abs(Math.sin(ang * 9 + n2(x, z, 0.02) * 2)), 6) * smoothstep(CRATER.r * 4, CRATER.r, dc);
+      const hot = smoothstep(0.66, 0.8, n2(x + 300, z, 0.025));          // zonas de suelo que desprende calor (rojizas)
+      let c = [96 + 22 * v, 90 + 18 * v, 88 + 16 * v];                    // ceniza gris
+      c = c.map((q, i) => lerp(q, [36, 30, 28][i], 0.55 * ray));
+      c = c.map((q, i) => lerp(q, [122, 58, 38][i], hot * 0.6));
+      return c;
     },
     draw: (g, px, sz) => {
+      // salpicaduras de material expulsado alrededor del cráter
+      for (let i = 0; i < 240; i++) {
+        const a = rr(0, 6.28), r = CRATER.r * rr(1.05, 2.6), x = CRATER.x + Math.cos(a) * r, z = CRATER.z + Math.sin(a) * r;
+        g.fillStyle = rng.chance(0.7) ? 'rgba(30,24,22,.55)' : 'rgba(110,50,26,.45)';
+        g.beginPath(); g.ellipse(px(x), px(z), sz(rr(0.3, 1.4)), sz(rr(0.2, 0.7)), a, 0, 6.28); g.fill();
+      }
       g.strokeStyle = 'rgba(20,16,12,.6)';
       g.lineWidth = sz(0.22);
       for (let i = 0; i < 14; i++) {
@@ -116,6 +161,11 @@ export function build(K, { scene }) {
       paintRefugeAndStart(g, px, sz);
     },
   });
+
+  // ---- consecuencias del impacto en 3D (cráter fundido, grietas con calor, restos del meteorito, onda expansiva,
+  //      bosque arrasado, columna de humo y ceniza) ----
+  const ROUTES = (x, z) => Math.min(pathDist(x, z, ROAD).d, rd(x, z) - 5);
+  createValleyFX(scene, K, { CRATER, MINI, ROUTES, free, rng });
 
   return makeDescriptor(K, scene, {
     id: 'extreme', look, paint, refugeStyle: 'bunker', mapView: { cx: 0, cz: -15, half: 105 }, windAmp: 2, windCover: false,

@@ -68,7 +68,8 @@ export class Player {
     this.speedBuff = 1;                       // bonus de velocidad (Penumbra del Lince)
     this.driftX = 0; this.driftZ = 0;         // tirón externo por fotograma (remolino del Kraken, vientos del Dragón Long)
     this.evadeT = 0;                          // intocable (esfera de Penumbra del Lince): ignora los golpes
-    this.pose = { rx: 0, rz: 0, sy: 1, dy: 0, spin: 0, hidden: false }; // pose extra de las habilidades (skills/hero.js)
+    this.pose = { rx: 0, rz: 0, sy: 1, dy: 0, spin: 0, hidden: false, sc: 1 }; // pose extra de las habilidades (skills/hero.js)
+    this.animMul = 1; // ritmo del ciclo de pasos (el gigante da zancadas largas y lentas)
     this._wasHidden = false;
     this.capBonus = 0;
     this.cdMul = 1;
@@ -79,6 +80,9 @@ export class Player {
     // BOTÓN DE VELOCIDAD: aceleración progresiva (boostT = segundos, boostMax = multiplicador final, boostRamp = s hasta alcanzarlo)
     this.boostMax = 1.5; this.boostRamp = 0.01; this.boostAge = 0; this.boostDur = 1;
     this.airJumps = 0; // doble salto (el águila despega a volar)
+    this.powerBuffT = 0;  // botón PODER: segundos de poder aumentado
+    this.shieldOwnT = 0;  // el escudo lo dibuja la propia habilidad (no la burbuja genérica)
+    this.casting = 0;     // habilidades lanzándose ahora (no bloquean el movimiento)
   }
 
   setHero(def, model) {
@@ -123,6 +127,7 @@ export class Player {
     this.fly = null;
     this.moveMul = 1;
     this.boostMax = 1.5; this.boostRamp = 0.01; this.boostAge = 0;
+    this.powerBuffT = 0; this.shieldOwnT = 0; this.casting = 0;
   }
 
   // Superpone la pose de una habilidad (inclinación, aplastamiento, giro, desaparición) sobre la animación del modelo
@@ -132,11 +137,28 @@ export class Player {
     const k = this.pose;
     m.root.rotation.order = 'YXZ';
     m.root.rotation.y = this.facing + k.spin;
-    m.root.rotation.x = k.rx;
+    // POSTURA AL LANZAR PODERES: inclinar el cuerpo entero hacia atrás desde los pies lo dejaba "de talones", como un
+    // maniquí que se cae. Ahora los pies siguen apoyados: el cuerpo apenas se inclina y el resto lo dobla la espalda
+    // (columna y hombros), que es como se echa atrás una persona sin perder el equilibrio.
+    let rx = k.rx, bend = 0;
+    if (rx < -0.08 && !this.fly && this.grounded !== false) { const keep = -0.08 + (rx + 0.08) * 0.2; bend = rx - keep; rx = keep; }
+    m.root.rotation.x = rx;
     m.root.rotation.z = k.rz;
+    if (bend && m.bones && m.boneTools) {
+      const sp = m.bones.spine || m.bones.spine_1, ch = m.bones.spine_2 || m.bones.chest, nk = m.bones.neck;
+      m.root.updateMatrixWorld(true);
+      if (sp) m.boneTools.rot(sp, 1, 0, 0, bend * (ch ? 0.5 : 0.8));
+      if (ch) m.boneTools.rot(ch, 1, 0, 0, bend * 0.35);
+      if (nk) m.boneTools.rot(nk, 1, 0, 0, bend * 0.15);
+    }
     m.root.position.y += k.dy;
     const xz = 1 / Math.sqrt(Math.max(0.2, k.sy)); // conserva el volumen al aplastar o estirar
-    m.root.scale.set(xz, k.sy, xz);
+    let sy = k.sy;
+    // APLASTADO: se achata de golpe y recupera su forma con un pequeño rebote
+    if (this.crushT > 0) { const u = 1 - this.crushT / 0.75; sy *= u < 0.15 ? 1 - 0.55 * (u / 0.15) : 0.45 + 0.55 * (1 - Math.pow(1 - (u - 0.15) / 0.85, 3)) + 0.08 * Math.sin(((u - 0.15) / 0.85) * Math.PI); }
+    const sc = k.sc || 1; // tamaño (crece desde los pies: no se hunde ni flota)
+    const xz2 = sy !== k.sy ? 1 / Math.sqrt(Math.max(0.2, sy)) : xz;
+    m.root.scale.set(xz2 * sc, sy * sc, xz2 * sc);
     if (k.hidden || this._wasHidden) { m.root.visible = !k.hidden; this._wasHidden = k.hidden; }
   }
 
@@ -149,7 +171,8 @@ export class Player {
   // multiplicador de velocidad actual del botón de velocidad (sube progresivamente y se suaviza al acabar)
   get boostK() {
     if (this.boostT <= 0) return 0;
-    return Math.min(1, this.boostAge / Math.max(0.01, this.boostRamp)) * Math.min(1, this.boostT / 0.5);
+    const k = Math.min(1, this.boostT / 0.9); // al terminar vuelve GRADUALMENTE a la velocidad normal
+    return Math.min(1, this.boostAge / Math.max(0.01, this.boostRamp)) * k * k * (3 - 2 * k);
   }
 
   get cdMaxEff() {
@@ -169,7 +192,7 @@ export class Player {
     const hid = this.hero.id;
     if (type === 'dash') {
       // Kairo: cometa de fuego que acelera · Jago: embestida pesada
-      this.speedBoost(hid === 'kairo' ? 3.6 : 3, hid === 'kairo' ? 1.75 : 1.55, hid === 'kairo' ? 1.6 : 0.6);
+      this.speedBoost(5, hid === 'kairo' ? 1.75 : 1.55, hid === 'kairo' ? 1.6 : 0.6);
       this.dashT = 0.36;
       this.vx = (dx / len) * 20;
       this.vz = (dz / len) * 20;
@@ -184,14 +207,14 @@ export class Player {
       this.support = null;
     } else if (type === 'rocket') {
       // Ámbar: arranque explosivo con propulsores de aire en los pies
-      this.speedBoost(4, 2.2, 0.7);
+      this.speedBoost(5, 2.2, 0.7);
       this.vx += (dx / len) * 6; this.vz += (dz / len) * 6;
       this.facing = Math.atan2(dx, dz);
     } else if (type === 'pillar') {
-      if (moving) this.speedBoost(4, 1.6, 0.8); // corriendo: raíces impulsoras
+      if (moving) this.speedBoost(5, 1.6, 0.8); // corriendo: túnel de tierra
       else { w.spawnPillar(this.pos.x, this.pos.z, this.pos.y); this.vy = Math.max(this.vy, 0); } // quieta: pilar de tierra (como siempre)
     } else if ((type === 'ice' || type === 'surf') && (!w.hasWater || (w.sc && w.sc.id === 'campfire'))) { // en Camp Fire: impulso de velocidad, como en los escenarios sin agua
-      this.speedBoost(type === 'surf' ? 5 : 6, hid === 'halley' ? 1.7 : hid === 'nilo' ? 1.6 : 1.65, 0.8);
+      this.speedBoost(5, hid === 'halley' ? 1.7 : hid === 'nilo' ? 1.6 : 1.65, 0.8);
       this.grip = type === 'ice';
     } else if (type === 'ice') {
       const tx = this.pos.x + (dx / len) * 3.6, tz = this.pos.z + (dz / len) * 3.6;
@@ -200,15 +223,15 @@ export class Player {
         return false;
       }
       w.spawnIce(tx, tz);
-      this.speedBoost(3, 1.4, 0.5); this.grip = true;
+      this.speedBoost(5, 1.4, 0.5); this.grip = true;
     } else if (type === 'surf') {
       if (depthHere < 0.2 && !this.swimming && this.surfT <= 0) {
         this.events.push({ type: 'fail', msg: 'Este poder funciona sobre el agua. Acércate a la inundación.' });
         return false;
       }
-      this.surfT = type === 'surf' && this.hero.id === 'nilo' ? 6.5 : 6;
+      this.surfT = 5; this.speedBoost(5, 1, 0.1);
     }
-    this.cd = this.cdMax * this.cdMul;
+    this.cd = this.cdMax * this.cdMul; // = 5 s activa + 5 s de recarga (BUTTON_TIMES.velocidad)
     this.powerAnim = 1;
     this.events.push({ type: 'power', power: type });
     return true;
@@ -241,6 +264,10 @@ export class Player {
     this.boostAge += dt;
     this.climbT = Math.max(0, this.climbT - dt);
     this.shieldT = Math.max(0, this.shieldT - dt);
+    this.shieldOwnT = Math.max(0, this.shieldOwnT - dt);
+    this.powerBuffT = Math.max(0, this.powerBuffT - dt);
+    this.blockT = Math.max(0, (this.blockT || 0) - dt);
+    this.crushT = Math.max(0, (this.crushT || 0) - dt);
     this.evadeT = Math.max(0, this.evadeT - dt);
     this.torchT = Math.max(0, this.torchT - dt);
     this.swingT = Math.max(0, this.swingT - dt);
@@ -418,7 +445,7 @@ export class Player {
       m.root.rotation.y = this.facing;
       const runRef = st.speed;
       m.update(dt, {
-        speed: this.swimming ? clamp(hs / st.swim, 0, 1.2) : hs / runRef,
+        speed: this.swimming ? clamp(hs / st.swim, 0, 1.2) : (hs / runRef) * (this.animMul || 1),
         grounded: this.grounded,
         swimming: this.swimming,
         wading: this.wading, depth: this.depth,

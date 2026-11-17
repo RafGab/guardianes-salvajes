@@ -953,6 +953,8 @@ export class HeroSkills {
     if (sk.begin()) this.bg.push(sk);
   }
   get busy() { return !!this.cur; }
+  // ¿Hay una habilidad con esta clave en marcha? (para iluminar su botón mientras está activa)
+  isActive(key) { return !!((this.cur && this.cur.key === key) || this.bg.some((b) => b.key === key)); }
 
   reset() {
     if (this.cur) { this.cur.dispose(); this.cur = null; }
@@ -962,7 +964,7 @@ export class HeroSkills {
     if (this.g.vfx2) this.g.vfx2.clear();
     const p = this.g.player;
     Object.assign(p.pose, NEUTRAL);
-    p.fly = null; p.moveMul = 1; p.speedBuff = 1;
+    p.fly = null; p.moveMul = 1; p.speedBuff = 1; p.animMul = 1; p.casting = 0;
     if (p.model) p.model.boneFx = null;
     if (this.g.weapons) this.g.weapons.reset(); // el héroe empieza siempre con el arma guardada
   }
@@ -986,11 +988,21 @@ export class HeroSkills {
     } else if (this.cur) {
       // combo de arma: pulsar otra vez mientras se recupera del golpe encadena el siguiente movimiento
       if (this.cur.key === key && this.cur.chainReady) { this.cur.dispose(); this.cur = null; }
-      else { ui.banner('find', def.icon, 'Termina primero la habilidad en curso'); return false; }
+      else if (this.cur.key === key) return false;
+      // las habilidades NO se bloquean entre sí: la que estaba en curso sigue en segundo plano y empieza la nueva
+      else { this.bg.push(this.cur); this.cur = null; }
     }
+    const p = this.g.player, wasScripted = p.scripted;
     const sk = new Cls(this, def);
     sk.key = key;
     if (!sk.begin()) { sk.dispose(); return false; }
+    // solo dos movimientos guiados (cola, lengua, picado, blink, remolino) no pueden mover al héroe a la vez:
+    // en ese caso la nueva espera; todas las demás combinaciones funcionan juntas
+    if (wasScripted && sk._script) {
+      sk._script = false; sk.dispose(); p.scripted = true;
+      ui.banner('find', def.icon, 'Espera a terminar el movimiento en curso');
+      return false;
+    }
     sk.role = (HERO_BUTTONS[hero] || []).find(([k]) => k === key)?.[1] || null; // papel del botón (solo para animar al héroe)
     if (Cls.background) this.bg.push(sk); else this.cur = sk;
     // con el arma fuera, las demás habilidades también hacen estallar su energía

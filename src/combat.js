@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { clamp, damp } from './utils.js';
 import { terrainH } from './terrain.js';
-import { MINIONS, TEAM, NPC_KINDS } from './skills/config.js';
+import { MINIONS, TEAM, NPC_KINDS, POWER_BUFF } from './skills/config.js';
 import { ui } from './ui.js';
 import { Soldier } from './soldier.js';
 
@@ -143,7 +143,8 @@ export class Combat {
       if (t._hitSrc === this.src && t._hitF === this.frame) return;
       t._hitSrc = this.src; t._hitF = this.frame;
     }
-    const mul = (t.st.mark > 0 ? 1.5 : 1) * this.damageMul;
+    const buff = !(this.src && this.src.member) && this.game.player && this.game.player.powerBuffT > 0 ? POWER_BUFF : 1; // botón PODER activo
+    const mul = (t.st.mark > 0 ? 1.5 : 1) * this.damageMul * buff;
     // PESO DEL GOLPE: un instante de cámara lenta y una pequeña sacudida cuando el héroe del jugador acierta
     if (!quiet && !t.prop && !(this.src && this.src.member) && this.game.boss) { this.game.slowT = Math.max(this.game.slowT || 0, 0.06); this.game.chase.shake(0.1); }
     if (!t.prop && this.game.impactFx) this.game.impactFx.hit(t, n * mul, quiet); // el impacto se ve en el enemigo

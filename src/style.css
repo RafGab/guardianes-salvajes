@@ -838,3 +838,10 @@ html.touch .bag.show { animation: none; }
 .intro-skip.show.late { animation: igIn .6s ease 4s both; }
 .intro-skip:hover { color: #fff; border-color: rgba(200,220,255,.7); }
 @keyframes igIn { from { opacity: 0; } to { opacity: 1; } }
+/* cronómetro detenido por la visión del Lince */
+.mission-time.frozen { color: #d8ffa0; text-shadow: 0 0 10px rgba(156,255,90,.8); animation: none; }
+.mission-time.frozen::before { content: "⏸ "; font-size: .8em; }
+/* botón activo: borde luminoso y barra del tiempo que le queda */
+.skill.active { border-color: #9ff0ff; box-shadow: 0 0 14px rgba(120,230,255,.75); }
+.skill .actb { position: absolute; left: 0; bottom: 0; height: 4px; background: linear-gradient(90deg,#7ff0ff,#e8ffff); border-radius: 0 2px 2px 0; pointer-events: none; transition: width .25s linear; }
+.skill:not(.active) .actb { display: none; }

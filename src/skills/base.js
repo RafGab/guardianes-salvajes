@@ -9,7 +9,7 @@ export const ease = (k) => k * k * (3 - 2 * k);
 export const lerp = (a, b, k) => a + (b - a) * k;
 export const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 export const V = (x, y, z) => new THREE.Vector3(x, y, z);
-export const NEUTRAL = { rx: 0, rz: 0, sy: 1, dy: 0, spin: 0, hidden: false };
+export const NEUTRAL = { rx: 0, rz: 0, sy: 1, dy: 0, spin: 0, hidden: false, sc: 1 }; // sc: tamaño (gigante de roca)
 export const SKIP_TAGS = new Set(['tree', 'rail', 'fence', 'obstacle']);
 
 /* ====================================================================== */
@@ -34,9 +34,11 @@ export class Skill extends Staged {
   center(h = 0.5) { return V(this.p.pos.x, this.p.pos.y + this.p.H * h, this.p.pos.z); }
   gy(x, z) { return terrainH(x, z); }
   face(x, z) { this.p.facing = Math.atan2(x - this.p.pos.x, z - this.p.pos.z); }
+  // Antes inmovilizaba al héroe mientras lanzaba. Ahora NINGUNA habilidad bloquea el movimiento ni los controles:
+  // solo se marca que está lanzando (el héroe sigue caminando, corriendo, girando y saltando).
   lock(on) {
-    if (on && !this.p.locked) { this.p.locked = true; this._lock = true; }
-    else if (!on && this._lock) { this.p.locked = false; this._lock = false; }
+    if (on && !this._lock) { this._lock = true; this.p.casting = (this.p.casting || 0) + 1; }
+    else if (!on && this._lock) { this._lock = false; this.p.casting = Math.max(0, (this.p.casting || 1) - 1); }
   }
   script(on) {
     this.p.scripted = on;
