@@ -147,6 +147,23 @@ export class WeaponSystem {
         holder.add(w.group);
         holder.visible = false;
         an.metacarpo.add(holder);
+        // ORIENTACIÓN EN REPOSO (opcional, restDir/restSide en el espacio del cuerpo): para modelos cuyo puño cerrado
+        // no deja deducir bien el eje del mango, se fija hacia dónde apunta el mango (Y del arma) y hacia dónde
+        // quedan las hojas (X del arma) con el brazo colgando; las animaciones del brazo lo llevan desde ahí.
+        if (W.restDir) {
+          model.root.updateMatrixWorld(true);
+          const qf = frame.getWorldQuaternion(new THREE.Quaternion());
+          const qh = holder.getWorldQuaternion(new THREE.Quaternion());
+          const want = new THREE.Vector3(...W.restDir).applyQuaternion(qf).normalize();
+          const q1 = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0).applyQuaternion(qh), want).multiply(qh);
+          if (W.restSide) {
+            const xw = new THREE.Vector3(1, 0, 0).applyQuaternion(q1), side = new THREE.Vector3(...W.restSide).applyQuaternion(qf);
+            side.addScaledVector(want, -side.dot(want)).normalize();
+            const ang = Math.atan2(new THREE.Vector3().crossVectors(xw, side).dot(want), xw.dot(side));
+            q1.premultiply(new THREE.Quaternion().setFromAxisAngle(want, ang));
+          }
+          holder.quaternion.copy(an.metacarpo.getWorldQuaternion(new THREE.Quaternion()).invert().multiply(q1));
+        }
         hb.hand.getWorldPosition(_a); frame.worldToLocal(_a);
         parts.push({ w, holder, side: Math.sign(_a.x) || (side === 'R' ? -1 : 1), S: side, bones: hb, scale: w.group.scale.x, home: true });
         continue;

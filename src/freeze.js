@@ -24,10 +24,14 @@ export class FrostFreeze {
     this.sMat = new THREE.MeshStandardMaterial({ color: 0xcfefff, emissive: 0x2aa8ff, emissiveIntensity: 0.3, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0, depthWrite: false, flatShading: true, side: THREE.DoubleSide });
   }
   get active() { return this.T > 0; }
-  start(dur, { fin = FADE_IN, fout = FADE_OUT } = {}) {
-    if (this.T > 0) { this.T = Math.max(this.T, dur); this.dur = Math.max(this.dur, dur); return; }
-    this.T = dur; this.dur = dur; this.fin = fin; this.fout = fout;
+  // area: { center: () => Vector3, r } → solo se congela lo que entra en ese círculo (Aurora Polar: centrado en
+  // Kira y con el mismo radio que el aro del suelo). Sin área se congela toda la escena (comportamiento anterior).
+  start(dur, { fin = FADE_IN, fout = FADE_OUT, area = null } = {}) {
+    if (this.T > 0) { this.T = Math.max(this.T, dur); this.dur = Math.max(this.dur, dur); if (area) this.area = area; return; }
+    this.T = dur; this.dur = dur; this.fin = fin; this.fout = fout; this.area = area;
   }
+  // multiplicador del tiempo de un personaje (1 normal … 0 congelado): solo para los que están dentro del hielo
+  factor(root) { return root && this.items.has(root) ? 1 - this.k : 1; }
   // ¿esta raíz está congelada ahora mismo? (para la rotura en cristales al destruirla)
   isFrozen(root) { return this.k > 0.35 && this.items.has(root); }
   // golpe a un enemigo congelado: el hielo se agrieta y destella (más cuanto más golpes recibe)
@@ -50,13 +54,21 @@ export class FrostFreeze {
   roots() {
     const g = this.g, out = [];
     const me = g.player && g.player.model && g.player.model.root;
-    if (g.boss && g.boss.model && g.boss.state !== 'dead') out.push(g.boss.model.root);
-    for (const m of (g.combat && g.combat.minions) || []) if (!m.dead && m.group) out.push(m.group);
-    for (const m of (g.combat && g.combat.orcs) || []) if (!m.dead && m.group) out.push(m.group);
-    for (const a of (g.allies && g.allies.list) || []) if (a.model && a.model.root && a.model.root !== me && a.model.root.visible) out.push(a.model.root);
-    if (g.ally && g.ally.model && g.ally.model.root) out.push(g.ally.model.root);
-    for (const v of g.victims || []) if (v.root && v.state !== 'carried' && v.state !== 'saved' && v.root.visible) out.push(v.root);
-    return out.filter((r) => r && r !== me);
+    if (g.boss && g.boss.model && g.boss.state !== 'dead') out.push({ root: g.boss.model.root, ent: g.boss });
+    for (const m of (g.combat && g.combat.minions) || []) if (!m.dead && m.group) out.push({ root: m.group, ent: m });
+    for (const m of (g.combat && g.combat.orcs) || []) if (!m.dead && m.group) out.push({ root: m.group, ent: m });
+    if (!this.area) { // con área (Aurora Polar) los compañeros del equipo no se congelan
+      for (const a of (g.allies && g.allies.list) || []) if (a.model && a.model.root && a.model.root !== me && a.model.root.visible) out.push({ root: a.model.root });
+      if (g.ally && g.ally.model && g.ally.model.root) out.push({ root: g.ally.model.root });
+    }
+    for (const v of g.victims || []) if (v.root && v.state !== 'carried' && v.state !== 'saved' && v.root.visible) out.push({ root: v.root, ent: v });
+    return out.filter((e) => e.root && e.root !== me);
+  }
+  // ¿está dentro del área de congelación?
+  inArea(e) {
+    if (!this.area) return true;
+    const c = this.area.center(), q = e.ent && e.ent.pos ? e.ent.pos : e.root.getWorldPosition(this._v || (this._v = new THREE.Vector3()));
+    return Math.hypot(q.x - c.x, q.z - c.z) <= this.area.r + ((e.ent && (e.ent.radius || e.ent.R)) || 0.3);
   }
   // capa de escarcha: una copia transparente de cada malla que se deforma con el mismo esqueleto
   frost(root) {
@@ -108,7 +120,12 @@ export class FrostFreeze {
     this.k = e(Math.min(kin, kout));
     const thawing = kout < 1;
     // añadir a los que aún no estén (p. ej. un esbirro que aparece mientras dura la aurora)
-    if (!thawing) for (const r of this.roots()) if (!this.items.has(r)) this.items.set(r, this.frost(r));
+    if (!thawing) for (const e of this.roots()) {
+      if (this.items.has(e.root) || !this.inArea(e)) continue;
+      this.items.set(e.root, this.frost(e.root));
+      // los orcos además se quedan sin atacar mientras dure (hasta el deshielo, igual que los demás)
+      if (e.ent && e.ent.freeze && e.ent.orc) e.ent.freeze(Math.max(0.1, this.T - this.fout));
+    }
     this.mat.opacity = 0.5 * this.k;
     this.mat.emissiveIntensity = 0.14 + 0.2 * this.k;
     const fx = this.g.fx;
@@ -138,6 +155,7 @@ export class FrostFreeze {
   clear() {
     for (const it of this.items.values()) this.unfrost(it);
     this.items.clear();
+    this.area = null;
     this.mat.opacity = 0;
   }
 }

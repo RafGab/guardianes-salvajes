@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { LeafStorm, iceMaterials, cometDisc } from './magicfx.js';
+import { LeafStorm, iceMaterials, cometDisc, auroraShield, frostArea } from './magicfx.js';
 import { petrifyMaterial } from './powers.js';
 import { sandMaterial } from './speedfx2.js';
 import { propModel } from '../props.js';
@@ -13,7 +13,7 @@ import { ui } from '../ui.js';
 // La lógica (objetivos, daño, estados) está aquí; lo visual sale de skills/vfx.js y los números de skills/config.js.
 // La pose del cuerpo (inclinar, aplastar, girar, desaparecer) se superpone a la animación del modelo mediante player.pose.
 
-import { Skill, DEG, ease, lerp, clamp, V, NEUTRAL, SKIP_TAGS, makeElastic, boneWorld } from './base.js';
+import { Skill, DEG, ease, lerp, clamp, V, NEUTRAL, SKIP_TAGS, makeElastic, boneWorld, powerTail } from './base.js';
 import { POWER_CLASSES, AIM_MAX, aimPoint, aimShow, aimHide } from './powers.js';
 import { POWER2_CLASSES } from './powers2.js';
 import { SandStorm, WaterGate, SpringWard, puddle, takeGate, returnGate } from './fx3.js';
@@ -548,7 +548,7 @@ class WheelSkill extends Skill {
         for (const t of this.combat.inCircle(this.wc.x, this.wc.z, d.radius)) this.combat.root(t, 0.2); // la rueda sujeta mientras gira
       }, exit: () => {
         this.vfx.ring(this.wc.x, null, this.wc.z, { r0: 1, r1: d.radius * 1.2, dur: 0.5, color: 0xffd27a, opacity: 0.6 });
-        if (this.storm) { this.storm.release(1); this.storm.burst(this.wc.x, this.gy(this.wc.x, this.wc.z) + 1, this.wc.z, 40, 1.1); }
+        if (this.storm) { this.storm.release(1); this.storm.burst(this.wc.x, this.gy(this.wc.x, this.wc.z) + 1, this.wc.z, 70, 1.1); }
         for (let i = 0; i < 14; i++) this.g.fx.sparkle(this.wc.x + rnd(-1.5, 1.5), this.gy(this.wc.x, this.wc.z) + rnd(0.4, 2.4), this.wc.z + rnd(-1.5, 1.5), i % 2 ? 0xffd86a : 0xfff2b0, 3);
       } },
       { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.spin = 0; pose.rx = lerp(0.12, 0, k); this.orbit(2.2 * (1 - k), this.t * 4, 1 - k, this.wc); } },
@@ -568,7 +568,7 @@ class WheelSkill extends Skill {
      se forman alrededor de la zorra al cargar, viajan con la rueda hacia los enemigos y, al golpear, estallan en un
      círculo de hojas con destellos dorados que caen y se desvanecen poco a poco. */
   enterGather() {
-    const S = new LeafStorm(null, { n: 300, spare: 180, height: 2.8 });
+    const S = new LeafStorm(null, { n: 720, spare: 380, height: 2.8 }); // muchas más hojas (antes 300)
     this.storm = S;
     // el remolino vive como efecto propio: al terminar la habilidad, sus últimas hojas siguen cayendo y se apagan solas
     let fade = 0;
@@ -598,12 +598,12 @@ class WheelSkill extends Skill {
   pulse(order, seasons) {
     const d = this.def, c = this.wc ? V(this.wc.x, this.gy(this.wc.x, this.wc.z), this.wc.z) : this.p.pos;
     this.vfx.ring(c.x, null, c.z, { r0: 1, r1: d.radius, dur: 0.5, color: 0xf0a83a, opacity: 0.45 });
-    if (this.storm) this.storm.burst(c.x, c.y + 0.6, c.z, 6, 0.7);
+    if (this.storm) this.storm.burst(c.x, c.y + 0.6, c.z, 12, 0.7);
     for (const t of this.combat.inCircle(c.x, c.z, d.radius)) {
       // IMPACTO: explosión circular de hojas sobre el enemigo (grande la primera vez, pequeña en los siguientes pulsos)
       const first = !this.hitOnce.has(t);
       this.hitOnce.add(t);
-      if (this.storm) this.storm.burst(t.pos.x, t.pos.y + 0.8, t.pos.z, first ? 34 : 8, first ? 1 : 0.6);
+      if (this.storm) this.storm.burst(t.pos.x, t.pos.y + 0.8, t.pos.z, first ? 55 : 14, first ? 1 : 0.6);
       if (first) {
         this.vfx.ring(t.pos.x, null, t.pos.z, { r0: 0.3, r1: 2.4, dur: 0.45, color: 0xffc85a, opacity: 0.7 });
         for (let i = 0; i < 8; i++) this.g.fx.sparkle(t.pos.x + rnd(-0.5, 0.5), t.pos.y + rnd(0.4, 1.6), t.pos.z + rnd(-0.5, 0.5), i % 2 ? 0xffd86a : 0xffffff, 2.5);
@@ -1008,6 +1008,7 @@ export class HeroSkills {
   isActive(key) { return !!((this.cur && this.cur.key === key) || this.bg.some((b) => b.key === key)); }
 
   reset() {
+    if (this._tail) { this._tail.h.end(); this._tail = null; }
     if (this.cur) { this.cur.dispose(); this.cur = null; }
     for (const b of this.bg) b.dispose();
     this.bg.length = 0;
@@ -1047,6 +1048,8 @@ export class HeroSkills {
         const S = new LeafStorm(null, { n: 8, spare: 4 });
         S.update(1 / 60, p.pos.clone(), { r: 1, k: 1 });
         add(S.root, () => S.dispose());
+        const sh = auroraShield(g.scene); sh.set(p.pos.clone(), 1, 1, 0.5, 0); temps.push(() => sh.dispose());
+        const ar = frostArea(g.scene, 8); ar.set(p.pos.x, p.pos.y, p.pos.z, 1, 0); temps.push(() => ar.dispose());
         const ice = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.1, 0.1), iceMaterials()[0]);
         add(ice, () => ice.geometry.dispose());
         if (g.frost) { const sh = new THREE.Mesh(g.frost.sGeo, g.frost.sMat); add(sh); const cr = new THREE.Mesh(g.frost.cGeo, g.frost.cMat); add(cr); bodyPass(() => g.frost.mat); }
@@ -1071,6 +1074,30 @@ export class HeroSkills {
     for (const f of temps) { try { f(); } catch (e) { /* nada */ } }
   }
 
+  /* KIRA — CADA PODER SALE DE SU COLA. Se ve qué cola usa: se alza y se orienta durante la preparación/carga
+     (con un brillo de su color en la punta), da un latigazo justo cuando se lanza el poder y vuelve a su sitio
+     en la recuperación. Las otras tres colas siguen con su movimiento natural. No cambia ningún poder. */
+  tailOfPower(dt) {
+    const g = this.g, TAILS = { skill: ['pink', 0xff8ad0], special: ['orange', 0xffa030], solstice: ['red', 0xff5a2a], aurora: ['blue', 0x6ad0ff] };
+    const s = this.cur || this.bg.find((b) => TAILS[b.key]);
+    const hero = g.hero && g.hero.id;
+    if (this._tail && (!s || s !== this._tail.sk)) { this._tail.h.end(); this._tail = null; }
+    if (!s || hero !== 'kyra' || !TAILS[s.key]) return;
+    if (!this._tail) { const h = powerTail(s, TAILS[s.key][0]); if (!h) return; this._tail = { sk: s, h, stage: '', col: TAILS[s.key][1], glowT: 0 }; }
+    const T = this._tail, st = T.h.st, name = s.stageName;
+    const charging = /preparacion|aura-solar|canalizar|contener/.test(name);
+    const launch = /ejecucion|rueda|lanzamiento|zona-polar|expansion/.test(name);
+    if (name !== T.stage) { if (launch && !/ejecucion|rueda|lanzamiento|zona-polar|expansion/.test(T.stage)) st.whip = 1; T.stage = name; }
+    st.k = charging ? Math.min(1, (st.k || 0) + dt * 4) : launch ? 1 : Math.max(0, st.k - dt * 3);
+    // brillo del poder en la punta de la cola (de su color) mientras se carga y al lanzarlo
+    T.glowT -= dt;
+    if ((charging || st.whip > 0.3) && T.glowT <= 0) {
+      T.glowT = 0.05;
+      const tip = T.h.tip(new THREE.Vector3());
+      g.vfx.orb(tip, { r: 0.06 + 0.07 * st.k + 0.12 * st.whip, color: T.col, opacity: 0.6, life: 0.2 });
+      if (Math.random() < 0.5) g.fx.sparkle(tip.x, tip.y, tip.z, T.col, 0.8);
+    }
+  }
   // ¿Este poder está activo y admite una segunda pulsación? (saltar a un espejismo, aterrizar, salir de la roca)
   canRecast(key) { return !!this.recastTarget(key); }
   recastTarget(key) {
@@ -1121,6 +1148,7 @@ export class HeroSkills {
     const c = this.g.combat;
     for (let i = this.bg.length - 1; i >= 0; i--) { const b = this.bg[i]; c.src = b; const done = b.update(dt); c.src = null; if (done) { b.dispose(); this.bg.splice(i, 1); } }
     if (this.cur) { c.src = this.cur; const done = this.cur.update(dt); c.src = null; if (done) { this.cur.dispose(); this.cur = null; } }
+    this.tailOfPower(dt);
     p.skillRole = (this.cur && this.cur.role) || (this.bg.find((b) => b.role && b.role !== 'velocidad') || {}).role || null;
   }
 }

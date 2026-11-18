@@ -14,6 +14,7 @@ import { cometDisc, speedLines } from './magicfx.js';
 //  · NILO — skyboard: burbujas con reflejos e irisaciones, de tamaños y trayectorias variadas, y estela de energía bajo las botas
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 const FOOT = ['foot_L', 'foot_R'];
+const _qI = new THREE.Quaternion(); // giro neutro (reposo de los huesos: el rig no tiene giro de reposo)
 
 // pies del héroe (huesos) o, si el modelo no los tiene, un punto a cada lado
 function feetPos(sk) {
@@ -146,6 +147,22 @@ export const SPEED2 = {
         fx.rot(B.spine || B.spine_1, 0, 1, 0, o * 0.14 * sw);  // los hombros acompañan cada empuje
         fx.rot(B.spine || B.spine_1, 0, 0, 1, o * (0.05 * sw2 - c * 0.25)); // oscilación y equilibrio en las curvas
         fx.rot(B.neck || B.head, 0, 1, 0, -o * 0.08 * sw);     // la cabeza mantiene la mirada al frente
+        // ZANCADAS DE PATINADORA: las piernas dejan la carrera y patinan. Postura baja con las rodillas flexionadas;
+        // cada pierna empuja hacia fuera (lateral, casi estirada) mientras la otra se desliza recogida bajo el cuerpo,
+        // con las cuchillas siempre paralelas al suelo. Se mezcla con la carrera según `o` (al frenar vuelve a correr).
+        const lean = 0.3; // inclinación del cuerpo hacia delante (pose.rx de la carrera sobre hielo)
+        for (const side of ['L', 'R']) {
+          const th = B[`thigh_${side}`], sh = B[`shin_${side}`], ft = B[`foot_${side}`];
+          if (!th || !sh) continue;
+          if (o > 0.5) { th.quaternion.slerp(_qI, (o - 0.5) * 2); sh.quaternion.slerp(_qI, (o - 0.5) * 2); if (ft) ft.quaternion.slerp(_qI, (o - 0.5) * 2); }
+          const sg = side === 'L' ? 1 : -1, push = Math.max(0, Math.sin(ph + (side === 'L' ? 0 : Math.PI)));
+          const ep = push * push * (3 - 2 * push);
+          const thx = o * (-0.5 * (1 - ep) + 0.12 * ep), shx = o * (0.8 * (1 - ep) + 0.15 * ep);
+          fx.rot(th, 1, 0, 0, thx);                    // muslo: delante (deslizando) o algo atrás (empujando)
+          fx.rot(th, 0, 0, 1, sg * o * 0.42 * ep);     // empuje hacia fuera
+          fx.rot(sh, 1, 0, 0, shx);                    // rodilla flexionada al deslizar, casi estirada al empujar
+          if (ft) fx.rot(ft, 1, 0, 0, -(thx + shx) + o * lean * 0.6); // la cuchilla, plana sobre el hielo
+        }
       });
     }
     this.pose.rz += Math.sin(S.ph) * 0.03 * S.open; // pequeño balanceo de patinadora
@@ -309,6 +326,11 @@ export const SPEED2 = {
   },
 
   cleanup() {
+    if (this._blades) { // cuchillas de patín de Kira
+      for (const b of this._blades) { b.g.traverse((o) => { if (o.geometry && o.geometry.userData.mine) o.geometry.dispose(); }); b.bone.remove(b.g); }
+      for (const r of this._bladeRes) r.dispose();
+      this._blades = null;
+    }
     if (this._comets) { for (const c of this._comets) c.d.dispose(); this._comets = null; }
     if (this._wHid) { for (const pt of this._wHid.parts) pt.w.group.visible = true; this._wHid = null; }
     if (this.hero === 'kairo') { speedLines(0); this.p.animMul = 1; }

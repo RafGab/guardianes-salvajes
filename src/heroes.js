@@ -1432,6 +1432,7 @@ class GLBHero {
     model.traverse((o) => { if (o.isBone) { this.bones[o.name] = o; o.userData.q0 = o.quaternion.clone(); o.userData.s0 = o.scale.clone(); } });
     this.boneFx = null; // (bones, dt, t, fx) => void · lo fija una habilidad y lo quita al terminar
     this.armFx = null;  // capa del arma (guardia, golpes, combos): se aplica después de boneFx
+    this.tailFx = null; // capa de la cola que usa un poder (se levanta, apunta y da el latigazo al lanzarlo)
     // Mejoras propias de un personaje (Lira H3.1: ojos 3D, accesorios, brillo, animaciones nuevas y movimiento secundario)
     this.upgrade = null;
     if (def.id === 'lira') {
@@ -1506,7 +1507,7 @@ class GLBHero {
       else if (s.power > 0.2 && C.power) name = 'power';
       else if (run > 0.15) { name = run > 0.8 ? (s.sprint && C.sprint ? 'sprint' : 'run') : 'walk'; sp = clamp(run * 1.1, 0.5, 1.6); }
       // patinaje (velocidad de la Zorra Ártica): zancadas más largas y lentas, se desliza entre impulso e impulso
-      if (this.skate > 0 && (name === 'run' || name === 'walk' || name === 'sprint')) sp *= 1 - 0.5 * this.skate;
+      if (this.skate > 0 && (name === 'run' || name === 'walk' || name === 'sprint')) sp *= 1 - 0.8 * this.skate;
       this.skate = Math.max(0, (this.skate || 0) - dt * 2.5);
       this.play(name, fade, sp);
       // los huesos que movió una habilidad vuelven a su reposo antes de animar (así no se acumulan giros)
@@ -1515,6 +1516,7 @@ class GLBHero {
       this.mixer.update(dt);
     }
     if (this.boneFx) { this.root.updateMatrixWorld(true); this.boneFx(this.bones, dt, this.t, this.boneTools); }
+    if (this.tailFx) { this.root.updateMatrixWorld(true); this.tailFx(this.bones, dt, this.t, this.boneTools); } // cola que lanza el poder (Kira)
     if (this.armFx) { this.root.updateMatrixWorld(true); this.armFx(this.bones, dt, this.t, this.boneTools); }
     if (this.anatomy) poseAnatomy(this.anatomy, { ...this.handPose, walk: this.phase, speed: run, grounded: !air && !swim });
     if (this.upgrade) this.upgrade.update(dt, { ...s, grounded: !air, swimming: swim }, run);

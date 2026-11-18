@@ -22,6 +22,8 @@ const FILES = {
   // versiones ligeras (menos polígonos) para repartir muchas copias instanciadas por Cenizara
   // roca de la Transformación en Roca de Jaglion (modelo de Tripo aligerado, con sus texturas PBR)
   roca: 'props/roca.glb',
+  // hacha de Kyra (modelo 3D hacha.glb, se monta en su mano: weapons/models.js)
+  hacha: 'props/hacha.glb',
   arbolseco_lo: 'props/arbolseco_lo.glb', arbolfuego_lo: 'props/arbolfuego_lo.glb', cristal_lo: 'props/cristal_lo.glb', rocas_lo: 'props/rocas_lo.glb',
 };
 

@@ -14,6 +14,43 @@ import { SPEED2 } from './speedfx2.js';
 const back = (k) => 1 - Math.pow(1 - k, 3);
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 
+/* KIRA — PATINAJE SOBRE HIELO (botón de velocidad)
+   · cuchillas de patín de hielo bajo cada pie (crecen al arrancar y se deshacen al frenar)
+   · el HIELO SE FORMA DELANTE de ella, en la dirección en que avanza: placas de hielo que se congelan en el suelo
+     justo antes de que llegue, cristales que brotan y escarcha que salta hacia delante (nunca detrás) */
+let ICE_TEX = null;
+function iceTex() {
+  if (ICE_TEX) return ICE_TEX;
+  const c = document.createElement('canvas'); c.width = c.height = 256;
+  const x = c.getContext('2d'), g = x.createRadialGradient(128, 128, 10, 128, 128, 128);
+  g.addColorStop(0, 'rgba(235,250,255,0.95)'); g.addColorStop(0.55, 'rgba(170,225,255,0.8)'); g.addColorStop(0.85, 'rgba(120,200,255,0.45)'); g.addColorStop(1, 'rgba(120,200,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 256, 256);
+  x.strokeStyle = 'rgba(255,255,255,0.85)'; x.lineWidth = 1.4;
+  for (let i = 0; i < 9; i++) { // grietas del hielo
+    let px = 128, py = 128; const a = Math.random() * Math.PI * 2;
+    x.beginPath(); x.moveTo(px, py);
+    for (let s = 0; s < 5; s++) { px += Math.cos(a + (Math.random() - 0.5) * 0.9) * 20; py += Math.sin(a + (Math.random() - 0.5) * 0.9) * 20; x.lineTo(px, py); }
+    x.stroke();
+  }
+  ICE_TEX = new THREE.CanvasTexture(c);
+  return ICE_TEX;
+}
+let ICE_GEO = null;
+function iceAhead(sk, x, z, r, rot) {
+  if (!ICE_GEO) { ICE_GEO = new THREE.CircleGeometry(1, 20); ICE_GEO.rotateX(-Math.PI / 2); }
+  const p = sk.p, y = p.floorY ? p.floorY(x, z, p.pos.y + 1) : terrainH(x, z);
+  const m = new THREE.Mesh(ICE_GEO, new THREE.MeshStandardMaterial({ map: iceTex(), color: 0xe8f8ff, emissive: 0x3a90c8, emissiveIntensity: 0.25, roughness: 0.08, metalness: 0.3, transparent: true, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }));
+  m.material.userData.own = true;
+  m.position.set(x, y + 0.03, z); m.rotation.y = rot; m.renderOrder = 3;
+  const life = 1.5;
+  sk.vfx.add(m, life, (it) => {
+    const t = it.t, g = Math.min(1, t / 0.16); // se congela en un instante (crece desde el centro)
+    m.scale.set(r * (1 - Math.pow(1 - g, 3)), 1, r * 0.8 * (1 - Math.pow(1 - g, 3)));
+    m.material.opacity = 0.9 * (t > life - 0.5 ? (life - t) / 0.5 : 1);
+  });
+  sk.g.fx.iceShard(x, y + 0.1, z, 0.7);
+}
+
 /* ---------- recursos compartidos de los efectos de velocidad (se crean una vez) ---------- */
 // NILO: chorro de agua de las botas (cono abierto con franjas que bajan) y burbujas
 let JET_GEO = null, BUBBLE_GEO = null, SPEED_GEO = null;
@@ -259,7 +296,7 @@ export class SpeedFxSkill extends Skill {
     S.I = damp(S.I, want, want > S.I ? 6 : 4, dt);
     const I = S.I;
     const charge = S.t < 0.35 ? 1 - S.t / 0.35 : 0;                 // fase 1
-    if (on && p.model) p.model.skate = Math.min(1, Math.max(p.model.skate || 0, 0.35 * k)); // las piernas apenas se mueven: se desliza
+    if (on && p.model) p.model.skate = Math.min(1, Math.max(p.model.skate || 0, 0.4 + 0.6 * k)); // la carrera casi se detiene: las piernas patinan (zancadas de kyraArms)
     // ---- pose: preparación agachada → aerodinámica, inclinada en las curvas, montada sobre la corriente
     const sm = this.skSm || (this.skSm = { rx: 0, rz: 0, sy: 1, dy: 0 });
     const kk = Math.min(1, dt * 8);
@@ -287,23 +324,31 @@ export class SpeedFxSkill extends Skill {
     // ---- fase 2: estallido al salir disparada
     if (on && !S.launched && charge <= 0 && sp > 0.5) {
       S.launched = true;
-      for (let i = 0; i < 26; i++) fx.spray(f0.x, f0.y + 0.08, f0.z, bx * rnd(2.5, 6) + rnd(-1.5, 1.5), rnd(0.6, 2.8), bz * rnd(2.5, 6) + rnd(-1.5, 1.5), 0.8);
-      for (let i = 0; i < 6; i++) fx.mist(f0.x + bx * rnd(0, 1.2), f0.y + 0.2, f0.z + bz * rnd(0, 1.2), 0xffffff, 1.6);
+      for (let i = 0; i < 26; i++) fx.spray(f0.x, f0.y + 0.08, f0.z, -bx * rnd(2.5, 6) + rnd(-1.5, 1.5), rnd(0.6, 2.8), -bz * rnd(2.5, 6) + rnd(-1.5, 1.5), 0.8);
+      for (let i = 0; i < 6; i++) fx.mist(f0.x - bx * rnd(0, 1.2), f0.y + 0.2, f0.z - bz * rnd(0, 1.2), 0xffffff, 1.6);
       this.vfx.ring(f0.x, null, f0.z, { r0: 0.3, r1: 2.6, dur: 0.45, color: 0xffffff, opacity: 0.6 });
       this.g.chase.fovKick = Math.max(this.g.chase.fovKick, 9);
       this.sfx('wind');
     }
     // ---- fase 3: estela 3D de nieve que sigue la trayectoria, copos y remolinos
     const st = this.stream || (this.stream = this.makeStream());
-    this.updateStream(st, I, dt);
+    this.updateStream(st, 0, dt); // (la antigua corriente de nieve quedaba DETRÁS: ya no se muestra)
+    this.skateBlades(I, dt);
     if (I > 0.1) {
-      const n = 1 + Math.round(3 * I);
-      for (let i = 0; i < n; i++) { const s = rnd(-0.45, 0.45); fx.spray(f0.x - bz * s, f0.y + 0.1, f0.z + bx * s, bx * rnd(1.5, 3.5) - bz * s * 2, rnd(0.5, 1.8), bz * rnd(1.5, 3.5) + bx * s * 2, 0.55 + 0.3 * I); }
-      if (Math.random() < 0.5 * I) fx.mist(f0.x + bx * 0.6, f0.y + 0.12, f0.z + bz * 0.6, Math.random() < 0.6 ? 0xffffff : 0xcfeeff, 0.7 + 0.5 * I);
-      if (Math.random() < 0.6 * I) { const q = this.path[Math.min(this.path.length - 1, 4 + Math.floor(Math.random() * 14))]; if (q) fx.sparkle(q.x + rnd(-0.5, 0.5), q.y + rnd(0.1, 0.6), q.z + rnd(-0.5, 0.5), Math.random() < 0.5 ? 0xffffff : 0xa8e0ff, 0.5); }
-      S.whirlT -= dt;
-      if (S.whirlT <= 0 && sp > 2) { S.whirlT = 0.16; const q = this.path[Math.min(this.path.length - 1, 3)] || p.pos; this.vfx.ring(q.x, q.y + 0.15 + Math.random() * 0.4, q.z, { r0: 0.2, r1: 0.9 + 0.5 * I, dur: 0.4, color: 0xe8f8ff, opacity: 0.45 }); }
-      if (Math.abs(this.carve) > 0.18 && Math.random() < 0.6) { const s = Math.sign(this.carve); fx.spray(f0.x, f0.y + 0.1, f0.z, -bz * s * 2.6, 1.6, bx * s * 2.6, 0.75); } // la nieve salta en las curvas
+      const ax = -bx, az = -bz; // dirección de avance
+      // el suelo se congela DELANTE de ella: placas de hielo que aparecen justo antes de que llegue
+      this.iceT = (this.iceT || 0) - dt * (0.7 + sp * 0.12);
+      if (this.iceT <= 0 && sp > 1) {
+        this.iceT = 0.11;
+        const d = rnd(1.0, 1.9) + sp * 0.07, s = rnd(-0.3, 0.3);
+        iceAhead(this, p.pos.x + ax * d - az * s, p.pos.z + az * d + ax * s, rnd(0.55, 0.85) * (0.75 + 0.35 * I), p.facing + rnd(-0.4, 0.4));
+      }
+      // escarcha y cristales que brotan por delante de las cuchillas
+      const n = 1 + Math.round(2 * I);
+      for (let i = 0; i < n; i++) { const d = rnd(0.5, 1.6), s = rnd(-0.4, 0.4); fx.spray(p.pos.x + ax * d - az * s, f0.y + 0.08, p.pos.z + az * d + ax * s, ax * rnd(0.5, 1.6), rnd(0.6, 1.6), az * rnd(0.5, 1.6), 0.5 + 0.25 * I); }
+      if (Math.random() < 0.7 * I) { const d = rnd(0.6, 2.2); fx.sparkle(p.pos.x + ax * d + rnd(-0.4, 0.4), f0.y + rnd(0.05, 0.5), p.pos.z + az * d + rnd(-0.4, 0.4), Math.random() < 0.5 ? 0xffffff : 0xa8e0ff, 0.5); }
+      if (Math.random() < 0.35 * I) { const d = rnd(0.8, 1.8); fx.iceShard(p.pos.x + ax * d + rnd(-0.3, 0.3), f0.y + 0.08, p.pos.z + az * d + rnd(-0.3, 0.3), 0.6); }
+      if (Math.abs(this.carve) > 0.18 && Math.random() < 0.6) { const s = Math.sign(this.carve); fx.spray(f0.x + ax * 0.3, f0.y + 0.1, f0.z + az * 0.3, -bz * s * 2.6, 1.6, bx * s * 2.6, 0.75); } // el hielo salta en las curvas, hacia fuera
       this.lineT = (this.lineT || 0) - dt;
       if (k > 0.45 && this.lineT <= 0) { this.lineT = 0.06 / k; this.speedLine(bx, bz, k); }
     }
@@ -313,6 +358,39 @@ export class SpeedFxSkill extends Skill {
       for (let s = -1; s <= 1; s += 2) for (let i = 0; i < 14; i++) fx.spray(f0.x, f0.y + 0.1, f0.z, -bz * s * rnd(2, 4.5) + bx * rnd(-0.5, 1), rnd(0.8, 2.4), bx * s * rnd(2, 4.5) + bz * rnd(-0.5, 1), 0.8);
       for (let i = 0; i < 8; i++) fx.mist(f0.x + rnd(-1, 1), f0.y + 0.2, f0.z + rnd(-1, 1), 0xffffff, 1.2);
       for (let i = 0; i < 12; i++) fx.sparkle(f0.x + rnd(-1.2, 1.2), f0.y + rnd(0.1, 0.9), f0.z + rnd(-1.2, 1.2), Math.random() < 0.5 ? 0xffffff : 0xa8e0ff, 0.4);
+    }
+  }
+  // CUCHILLAS DE PATÍN: hoja de acero helado con borde luminoso y soporte bajo cada pie (hueso foot_L / foot_R)
+  skateBlades(I, dt) {
+    const p = this.p, B = p.model && p.model.bones;
+    if (!B || !B.foot_L) return;
+    if (!this._blades) {
+      const steel = new THREE.MeshStandardMaterial({ color: 0xd8ecff, metalness: 0.9, roughness: 0.18, emissive: 0x3a7ab8, emissiveIntensity: 0.25 });
+      const glow = new THREE.MeshBasicMaterial({ color: 0x9fe8ff, transparent: true, opacity: 0.85, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false });
+      steel.userData.own = glow.userData.own = true;
+      const bladeGeo = new THREE.BoxGeometry(0.014, 0.045, 0.34), edgeGeo = new THREE.BoxGeometry(0.02, 0.008, 0.36), postGeo = new THREE.BoxGeometry(0.03, 0.05, 0.03);
+      this._bladeRes = [steel, glow, bladeGeo, edgeGeo, postGeo];
+      this._blades = ['L', 'R'].map((s) => {
+        const bone = B[`foot_${s}`], g = new THREE.Group();
+        const blade = new THREE.Mesh(bladeGeo, steel); blade.position.y = -0.035;
+        const edge = new THREE.Mesh(edgeGeo, glow); edge.position.y = -0.058;
+        const tip = new THREE.Mesh(new THREE.TorusGeometry(0.03, 0.007, 6, 12, Math.PI), steel); tip.rotation.y = Math.PI / 2; tip.position.set(0, -0.03, 0.17); tip.geometry.userData.mine = true;
+        for (const z of [-0.09, 0.09]) { const q = new THREE.Mesh(postGeo, steel); q.position.set(0, 0, z); g.add(q); }
+        g.add(blade, edge, tip);
+        for (const o of [blade, edge, tip]) o.castShadow = o !== edge;
+        bone.add(g);
+        return { g, bone, s };
+      });
+    }
+    const v = new THREE.Vector3();
+    for (const b of this._blades) {
+      // escala del hueso en el mundo → la cuchilla mide siempre lo mismo (en metros); bajo la suela, algo adelantada
+      b.bone.getWorldScale(v);
+      const ws = v.x || 1, k = Math.max(0.0001, I);
+      b.g.scale.set(k / ws, k / ws, k / ws);
+      // el tobillo está a 0,075 (unidades del modelo) sobre la suela: la cuchilla queda justo bajo la suela y sigue al pie
+      b.g.position.set(0, -0.075 + 0.045 / ws, 0.06 / ws);
+      b.g.visible = I > 0.02;
     }
   }
   // corriente de nieve: una cinta abombada (sección en arco) que recorre las últimas posiciones de Kyra

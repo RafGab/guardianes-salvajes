@@ -132,12 +132,74 @@ for (let v = 0; v < NV; v++) {
   if (s <= 0) { J0[v * 4] = 0; W0[v * 4] = 1; s = 1; }
   for (let k = 0; k < 4; k++) W0[v * 4 + k] /= s;
 }
+// CORTE BRAZO / COLA (spec.cutArmTail): en modelos donde el puño toca una cola, la malla los une con triángulos.
+// Al mover el brazo esos triángulos se estiraban como láminas. Cada triángulo de la frontera pasa ENTERO al lado
+// de la mayoría (brazo o cola): sus vértices del otro lado se duplican con los pesos de ese lado → se separan limpiamente.
+let cutExtra = null;
+if (spec.cutArmTail) {
+  // grupos: A = antebrazo y mano · U = hombro y brazo · T<color> = cada cola · L = piernas · C = tronco y cabeza
+  const grpB = order.map((n) => (/^tail_/.test(n) ? 'T' + (n.match(/^tail_([a-z]+)_/) || [, ''])[1] : /^(forearm|hand)/.test(n) ? 'A' + sideOf(n) : /^(clavicle|upper_arm)/.test(n) ? 'U' + sideOf(n) : /^(thigh|shin|foot|toe)/.test(n) ? 'L' : 'C'));
+  // pares que se separan con un corte: el antebrazo/mano de todo lo que no sea su brazo; las colas, de los brazos
+  const apart = (a, b) => {
+    if (!a || !b || a === b) return false;
+    const A = a[0], B = b[0];
+    if (A === 'A' && B !== 'U' && B !== 'A') return true;
+    if (B === 'A' && A !== 'U' && A !== 'A') return true;
+    if ((A === 'T' && B === 'U') || (A === 'U' && B === 'T')) return true;
+    return false;
+  };
+  const domOf = (v) => { let b = 0; for (let k = 1; k < 4; k++) if (W0[v * 4 + k] > W0[v * 4 + b]) b = k; return grpB[J0[v * 4 + b]]; };
+  // sin mezclas: un vértice no lleva pesos de un grupo del que se separa
+  for (let v = 0; v < NV; v++) {
+    const d = domOf(v);
+    let s = 0;
+    for (let k = 0; k < 4; k++) { if (W0[v * 4 + k] > 0 && apart(d, grpB[J0[v * 4 + k]])) W0[v * 4 + k] = 0; s += W0[v * 4 + k]; }
+    if (s > 0) for (let k = 0; k < 4; k++) W0[v * 4 + k] /= s;
+  }
+  const dom = Array.from({ length: NV }, (_, v) => domOf(v));
+  const idxArr = Array.from({ length: IDX.getCount() }, (_, i) => IDX.getScalar(i));
+  const dup = new Map(), extraV = [];
+  let cut = 0;
+  for (let t = 0; t < idxArr.length; t += 3) {
+    const vs = [idxArr[t], idxArr[t + 1], idxArr[t + 2]], gs = vs.map((v) => dom[v]);
+    if (!(apart(gs[0], gs[1]) || apart(gs[1], gs[2]) || apart(gs[0], gs[2]))) continue;
+    // el triángulo se queda con el grupo de la mayoría (o, si los tres son distintos, con el primero que no sea el antebrazo)
+    const count = {}; gs.forEach((g) => { count[g] = (count[g] || 0) + 1; });
+    let own = Object.keys(count).sort((x, y) => count[y] - count[x])[0];
+    if (count[own] === 1) own = gs.find((g) => g[0] !== 'A') || gs[0];
+    const src = vs[gs.indexOf(own)];
+    for (let k = 0; k < 3; k++) {
+      if (gs[k] === own || !apart(gs[k], own)) continue;
+      const key = vs[k] + ':' + src;
+      if (!dup.has(key)) { dup.set(key, NV + extraV.length); extraV.push({ from: vs[k], w: src }); }
+      idxArr[t + k] = dup.get(key);
+    }
+    cut++;
+  }
+  cutExtra = { idxArr, extraV };
+  console.log(`corte brazos/colas/cuerpo: ${cut} triángulos, ${extraV.length} vértices duplicados`);
+}
 // cara rígida: los rasgos de la cara no se deforman (tools/faceFix.mjs)
 const face = applyRigidFace({ names: order, joints: J, J0, W0, pos, opts: spec.face || {} });
 console.log(`cara rígida: ${face.changed} vértices (radio ${face.radius?.toFixed(3)})`);
 const buffer = root.listBuffers()[0];
-prim.setAttribute('JOINTS_0', doc.createAccessor('JOINTS_0').setType('VEC4').setArray(J0).setBuffer(buffer));
-prim.setAttribute('WEIGHTS_0', doc.createAccessor('WEIGHTS_0').setType('VEC4').setArray(W0).setBuffer(buffer));
+let J0o = J0, W0o = W0;
+if (cutExtra && cutExtra.extraV.length) {
+  // añade los vértices duplicados (misma posición, normal y UV; pesos del lado que se queda el triángulo)
+  const E = cutExtra.extraV, NE = NV + E.length;
+  for (const sem of prim.listSemantics()) {
+    const acc = prim.getAttribute(sem), arr = acc.getArray(), es = acc.getElementSize();
+    const out = new arr.constructor(NE * es); out.set(arr);
+    E.forEach((e, i) => { for (let c = 0; c < es; c++) out[(NV + i) * es + c] = arr[e.from * es + c]; });
+    acc.setArray(out);
+  }
+  J0o = new Uint16Array(NE * 4); J0o.set(J0); W0o = new Float32Array(NE * 4); W0o.set(W0);
+  E.forEach((e, i) => { for (let c = 0; c < 4; c++) { J0o[(NV + i) * 4 + c] = J0[e.w * 4 + c]; W0o[(NV + i) * 4 + c] = W0[e.w * 4 + c]; } });
+  const ia = new Uint32Array(cutExtra.idxArr);
+  IDX.setArray(NE > 65535 ? ia : new Uint16Array(ia));
+}
+prim.setAttribute('JOINTS_0', doc.createAccessor('JOINTS_0').setType('VEC4').setArray(J0o).setBuffer(buffer));
+prim.setAttribute('WEIGHTS_0', doc.createAccessor('WEIGHTS_0').setType('VEC4').setArray(W0o).setBuffer(buffer));
 
 // --- nodos de hueso, jerarquía y skin ---
 const nodes = {};

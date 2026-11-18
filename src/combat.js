@@ -297,12 +297,12 @@ export class Combat {
     for (let i = this.minions.length - 1; i >= 0; i--) {
       const m = this.minions[i];
       if (m.dead) { this.minions.splice(i, 1); continue; }
-      m.update(dt);
+      m.update(dt * (this.game.frost && this.game.frost.area ? this.game.frost.factor(m.group) : 1)); // Aurora Polar: solo los de dentro del aro
     }
     for (let i = this.orcs.length - 1; i >= 0; i--) {
       const o = this.orcs[i];
       if (o.dead) { this.orcs.splice(i, 1); continue; }
-      o.update(dt);
+      o.update(dt * (this.game.frost && this.game.frost.area ? this.game.frost.factor(o.group) : 1));
     }
     for (let i = this.lingering.length - 1; i >= 0; i--) {
       const o = this.lingering[i];

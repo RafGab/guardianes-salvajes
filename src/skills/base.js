@@ -82,6 +82,50 @@ export class Skill extends Staged {
 
 
 /* ---------------------------------------------------------------------- */
+/*  COLA DEL PODER (Kira): cada poder sale de SU cola                      */
+/*  tail_pink (primavera) · tail_red (Solsticio, verano) ·                 */
+/*  tail_orange (otoño, Rueda) · tail_blue (Aurora Polar, invierno)        */
+/*  st.k = 0 reposo … 1 alzada y orientada; st.whip = latigazo del         */
+/*  lanzamiento (se apaga solo). Las demás colas siguen con su animación.  */
+/* ---------------------------------------------------------------------- */
+export function powerTail(skill, color) {
+  const m = skill.p.model;
+  if (!m || !m.bones) return null;
+  const chain = [];
+  for (let k = 1; k <= 8; k++) if (m.bones[`tail_${color}_${k}`]) chain.push(m.bones[`tail_${color}_${k}`]);
+  if (!chain.length) return null;
+  // dirección de reposo de la cola (espacio del cuerpo: los huesos no tienen giro de reposo)
+  const dir = new THREE.Vector3();
+  for (let i = 1; i < chain.length; i++) dir.add(chain[i].position);
+  const end = m.bones[`tail_${color}_end`]; if (end) dir.add(end.position);
+  if (dir.lengthSq() < 1e-8) dir.set(0, 0, -1);
+  dir.normalize();
+  // eje para LEVANTARLA (hacia arriba) y, al final, curvarla por encima del cuerpo hacia delante
+  const lift = new THREE.Vector3().crossVectors(dir, new THREE.Vector3(0, 1, 0));
+  if (lift.lengthSq() < 0.05) lift.crossVectors(dir, new THREE.Vector3(0, 0, 1));
+  lift.normalize();
+  const st = { k: 0, whip: 0, kk: 0, ww: 0 };
+  const fn = (B, dt, t, fx) => {
+    st.kk += (st.k - st.kk) * (1 - Math.exp(-10 * dt)); // transición suave entre reposo y lanzamiento
+    st.ww += (st.whip - st.ww) * (1 - Math.exp(-18 * dt));
+    st.whip *= Math.exp(-5 * dt);
+    const n = chain.length;
+    chain.forEach((b, i) => {
+      const w = (i + 1) / n;
+      const a = st.kk * (0.2 + 0.16 * i) + st.ww * 0.35 * w + Math.sin(t * 7 - i * 0.8) * 0.06 * st.kk;
+      fx.rot(b, lift.x, lift.y, lift.z, a);
+    });
+  };
+  m.tailFx = fn;
+  return {
+    st, chain,
+    // punta de la cola en el mundo (para el brillo del poder)
+    tip(out = new THREE.Vector3()) { m.root.updateMatrixWorld(true); return (end || chain[chain.length - 1]).getWorldPosition(out); },
+    end() { if (m.tailFx === fn) m.tailFx = null; },
+  };
+}
+
+/* ---------------------------------------------------------------------- */
 /*  CADENA ELÁSTICA (lengua del Komodo, cola del Jaglion)                  */
 /*  Un tubo de muchas articulaciones entre dos puntos: se comba, ondula y  */
 /*  rebota. set(a, b, { wobble, phase, sag, waves }) cada fotograma.       */

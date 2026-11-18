@@ -1,287 +1,323 @@
 {
  "joints": {
   "root": [
-   0.0066,
-   0.48,
-   0.0215
+   0,
+   0.49,
+   0.155
   ],
   "spine": [
-   0.0038,
-   0.56,
-   0.0686
+   0,
+   0.58,
+   0.16
   ],
   "chest": [
-   0.0101,
-   0.66,
-   0.0167
+   0,
+   0.67,
+   0.165
   ],
   "neck": [
-   0.01,
-   0.77,
-   0.05
+   0,
+   0.755,
+   0.165
   ],
   "head": [
-   0.01,
+   0,
    0.8,
-   0.05
+   0.16
   ],
   "head_end": [
-   0.01,
-   0.93,
-   0.05
+   0,
+   0.95,
+   0.15
+  ],
+  "jaw": [
+   0,
+   0.8,
+   0.14
+  ],
+  "jaw_end": [
+   0,
+   0.775,
+   0.205
   ],
   "ear_L_1": [
-   0.06,
-   0.9,
-   0.03
+   0.055,
+   0.915,
+   0.13
   ],
   "ear_L_2": [
-   0.085,
-   0.945,
-   0.03
+   0.078,
+   0.952,
+   0.128
+  ],
+  "ear_L_3": [
+   0.092,
+   0.975,
+   0.126
   ],
   "ear_L_end": [
    0.104,
-   0.99,
-   0.03
-  ],
-  "ear_R_1": [
-   -0.05,
-   0.9,
-   0.03
-  ],
-  "ear_R_2": [
-   -0.07,
-   0.945,
-   0.03
-  ],
-  "ear_R_end": [
-   -0.095,
-   0.99,
-   0.03
-  ],
-  "clavicle_R": [
-   -0.03,
-   0.73,
-   0.05
+   0.996,
+   0.125
   ],
   "clavicle_L": [
-   0.05,
-   0.73,
-   0.05
-  ],
-  "upper_arm_R": [
-   -0.0792,
-   0.7489,
-   0.0355
+   0.035,
+   0.72,
+   0.165
   ],
   "upper_arm_L": [
-   0.1035,
-   0.7462,
-   0.0307
-  ],
-  "forearm_R": [
-   -0.142,
-   0.62,
-   0.045
+   0.105,
+   0.72,
+   0.165
   ],
   "forearm_L": [
-   0.1428,
-   0.62,
-   0.0129
-  ],
-  "hand_R": [
-   -0.1318,
-   0.56,
-   0.0314
+   0.13,
+   0.6,
+   0.165
   ],
   "hand_L": [
-   0.1532,
-   0.56,
-   0.0241
-  ],
-  "hand_end_R": [
-   -0.1385,
-   0.478,
-   0.0537
+   0.152,
+   0.505,
+   0.168
   ],
   "hand_end_L": [
-   0.1679,
-   0.478,
-   0.0511
-  ],
-  "thigh_R": [
-   -0.0795,
-   0.455,
-   0.0632
+   0.152,
+   0.43,
+   0.17
   ],
   "thigh_L": [
-   0.1109,
-   0.455,
-   0.0622
-  ],
-  "shin_R": [
-   -0.0756,
-   0.395,
-   0.0855
+   0.07,
+   0.45,
+   0.16
   ],
   "shin_L": [
-   0.1266,
-   0.395,
-   0.0988
-  ],
-  "foot_R": [
-   -0.1671,
-   0.112,
-   0.0552
+   0.09,
+   0.27,
+   0.172
   ],
   "foot_L": [
-   0.2007,
-   0.112,
-   0.0374
-  ],
-  "toe_R": [
-   -0.165,
-   0.037,
-   0.157
+   0.11,
+   0.075,
+   0.15
   ],
   "toe_L": [
-   0.21,
-   0.037,
-   0.157
-  ],
-  "toe_end_R": [
-   -0.165,
-   0.02,
-   0.2
+   0.115,
+   0.03,
+   0.235
   ],
   "toe_end_L": [
-   0.21,
+   0.12,
    0.02,
-   0.2
+   0.31
+  ],
+  "ear_R_1": [
+   -0.055,
+   0.915,
+   0.13
+  ],
+  "ear_R_2": [
+   -0.078,
+   0.952,
+   0.128
+  ],
+  "ear_R_3": [
+   -0.092,
+   0.975,
+   0.126
+  ],
+  "ear_R_end": [
+   -0.104,
+   0.996,
+   0.125
+  ],
+  "clavicle_R": [
+   -0.035,
+   0.72,
+   0.165
+  ],
+  "upper_arm_R": [
+   -0.105,
+   0.72,
+   0.165
+  ],
+  "forearm_R": [
+   -0.13,
+   0.6,
+   0.165
+  ],
+  "hand_R": [
+   -0.142,
+   0.505,
+   0.168
+  ],
+  "hand_end_R": [
+   -0.142,
+   0.43,
+   0.17
+  ],
+  "thigh_R": [
+   -0.07,
+   0.45,
+   0.16
+  ],
+  "shin_R": [
+   -0.09,
+   0.27,
+   0.172
+  ],
+  "foot_R": [
+   -0.11,
+   0.075,
+   0.15
+  ],
+  "toe_R": [
+   -0.115,
+   0.03,
+   0.235
+  ],
+  "toe_end_R": [
+   -0.12,
+   0.02,
+   0.31
   ],
   "tail_pink_1": [
-   -0.02,
-   0.52,
-   -0.02
+   0,
+   0.5,
+   0.06
   ],
   "tail_pink_2": [
-   -0.0827,
-   0.6252,
-   -0.0647
+   0,
+   0.51,
+   -0.01
   ],
   "tail_pink_3": [
-   -0.2092,
-   0.7135,
-   -0.1249
+   0,
+   0.53,
+   -0.08
   ],
   "tail_pink_4": [
-   -0.2317,
-   0.7842,
-   -0.1454
+   0,
+   0.55,
+   -0.15
   ],
   "tail_pink_5": [
-   -0.2867,
-   0.8093,
-   -0.1257
+   0,
+   0.56,
+   -0.22
   ],
   "tail_pink_end": [
-   -0.3017,
-   0.7569,
-   -0.0991
-  ],
-  "tail_orange_1": [
-   -0.02,
-   0.5,
-   -0.03
-  ],
-  "tail_orange_2": [
-   -0.1113,
-   0.5334,
-   -0.1297
-  ],
-  "tail_orange_3": [
-   -0.2201,
-   0.4621,
-   -0.154
-  ],
-  "tail_orange_4": [
-   -0.2949,
-   0.4316,
-   -0.108
-  ],
-  "tail_orange_5": [
-   -0.26,
-   0.33,
-   -0.12
-  ],
-  "tail_orange_end": [
-   -0.15,
-   0.25,
-   -0.1
+   0,
+   0.56,
+   -0.31
   ],
   "tail_blue_1": [
    0.03,
-   0.52,
-   -0.02
+   0.54,
+   0.08
   ],
   "tail_blue_2": [
-   0.0849,
-   0.6233,
-   -0.0685
+   0.09,
+   0.59,
+   0.075
   ],
   "tail_blue_3": [
-   0.16,
-   0.72,
-   -0.11
+   0.15,
+   0.65,
+   0.072
   ],
   "tail_blue_4": [
-   0.2453,
-   0.7753,
-   -0.1428
+   0.21,
+   0.715,
+   0.072
   ],
   "tail_blue_5": [
-   0.2815,
-   0.7717,
-   -0.1254
+   0.255,
+   0.78,
+   0.075
   ],
   "tail_blue_end": [
-   0.3082,
-   0.7516,
-   -0.102
+   0.29,
+   0.84,
+   0.08
   ],
-  "tail_lblue_1": [
-   0.03,
+  "tail_orange_1": [
+   0.04,
    0.5,
-   -0.03
+   0.08
   ],
-  "tail_lblue_2": [
-   0.1106,
-   0.5201,
-   -0.1096
+  "tail_orange_2": [
+   0.1,
+   0.48,
+   0.09
   ],
-  "tail_lblue_3": [
-   0.2142,
-   0.4832,
-   -0.168
+  "tail_orange_3": [
+   0.17,
+   0.46,
+   0.1
   ],
-  "tail_lblue_4": [
-   0.299,
-   0.4118,
-   -0.1473
+  "tail_orange_4": [
+   0.23,
+   0.43,
+   0.105
   ],
-  "tail_lblue_5": [
-   0.2705,
-   0.3354,
-   -0.1135
+  "tail_orange_5": [
+   0.28,
+   0.38,
+   0.11
   ],
-  "tail_lblue_end": [
-   0.18,
-   0.25,
-   -0.1
+  "tail_orange_end": [
+   0.3,
+   0.31,
+   0.11
+  ],
+  "tail_red_1": [
+   -0.04,
+   0.5,
+   0.08
+  ],
+  "tail_red_2": [
+   -0.1,
+   0.47,
+   0.09
+  ],
+  "tail_red_3": [
+   -0.17,
+   0.44,
+   0.1
+  ],
+  "tail_red_4": [
+   -0.24,
+   0.43,
+   0.105
+  ],
+  "tail_red_5": [
+   -0.3,
+   0.48,
+   0.11
+  ],
+  "tail_red_end": [
+   -0.33,
+   0.56,
+   0.11
   ]
  },
  "extra": [
+  {
+   "name": "jaw",
+   "parent": "head"
+  },
+  {
+   "name": "jaw_end",
+   "parent": "jaw"
+  },
+  {
+   "name": "ear_L_3",
+   "parent": "ear_L_2"
+  },
+  {
+   "name": "ear_R_3",
+   "parent": "ear_R_2"
+  },
   {
    "name": "tail_pink_1",
    "parent": "root"
@@ -305,30 +341,6 @@
   {
    "name": "tail_pink_end",
    "parent": "tail_pink_5"
-  },
-  {
-   "name": "tail_orange_1",
-   "parent": "root"
-  },
-  {
-   "name": "tail_orange_2",
-   "parent": "tail_orange_1"
-  },
-  {
-   "name": "tail_orange_3",
-   "parent": "tail_orange_2"
-  },
-  {
-   "name": "tail_orange_4",
-   "parent": "tail_orange_3"
-  },
-  {
-   "name": "tail_orange_5",
-   "parent": "tail_orange_4"
-  },
-  {
-   "name": "tail_orange_end",
-   "parent": "tail_orange_5"
   },
   {
    "name": "tail_blue_1",
@@ -355,63 +367,97 @@
    "parent": "tail_blue_5"
   },
   {
-   "name": "tail_lblue_1",
+   "name": "tail_orange_1",
    "parent": "root"
   },
   {
-   "name": "tail_lblue_2",
-   "parent": "tail_lblue_1"
+   "name": "tail_orange_2",
+   "parent": "tail_orange_1"
   },
   {
-   "name": "tail_lblue_3",
-   "parent": "tail_lblue_2"
+   "name": "tail_orange_3",
+   "parent": "tail_orange_2"
   },
   {
-   "name": "tail_lblue_4",
-   "parent": "tail_lblue_3"
+   "name": "tail_orange_4",
+   "parent": "tail_orange_3"
   },
   {
-   "name": "tail_lblue_5",
-   "parent": "tail_lblue_4"
+   "name": "tail_orange_5",
+   "parent": "tail_orange_4"
   },
   {
-   "name": "tail_lblue_end",
-   "parent": "tail_lblue_5"
+   "name": "tail_orange_end",
+   "parent": "tail_orange_5"
+  },
+  {
+   "name": "tail_red_1",
+   "parent": "root"
+  },
+  {
+   "name": "tail_red_2",
+   "parent": "tail_red_1"
+  },
+  {
+   "name": "tail_red_3",
+   "parent": "tail_red_2"
+  },
+  {
+   "name": "tail_red_4",
+   "parent": "tail_red_3"
+  },
+  {
+   "name": "tail_red_5",
+   "parent": "tail_red_4"
+  },
+  {
+   "name": "tail_red_end",
+   "parent": "tail_red_5"
   }
  ],
- "armMinZ": -0.03,
+ "armMinZ": 0.1,
  "radius": {
-  "upper_arm_R": 0.05,
-  "upper_arm_L": 0.05,
-  "forearm_R": 0.04,
-  "forearm_L": 0.04,
-  "hand_R": 0.04,
-  "hand_L": 0.04,
-  "hand_end_R": 0.04,
-  "hand_end_L": 0.04,
-  "tail_pink_1": 0.11,
-  "tail_pink_2": 0.11,
-  "tail_pink_3": 0.11,
-  "tail_pink_4": 0.11,
-  "tail_pink_5": 0.11,
-  "tail_pink_end": 0.11,
-  "tail_orange_1": 0.11,
-  "tail_orange_2": 0.11,
-  "tail_orange_3": 0.11,
-  "tail_orange_4": 0.11,
-  "tail_orange_5": 0.11,
-  "tail_orange_end": 0.11,
-  "tail_blue_1": 0.11,
-  "tail_blue_2": 0.11,
-  "tail_blue_3": 0.11,
-  "tail_blue_4": 0.11,
-  "tail_blue_5": 0.11,
-  "tail_blue_end": 0.11,
-  "tail_lblue_1": 0.11,
-  "tail_lblue_2": 0.11,
-  "tail_lblue_3": 0.11,
-  "tail_lblue_4": 0.11,
-  "tail_lblue_5": 0.11,
-  "tail_lblue_end": 0.11
- }
+  "tail_pink_1": 0.085,
+  "tail_pink_2": 0.085,
+  "tail_pink_3": 0.085,
+  "tail_pink_4": 0.085,
+  "tail_pink_5": 0.085,
+  "tail_pink_end": 0.085,
+  "tail_blue_1": 0.085,
+  "tail_blue_2": 0.085,
+  "tail_blue_3": 0.085,
+  "tail_blue_4": 0.085,
+  "tail_blue_5": 0.085,
+  "tail_blue_end": 0.085,
+  "tail_orange_1": 0.085,
+  "tail_orange_2": 0.085,
+  "tail_orange_3": 0.085,
+  "tail_orange_4": 0.085,
+  "tail_orange_5": 0.085,
+  "tail_orange_end": 0.085,
+  "tail_red_1": 0.085,
+  "tail_red_2": 0.085,
+  "tail_red_3": 0.085,
+  "tail_red_4": 0.085,
+  "tail_red_5": 0.085,
+  "tail_red_end": 0.085,
+  "upper_arm_L": 0.045,
+  "forearm_L": 0.042,
+  "hand_L": 0.036,
+  "hand_end_L": 0.03,
+  "ear_L_1": 0.04,
+  "ear_L_2": 0.035,
+  "ear_L_3": 0.03,
+  "upper_arm_R": 0.045,
+  "forearm_R": 0.042,
+  "hand_R": 0.036,
+  "hand_end_R": 0.03,
+  "ear_R_1": 0.04,
+  "ear_R_2": 0.035,
+  "ear_R_3": 0.03,
+  "jaw": 0.03,
+  "clavicle_L": 0.05,
+  "clavicle_R": 0.05
+ },
+ "cutArmTail": true
 }

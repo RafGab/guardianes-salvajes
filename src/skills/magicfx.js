@@ -66,7 +66,8 @@ export class LeafStorm {
       const h = Math.pow(Math.random(), 0.8);
       this.L.push({
         storm: i < n, free: false, h, r: rnd(0.15, 1), a: rnd(0, TAU), w: rnd(5, 9), ph: rnd(0, TAU),
-        sz: rnd(0.09, 0.17), sx: rnd(2, 7), sy: rnd(1, 4), x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0, life: 0, s: 0,
+        sz: Math.random() < 0.15 ? rnd(0.18, 0.26) : rnd(0.06, 0.16), sx: rnd(2, 7), sy: rnd(1, 4), x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, t: 0, life: 0, s: 0,
+        br: rnd(0.08, 0.3), bw: rnd(0.6, 2.2), bob: rnd(0.08, 0.35), bobW: rnd(1.5, 4.5), stray: Math.random() < 0.18 ? rnd(1.25, 1.7) : 1, dir: Math.random() < 0.08 ? -1 : 1,
       });
     }
     this.mesh.instanceColor.needsUpdate = true;
@@ -105,10 +106,11 @@ export class LeafStorm {
         if (L.t >= L.life) { L.free = false; s = 0; }
         _e.set(L.ph + t * L.sx, t * L.sy, Math.sin(t * 6 + L.ph) * 1.2);
       } else if (L.storm && !this.released) { // en el remolino: gira alrededor del núcleo, más ancho arriba
-        L.a += dt * L.w * (1.25 - 0.45 * L.r);
-        const hh = L.h * h, rr = (0.25 + L.r * (0.35 + 0.65 * L.h)) * r;
+        L.a += dt * L.w * (1.25 - 0.45 * L.r) * L.dir;
+        // cada hoja con su propia órbita: respira hacia dentro y fuera, sube y baja, y algunas van sueltas por fuera
+        const hh = L.h * h, rr = (0.25 + L.r * (0.35 + 0.65 * L.h)) * r * L.stray * (1 + L.br * Math.sin(t * L.bw + L.ph));
         x = C.x + Math.cos(L.a) * rr; z = C.z + Math.sin(L.a) * rr;
-        y = C.y + 0.1 + hh + Math.sin(t * 3 + L.ph) * 0.18;
+        y = C.y + 0.1 + hh + Math.sin(t * L.bobW + L.ph) * L.bob;
         s = L.sz * K * (0.8 + 0.4 * L.h);
         _e.set(L.ph + Math.sin(t * L.sx * 0.5 + L.ph) * 1.2, -L.a + Math.PI / 2, 0.9 + Math.sin(t * 5 + L.ph) * 0.5); // de canto en el viento, aleteando
       } else { s = 0; x = C.x; y = C.y; z = C.z; }
@@ -307,4 +309,120 @@ export function speedLines(k) {
   }
   SPEED_EL.style.opacity = String(Math.min(0.75, k * 0.75));
   if (k > 0.01) SPEED_EL.style.transform = `scale(${1 + Math.random() * 0.05}) rotate(${(Math.random() - 0.5) * 4}deg)`;
+}
+
+/* ------------------------------------------------------------------ */
+/*  AURORA POLAR — ESCUDO Y ÁREA DE CONGELACIÓN (Kira)                 */
+/* ------------------------------------------------------------------ */
+// ESCUDO: burbuja de energía polar que envuelve todo su cuerpo, con cortinas de aurora (azul, verde y violeta)
+// que ondulan y suben por ella; borde brillante (Fresnel) y centro casi transparente para que Kira se vea.
+let SHIELD_GEO = null;
+export function auroraShield(parent) {
+  if (!SHIELD_GEO) SHIELD_GEO = new THREE.SphereGeometry(1, 48, 32);
+  const mat = new THREE.ShaderMaterial({
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide,
+    uniforms: { uT: { value: 0 }, uOp: { value: 0 } },
+    vertexShader: `varying vec3 vN; varying vec3 vV; varying vec3 vP; uniform float uT;
+      void main(){ vec3 p = position; p += normal * 0.035 * sin(p.y * 7.0 + uT * 3.0 + atan(p.z, p.x) * 3.0);
+        vP = position; vec4 mv = modelViewMatrix * vec4(p, 1.0); vN = normalize(normalMatrix * normal); vV = normalize(-mv.xyz); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `varying vec3 vN; varying vec3 vV; varying vec3 vP; uniform float uT; uniform float uOp;
+      void main(){
+        float f = 1.0 - abs(dot(normalize(vN), normalize(vV)));
+        float rim = pow(f, 2.3);
+        float a = atan(vP.z, vP.x);
+        // cortinas de aurora: bandas verticales que ondulan y suben
+        float c1 = 0.5 + 0.5 * sin(a * 6.0 + vP.y * 3.0 - uT * 1.6 + sin(vP.y * 4.0 + uT) * 1.2);
+        float c2 = 0.5 + 0.5 * sin(a * 11.0 - vP.y * 5.0 + uT * 2.3);
+        float rays = pow(c1, 3.0) * 0.8 + pow(c2, 6.0) * 0.5;
+        float h = vP.y * 0.5 + 0.5;
+        vec3 blue = vec3(0.25, 0.55, 1.0), green = vec3(0.25, 1.0, 0.65), violet = vec3(0.75, 0.35, 1.0);
+        vec3 col = mix(green, blue, smoothstep(0.15, 0.6, h + 0.15 * sin(a * 2.0 + uT)));
+        col = mix(col, violet, smoothstep(0.55, 0.95, h + 0.1 * c2));
+        float alpha = (rim * 0.85 + rays * (0.12 + 0.35 * rim) + 0.04) * uOp;
+        gl_FragColor = vec4(col * (1.0 + rays * 0.8), alpha);
+      }`,
+  });
+  const m = new THREE.Mesh(SHIELD_GEO, mat);
+  m.renderOrder = 7; m.frustumCulled = false;
+  parent.add(m);
+  return {
+    mesh: m, mat,
+    set(pos, sx, sy, op, t) { m.position.copy(pos); m.scale.set(sx, sy, sx); mat.uniforms.uOp.value = op; mat.uniforms.uT.value = t; m.visible = op > 0.002; },
+    dispose() { if (m.parent) m.parent.remove(m); mat.dispose(); },
+  };
+}
+
+// ÁREA DE CONGELACIÓN: suelo helado dentro del radio REAL de la habilidad, aro de energía en el borde y
+// cristales de hielo que brotan a lo largo del aro. Se centra en Kira cada fotograma (la sigue si se mueve).
+let FLOOR_TEX = null;
+function frostFloorTex() {
+  if (FLOOR_TEX) return FLOOR_TEX;
+  const c = document.createElement('canvas'); c.width = c.height = 512;
+  const x = c.getContext('2d'), g = x.createRadialGradient(256, 256, 20, 256, 256, 256);
+  g.addColorStop(0, 'rgba(225,245,255,0.55)'); g.addColorStop(0.7, 'rgba(170,220,255,0.6)'); g.addColorStop(0.93, 'rgba(200,240,255,0.85)'); g.addColorStop(1, 'rgba(200,240,255,0)');
+  x.fillStyle = g; x.fillRect(0, 0, 512, 512);
+  x.strokeStyle = 'rgba(255,255,255,0.7)'; x.lineWidth = 1.5;
+  for (let i = 0; i < 26; i++) { // grietas de hielo que salen del centro
+    let px = 256, py = 256; const a = Math.random() * TAU;
+    x.beginPath(); x.moveTo(px, py);
+    for (let s = 0; s < 9; s++) { px += Math.cos(a + (Math.random() - 0.5) * 0.8) * 26; py += Math.sin(a + (Math.random() - 0.5) * 0.8) * 26; x.lineTo(px, py); }
+    x.stroke();
+  }
+  for (let i = 0; i < 160; i++) { x.fillStyle = `rgba(255,255,255,${0.3 + Math.random() * 0.5})`; const a = Math.random() * TAU, r = Math.sqrt(Math.random()) * 230; x.fillRect(256 + Math.cos(a) * r, 256 + Math.sin(a) * r, 2, 2); } // escarcha
+  FLOOR_TEX = new THREE.CanvasTexture(c);
+  return FLOOR_TEX;
+}
+export function frostArea(parent, r, heightAt = null) {
+  // suelo helado y aro de energía que SE ADAPTAN AL RELIEVE (en pendientes no quedan enterrados ni flotando)
+  const g = new THREE.Group();
+  const NG = 36, floorGeo = new THREE.PlaneGeometry(2, 2, NG, NG); floorGeo.rotateX(-Math.PI / 2);
+  const base = floorGeo.attributes.position.array.slice(); // rejilla de -1..1 (se escala por el radio)
+  const floor = new THREE.Mesh(floorGeo, new THREE.MeshStandardMaterial({ map: frostFloorTex(), color: 0xe8f8ff, emissive: 0x2a78b8, emissiveIntensity: 0.25, roughness: 0.08, metalness: 0.25, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -3 }));
+  floor.renderOrder = 3;
+  const NR = 160, ringGeo = new THREE.BufferGeometry();
+  const rp = new Float32Array((NR + 1) * 2 * 3), ri = [];
+  for (let i = 0; i < NR; i++) { const a0 = i * 2, b0 = a0 + 2; ri.push(a0, b0, a0 + 1, a0 + 1, b0, b0 + 1); }
+  ringGeo.setAttribute('position', new THREE.BufferAttribute(rp, 3)); ringGeo.setIndex(ri);
+  const ring2Geo = ringGeo.clone();
+  const ringMat = new THREE.MeshBasicMaterial({ color: 0x8ae8ff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+  const ring = new THREE.Mesh(ringGeo, ringMat), ring2 = new THREE.Mesh(ring2Geo, ringMat.clone()); ring2.material.color.setHex(0xb08aff);
+  const cGeo = new THREE.ConeGeometry(0.07, 0.5, 5); cGeo.translate(0, 0.25, 0);
+  const cMat = new THREE.MeshStandardMaterial({ color: 0xcfefff, emissive: 0x3ab8ff, emissiveIntensity: 0.45, roughness: 0.08, metalness: 0.2, transparent: true, opacity: 0.85, flatShading: true });
+  const crystals = [];
+  for (let i = 0; i < 28; i++) { const c = new THREE.Mesh(cGeo, cMat), a = (i / 28) * TAU + Math.random() * 0.1; c.userData.a = a; c.userData.s = 0.6 + Math.random() * 0.9; c.rotation.set(Math.cos(a) * 0.35, 0, -Math.sin(a) * 0.35); g.add(c); crystals.push(c); }
+  g.add(floor, ring, ring2);
+  for (const o of [ring, ring2, floor]) o.frustumCulled = false;
+  ring.renderOrder = ring2.renderOrder = 6;
+  parent.add(g);
+  const H = heightAt || (() => 0);
+  let lx = 1e9, lz = 1e9, lk = -1, ly = 0;
+  const shape = (cx, cy, cz, k) => {
+    const P = floorGeo.attributes.position.array, R = r * Math.max(0.0001, k);
+    for (let i = 0; i < P.length; i += 3) { const x = base[i] * R, z = base[i + 2] * R; P[i] = x; P[i + 2] = z; P[i + 1] = H(cx + x, cz + z) - cy + 0.05; }
+    floorGeo.attributes.position.needsUpdate = true; floorGeo.computeBoundingSphere();
+    for (const [geo, rr, w, up] of [[ringGeo, r, 0.07, 0.09], [ring2Geo, r * 0.975, 0.035, 0.14]]) {
+      const A = geo.attributes.position.array;
+      for (let i = 0; i <= NR; i++) {
+        const a = (i / NR) * TAU, ca = Math.cos(a), sa = Math.sin(a);
+        for (let j = 0; j < 2; j++) { const q = rr + (j ? w : -w), x = ca * q, z = sa * q, o = (i * 2 + j) * 3; A[o] = x; A[o + 1] = H(cx + x, cz + z) - cy + up; A[o + 2] = z; }
+      }
+      geo.attributes.position.needsUpdate = true; geo.computeBoundingSphere();
+    }
+    for (const c of crystals) { const a = c.userData.a, x = Math.cos(a) * r, z = Math.sin(a) * r; c.position.set(x, H(cx + x, cz + z) - cy, z); }
+  };
+  return {
+    group: g,
+    // k: aparición (0..1), t: tiempo; (x, y, z) = centro sobre el suelo
+    set(x, y, z, k, t) {
+      g.position.set(x, y, z);
+      // el relieve se recalcula solo si se ha movido o mientras el área se expande
+      if (Math.hypot(x - lx, z - lz) > 0.12 || Math.abs(y - ly) > 0.05 || (k < 1 && Math.abs(k - lk) > 0.02)) { shape(x, y, z, k < 1 ? k : 1); lx = x; lz = z; ly = y; lk = k; }
+      floor.material.opacity = 0.75 * k;
+      ring.material.opacity = 0.95 * k * (0.75 + 0.25 * Math.sin(t * 6));
+      ring2.material.opacity = 0.5 * k;
+      for (const c of crystals) c.scale.setScalar(Math.max(0.0001, c.userData.s * k));
+      g.visible = k > 0.002;
+    },
+    dispose() { if (g.parent) g.parent.remove(g); floorGeo.dispose(); floor.material.dispose(); ringGeo.dispose(); ring2Geo.dispose(); ringMat.dispose(); ring2.material.dispose(); cGeo.dispose(); cMat.dispose(); },
+  };
 }

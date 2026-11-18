@@ -1498,7 +1498,9 @@ export class Game {
     const dtg = dt * this.timeScale;
     const envDt = this.timeStopT > 0 ? 0 : dtg; // tiempo del entorno (0 mientras está detenido)
     // CONGELACIÓN MASIVA (Aurora Polar): el tiempo de los personajes (no el del jugador) se frena hasta pararse
-    const fk = this.frost ? this.frost.update(real) : 0;
+    const fk0 = this.frost ? this.frost.update(real) : 0;
+    const fk = this.frost && this.frost.area ? 0 : fk0; // con área (Aurora Polar) se frena cada personaje por separado
+    const ff = (root) => (this.frost && this.frost.area ? this.frost.factor(root) : 1);
     const charDt = envDt * (1 - fk), allyDt = dtg * (1 - fk);
 
     const introLocked = this.state === 'intro';
@@ -1578,7 +1580,7 @@ export class Game {
       this.updateBossHud(real);
     }
     if (this.boss && this.state === 'playing') {
-      this.boss.update(charDt);
+      this.boss.update(charDt * ff(this.boss.model && this.boss.model.root));
       this.allies.update(allyDt); // los otros dos héroes del equipo combaten a la vez
       this.updateVictory(real);
     }
@@ -1610,7 +1612,7 @@ export class Game {
 
     // víctimas
     for (const v of this.victims) {
-      v.update(v.state === 'carried' ? dtg : charDt); // las que esperan o caminan se detienen con el tiempo (y con la aurora)
+      v.update(v.state === 'carried' ? dtg : charDt * ff(v.root)); // las que esperan o caminan se detienen con el tiempo (y con la aurora)
       v.root.getWorldPosition(v.wpos);
       if (v.state === 'waiting') {
         if (v.hidden) {

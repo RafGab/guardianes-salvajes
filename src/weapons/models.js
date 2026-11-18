@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { propModel } from '../props.js';
 
 /* ======================================================================
    ARMAS 3D DE CATAC 7 — modelos hechos a partir de las imágenes de referencia
@@ -447,6 +448,37 @@ function axe(L) {
 }
 
 /* ======================================================================
+   2b · KYRA — HACHA 3D (modelo hacha.glb): hacha doble de cristal azul y violeta con núcleo hexagonal.
+   El modelo viene inclinado: se gira para que su MANGO quede en +Y (convención de las armas), con el
+   punto de agarre (la empuñadura con tiras, sobre el pomo de púas) en el origen y las dos hojas a los lados (±X).
+   Si el modelo aún no se ha cargado, se usa el hacha de antes.
+   ====================================================================== */
+// medidas del modelo normalizado (altura 1): pomo → centro de la cabeza, empuñadura, cabeza y filo
+const HACHA = { pommel: [-0.13, 0.08, 0.12], head: [-0.01, 0.62, -0.04], grip: [-0.09, 0.3, 0.065], edge: [0.21, 0.55, -0.02], size: 0.95 };
+function axeGLB(L) {
+  const src = propModel('hacha');
+  if (!src) return axe(L);
+  const w = base('hacha', L, 0x5aa8ff, 0xc06aff);
+  // materiales propios (el arma puede destruirse al cambiar de héroe sin afectar al modelo en caché)
+  src.traverse((o) => { if (o.isMesh) { o.material = o.material.clone(); o.castShadow = true; o.receiveShadow = true; } });
+  const V3 = (a) => new THREE.Vector3(...a);
+  const axis = V3(HACHA.head).sub(V3(HACHA.pommel)).normalize();
+  const q = new THREE.Quaternion().setFromUnitVectors(axis, new THREE.Vector3(0, 1, 0));
+  const rot = new THREE.Group();
+  rot.quaternion.copy(q);
+  const inner = new THREE.Group();
+  inner.position.copy(V3(HACHA.grip).negate());
+  inner.add(src);
+  rot.add(inner);
+  w.group.add(rot);
+  // estela del ataque: del centro de la cabeza al filo de la hoja
+  w.trail = { base: marker(inner, ...HACHA.head), tip: marker(inner, ...HACHA.edge), color: 0x6ab0ff, color2: 0xc06aff, width: 1 };
+  collect(w);
+  w.group.scale.setScalar(HACHA.size);
+  return finish(w);
+}
+
+/* ======================================================================
    3 · KAIRO — MARTILLO DE ESMERALDA: cabeza de cristales verdes con montura
    dorada de púas, gran gema central, mango de cuero con bandas doradas y
    gemas, pomo dorado con cristal.
@@ -791,7 +823,7 @@ function spear(L) {
    ====================================================================== */
 export const WEAPONS = {
   jago:   { id: 'katana',    name: 'Hoja de Lava y Trueno', build: () => cleaver(1.05),   hand: 'R', axisX: -1, guard: { x: -0.35, y: 0.15, f: -0.85, w: 0.25, r: 1.0 }, defense: { x: -1.1, y: 0.75, f: -1.2, w: 0.5 }, dir: [0, 0.35, 1], face: [-1, 0, 0], color: 0xff7a1a, color2: 0x4aa8ff },
-  kyra:   { id: 'axe',       name: 'Hacha',         build: () => axe(0.9),       hand: 'L', axisX: 1, guard: { x: -0.25, y: 0.1, f: -1.05, w: 0, r: 1.4 }, defense: { x: -1.0, y: 0.7, f: -1.3, w: 0.3 }, dir: [0, 1, 0.35], face: [0, 0, 1], color: 0x6ab0ff, color2: 0xc06aff },
+  kyra:   { id: 'axe',       name: 'Hacha',         build: () => axeGLB(0.9),       hand: 'L', restDir: [0, -0.15, 1], restSide: [0, 1, 0], axisX: 1, guard: { x: -0.25, y: 0.1, f: -1.05, w: 0, r: 1.4 }, defense: { x: -1.0, y: 0.7, f: -1.3, w: 0.3 }, dir: [0, 1, 0.35], face: [0, 0, 1], color: 0x6ab0ff, color2: 0xc06aff },
   kairo:  { id: 'hammer',    name: 'Martillo',      build: () => hammer(1.15),   hand: 'R', axisX: 1, guard: { x: -0.2, y: 0.1, f: -1.0, w: 0 }, defense: { x: -0.9, y: 0.7, f: -1.25, w: 0.3 }, dir: [0, 1, 0.45], face: [1, 0, 0], color: 0x3aff6a, color2: 0xffc040 },
   ambar:  { id: 'disc',      name: 'Dos discos',    build: () => disc(0.36),     hand: 'R', dual: true, lightOnThrow: true, holdBy: 'wing', wingAt: 0.3, wingOffset: [0.025, 0, 0.04], axisX: 1, upperScale: 0.2, gripOffset: [0.1, 0, 0], guard: { x: 0.25, y: 0.3, f: 0.15, w: 0 }, defense: { x: 0.7, y: 1.1, f: 0.7, w: 0.2 }, dir: [0, 1, 0], face: [1, 0, 0], color: 0xff3a1a, color2: 0xffc020 },
   lira:   { id: 'scythe',    name: 'Guadaña',       build: () => scythe(1.15),   hand: 'R', axisX: 1, guard: { x: -0.2, y: 0.1, f: -1.0, w: 0 }, defense: { x: -0.95, y: 0.75, f: -1.2, w: 0.3 }, dir: [0, 1, 0.12], face: [-1, 0, 0], color: 0x3a9aff, color2: 0xbfeeff },

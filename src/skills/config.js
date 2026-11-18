@@ -79,6 +79,7 @@ export const HERO_SKILLS = {
     // VUELO DE OREJAS: despega con sus enormes orejas, vuela un tiempo limitado
     ears: {
       id: 'ears', name: 'Vuelo de Orejas', icon: '👂', cd: 14,
+      chargeT: 3,                   // CARGA: 3 s en que las orejas se preparan y acumulan energía (sin despegar)
       takeoffT: 0.5, flyT: 10,      // despegue y tiempo de vuelo: exactamente 10 s (luego desciende suave hasta el suelo)
       speed: 7, climb: 5.5, sink: 1.1, ceil: 8.4, // velocidad, subida (mantén SALTAR), descenso suave y altura máxima (algo más alta: 7,5 → 8,4 m; Ámbar llega a 24 m)
       flap: 26,                     // velocidad del aleteo de las orejas

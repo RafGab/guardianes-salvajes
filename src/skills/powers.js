@@ -5,6 +5,7 @@ import { terrainH } from '../terrain.js';
 import { ui } from '../ui.js';
 import { douseFires, smotherFires, propsNear, captureProp, dropFlung, wetGround } from './envreact.js';
 import { propModel } from '../props.js';
+import { auroraShield, frostArea } from './magicfx.js';
 import { MirageWard, TsunamiWave, WaterVortex, FoamPool, WaterShield, MagmaGeyser, ObsidianSpikes, CrystalDebris } from './fx4.js';
 
 // PODERES ESPECIALES NUEVOS (3 por héroe; la Zorra Ártica tiene 4).
@@ -650,15 +651,41 @@ export class FlightSkill extends Skill {
   build() {
     const d = this.def, pose = this.pose;
     return [
+      // OREJAS: primero CARGA (las orejas se abren y baten cada vez más rápido, la energía crece a su alrededor)
+      ...(this.ears && d.chargeT ? [{ name: 'carga', dur: d.chargeT, enter: this.enterCharge, tick: this.tickCharge }] : []),
       { name: 'despegue', dur: d.takeoffT, enter: this.enterTakeoff, tick: (dt, k) => { pose.sy = k < 0.5 ? 1 - 0.18 * (k / 0.5) : lerp(0.82, 1.08, (k - 0.5) / 0.5); this.flapRate = 1.6; } },
       { name: 'vuelo', dur: 9999, enter: this.enterFly, tick: this.tickFly },
       { name: 'aterrizaje', dur: 0.4, enter: this.enterLand, tick: (dt, k) => { pose.sy = k < 0.4 ? lerp(1, 0.84, k / 0.4) : lerp(0.84, 1, (k - 0.4) / 0.6); } },
     ];
   }
+  enterCharge() {
+    this.flapRate = 0.2; this.flapPh = 0;
+    this.setBones(this.bonesFx.bind(this));
+    ui.banner('find', '👂', `Cargando el vuelo… (${this.def.chargeT} s)`);
+    this.sfx('wind');
+    this.chT = 0;
+  }
+  tickCharge(dt, k) {
+    const p = this.p, pose = this.pose, fx = this.g.fx;
+    this.flapRate = 0.2 + 1.4 * k * k;              // las orejas se preparan: cada vez baten más rápido
+    pose.sy = 1 - 0.08 * Math.sin(Math.min(1, k * 1.2) * Math.PI * 0.5); pose.dy = -0.03 * k; // se agacha un poco, lista para saltar
+    // energía que se acumula alrededor de las orejas y bajo sus pies (crece con la carga)
+    this.chT -= dt;
+    if (this.chT <= 0) {
+      this.chT = 0.06;
+      const c = this.center(0.95), a = rnd(0, TAU), r = 0.9 - 0.6 * k;
+      fx.sparkle(c.x + Math.cos(a) * r, c.y + rnd(-0.2, 0.3), c.z + Math.sin(a) * r, Math.random() < 0.5 ? 0xffe0a0 : 0xffffff, 0.5);
+      this.vfx.orb(this.center(0.95), { r: 0.1 + 0.35 * k, color: 0xffd890, opacity: 0.25 + 0.3 * k, life: 0.15 });
+      if (Math.random() < 0.4) this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 1.6 - k, r1: 0.3, dur: 0.3, color: 0xffd890, opacity: 0.4 });
+    }
+    if (Math.random() < 0.3 * k) this.vfx.sand(p.pos.x, p.pos.y + 0.05, p.pos.z, 1);
+    if (k > 0.33 && !this.ch1) { this.ch1 = true; this.sfx('flap'); }
+    if (k > 0.66 && !this.ch2) { this.ch2 = true; this.sfx('flap'); }
+  }
   enterTakeoff() {
     const p = this.p;
     this.flapRate = 1;
-    this.flapPh = 0;
+    this.flapPh = this.flapPh || 0;
     this.setBones(this.bonesFx.bind(this));
     this.sfx(this.ears ? 'flap' : 'wind');
     if (this.ears) this.vfx.sand(p.pos.x, p.pos.y + 0.1, p.pos.z, 5);
@@ -741,116 +768,81 @@ export class AuroraSkill extends Skill {
   build() {
     const d = this.def, pose = this.pose;
     return [
-      // INVOCACIÓN: pose de invocación, resplandor azul hielo, colas que se iluminan, nieve y cristales flotando
-      // y un círculo de energía que se acumula bajo sus patas; la luz crece hasta liberar el poder
+      // INVOCACIÓN: pose de invocación; el ESCUDO de aurora la envuelve poco a poco, nieve y cristales flotando
+      // y energía que se acumula bajo sus patas
       { name: 'canalizar', dur: d.prep, enter: this.enterCall, tick: this.tickCall },
       { name: 'zona-polar', dur: d.exec, enter: this.enterZone, tick: this.tickZone },
-      { name: 'recuperacion', dur: d.recover, enter: () => { this.lock(false); }, tick: (dt, k) => { pose.rx = lerp(-0.15, 0, k); pose.dy = lerp(0.1, 0, k); } },
+      { name: 'recuperacion', dur: d.recover, enter: () => { this.lock(false); }, tick: (dt, k) => { pose.rx = lerp(-0.15, 0, k); pose.dy = lerp(0.1, 0, k); this.tickZone(dt, 1); } },
     ];
   }
+  /* ESCUDO DE AURORA + ÁREA DE CONGELACIÓN (efectos con su propia vida: duran toda la congelación, más que la
+     habilidad, y siempre centrados en Kira, se mueva o no). El aro del suelo marca el radio REAL (d.radius):
+     todo lo que esté dentro queda congelado 5 s; lo de fuera, no. */
   enterCall() {
     const d = this.def, p = this.p;
-    // la aurora del cielo dura lo mismo que la congelación (invocación + 0,45 s + 5 s + deshielo) y se apaga suavemente
     const fin = d.freezeIn ?? 0.45, hold = d.freezeHold ?? 5, fout = d.freezeOut ?? 0.9;
     const total = d.prep + fin + hold + fout;
     this.lock(true);
-    this.amb = this.v2.ambience({ color: '#3a5a8a', alpha: 0.35, blend: 'multiply', exposure: 0.62, dur: total, fin: d.prep, fout: 1.2 }); // noche polar: la aurora resalta
-    this.aur = this.v2.aurora(V(p.pos.x, p.pos.y, p.pos.z), { life: total });
+    this.amb = this.v2.ambience({ color: '#3a5a8a', alpha: 0.22, blend: 'multiply', exposure: 0.8, dur: total, fin: d.prep, fout: 1.2 }); // luz polar suave: el escudo resalta
     this.sfx('aurora');
-    // resplandor azul hielo que envuelve su cuerpo (translúcido: su diseño se sigue viendo)
-    this.glow = this.v2.shell(this.center(0.5), { r: 1, color: 0x2a9cff, rim: 0x9ff4ff, opacity: 0, power: 2.2, core: 0.04, life: total });
-    // círculo de energía bajo sus patas
-    this.circle = this.track(this.vfx.telegraph('disc', { x: p.pos.x, z: p.pos.z, r: 1.6, color: 0x7ae8ff, opacity: 0.3 }));
-    this.tails = p.model && p.model.bones ? Object.keys(p.model.bones).filter((n) => /tail/i.test(n)).map((n) => p.model.bones[n]) : [];
-    this.wv = new THREE.Vector3();
+    const shield = auroraShield(this.vfx.group), area = frostArea(this.vfx.group, d.radius, terrainH);
+    const T0 = d.prep, END = total, sk = this;
+    this.shieldK = 0;
+    this.vfx.add(new THREE.Group(), END, (it) => {
+      const t = it.t, c = p.pos;
+      // escudo: crece en la invocación, se mantiene mientras dura la congelación y se apaga suavemente al final
+      const ks = Math.min(1, t / T0) * (t > END - 0.8 ? Math.max(0, (END - t) / 0.8) : 1);
+      sk.shieldK = ks;
+      const pulse = 1 + 0.03 * Math.sin(t * 5);
+      shield.set(V(c.x, c.y + p.H * 0.5 + (p.pose.dy || 0), c.z), p.H * 0.48 * pulse, p.H * 0.62 * pulse, 0.85 * ks, t);
+      // área: aparece al liberar el poder (se expande en 0,35 s) y desaparece con el deshielo
+      const ka = t < T0 ? 0 : Math.min(1, (t - T0) / 0.35) * (t > END - fout ? Math.max(0, (END - t) / fout) : 1);
+      const gy = p.floorY ? p.floorY(c.x, c.z, c.y + 0.5) : terrainH(c.x, c.z);
+      area.set(c.x, gy, c.z, ka, t);
+      if (ka > 0.3 && Math.random() < 0.6) { // escarcha y destellos dentro del área
+        const a = rnd(0, TAU), r = Math.sqrt(Math.random()) * d.radius;
+        sk.g.fx.sparkle(c.x + Math.cos(a) * r, gy + rnd(0.1, 1.6), c.z + Math.sin(a) * r, [0x60ffa0, 0x40e0ff, 0xa070ff, 0xe8fbff][Math.floor(Math.random() * 4)], 0.6);
+      }
+      if (t >= END - 0.001) { shield.dispose(); area.dispose(); }
+    });
   }
   tickCall(dt, k) {
     const p = this.p, pose = this.pose, fx = this.g.fx, e = ease(k);
     pose.rx = -0.45 * e; pose.dy = 0.25 * e; // mira al cielo con las colas alzadas
-    const c = this.center(0.5);
-    if (this.glow) { this.glow.mesh.position.copy(c); this.glow.mesh.scale.set(p.H * 0.5, p.H * 0.62, p.H * 0.5); this.glow.mat.uniforms.uOp.value = 0.32 * e; }
-    this.circle.set(p.pos.x, p.pos.z, { r: 0.6 + 1.4 * e }); this.circle.setProgress(e); this.circle.group.rotation.y += dt * 3;
-    // la energía se concentra: anillos que se cierran hacia sus patas
+    // la energía se concentra bajo sus patas: anillos que se cierran hacia ella
     if (Math.random() < 0.35) this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 2.6, r1: 0.4, dur: 0.35, color: Math.random() < 0.5 ? 0x7ae8ff : 0xa07aff, opacity: 0.5 });
-    // colas iluminadas: destellos cian y azul polar que recorren sus huesos
-    for (let i = 0; i < 2 && this.tails.length; i++) {
-      const b = this.tails[Math.floor(Math.random() * this.tails.length)];
-      b.getWorldPosition(this.wv);
-      this.vfx.orb(this.wv, { r: 0.04 + 0.06 * e, color: Math.random() < 0.5 ? 0x2ad8ff : 0x2a6cff, opacity: 0.7, life: 0.2 });
-    }
     // nieve y cristales de hielo que flotan a su alrededor
     for (let i = 0; i < 2; i++) { const a = rnd(0, TAU), r = rnd(0.5, 1.6); fx.sparkle(p.pos.x + Math.cos(a) * r, p.pos.y + rnd(0.2, p.H * 1.2), p.pos.z + Math.sin(a) * r, Math.random() < 0.5 ? 0xe8fbff : 0x8fe4ff, 0.6); }
     if (Math.random() < 0.5) fx.iceShard(p.pos.x + rnd(-1, 1), p.pos.y + rnd(0.3, 1.4), p.pos.z + rnd(-1, 1), 0.6);
-    // rayo de energía hacia el cielo (la aurora nace de ella)
-    const top = this.center(0.9);
-    this.v2.beam(top, V(top.x, top.y + 18, top.z), { r: 0.12 + 0.3 * e, color: 0x60ffe0, opacity: 0.3 + 0.2 * e, life: 0.12 });
   }
   enterZone() {
     const d = this.def, p = this.p;
-    // LIBERACIÓN: la energía se expande desde la zorra en ondas (azul eléctrico, cian, turquesa, violeta y verde aurora)
+    // LIBERACIÓN: el frío se expande desde ella hasta el aro (radio real) en ondas de colores de aurora
     const fin = d.freezeIn ?? 0.45, hold = d.freezeHold ?? 5, fout = d.freezeOut ?? 0.9;
-    if (this.g.frost) this.g.frost.start(fin + hold + fout, { fin, fout }); // EXACTAMENTE 5 s inmóviles
-    this.frozenIds = new Set();
-    this.waveR = 0; this.waveAt = p.pos.clone();
-    [[0x3a8cff, 0.0], [0x40f0ff, 0.12], [0x40ffd0, 0.24], [0xa070ff, 0.36], [0x60ffa0, 0.48]].forEach(([col, dl], i) => {
-      setTimeout(() => { if (!this.disposed) this.vfx.ring(this.waveAt.x, null, this.waveAt.z, { r0: 0.5, r1: 40 - i * 4, dur: 1.4 + i * 0.1, color: col, opacity: 0.5 }); }, dl * 1000);
-    });
+    // CONGELACIÓN EN EL ÁREA: todo lo que entre en el radio mientras dura queda congelado EXACTAMENTE 5 s
+    if (this.g.frost) this.g.frost.start(fin + hold + fout, { fin, fout, area: { center: () => p.pos, r: d.radius } });
+    [0x3a8cff, 0x40f0ff, 0x40ffd0, 0xa070ff, 0x60ffa0].forEach((col, i) => this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 0.4, r1: d.radius * (1 - i * 0.04), dur: 0.5 + i * 0.08, color: col, opacity: 0.55 }));
     this.sfx('chime');
     this.shake(0.22);
-    if (this.circle) { this.circle.kill(); this.circle = null; }
-    if (this.glow) { const G = this.glow, t0 = performance.now(); const fade = () => { const k = 1 - (performance.now() - t0) / 900; if (k <= 0 || !G.mesh.parent) { G.mat.uniforms.uOp.value = 0; return; } G.mat.uniforms.uOp.value = 0.32 * k; G.mesh.position.copy(this.center(0.5)); requestAnimationFrame(fade); }; fade(); }
-    this.lock(false); // la zona se queda; ella puede moverse
-    this.at = p.pos.clone();
-    this.zone = this.track(this.vfx.telegraph('disc', { x: this.at.x, z: this.at.z, r: d.radius, color: 0x60ffd0, opacity: 0.08 }));
-    this.zone.setProgress(1);
-    this.ring2 = this.track(this.vfx.telegraph('disc', { x: this.at.x, z: this.at.z, r: d.radius * 0.7, color: 0x9a70ff, opacity: 0.08 }));
-    this.ring2.setProgress(1);
+    this.lock(false); // ella puede moverse: el escudo y el área la siguen
     this.tickT = 0; this.freezeT = d.freezeEvery * 0.5;
-    this.vfx.ring(this.at.x, null, this.at.z, { r0: 0.5, r1: d.radius, dur: 0.8, color: 0x80ffe0 });
-    this.shake(0.15);
   }
-  tickZone(dt, k) {
-    const d = this.def, g = this.g, at = this.at;
-    this.ring2.group.rotation.y += dt;
-    // ONDA DE LA AURORA: avanza desde la zorra; a cada enemigo que alcanza lo envuelve una onda helada y lo congela
-    if (this.waveR < 42) {
-      const fin = d.freezeIn ?? 0.45, hold = d.freezeHold ?? 5, w0 = this.waveAt;
-      this.waveR += (d.waveSpeed || 30) * dt;
-      for (let i = 0; i < 6; i++) { // cristales y luces de colores a lo largo del frente
-        const a = rnd(0, TAU), x = w0.x + Math.cos(a) * this.waveR, z = w0.z + Math.sin(a) * this.waveR, y = terrainH(x, z);
-        if (i < 2) g.fx.iceShard(x, y + 0.2, z, 0.8);
-        g.fx.sparkle(x, y + rnd(0.2, 1.6), z, [0x3a8cff, 0x40f0ff, 0x40ffd0, 0xa070ff, 0x60ffa0][i % 5], 0.8);
-      }
-      for (const o of this.combat.orcs || []) {
-        if (o.dead || this.frozenIds.has(o) || Math.hypot(o.pos.x - w0.x, o.pos.z - w0.z) > this.waveR) continue;
-        this.frozenIds.add(o);
-        // se congela durante el resto de la congelación general (mismo final para todos)
-        const left = Math.max(0.1, fin + hold - this.t);
-        o.freeze(left);
-        this.vfx.ring(o.pos.x, null, o.pos.z, { r0: 0.2, r1: 1.8, dur: 0.45, color: 0xcff4ff, opacity: 0.8 });
-      }
-    }
-    // dentro de la zona: las recargas de la zorra avanzan más rápido
-    const p = this.p, inside = Math.hypot(p.pos.x - at.x, p.pos.z - at.z) < d.radius;
-    if (inside) { for (const id in g.toolCd) if (g.toolCd[id] > 0) g.toolCd[id] = Math.max(0, g.toolCd[id] - dt * d.cdHeal); p.cd = Math.max(0, p.cd - dt * d.cdHeal); }
+  tickZone(dt) {
+    const d = this.def, g = this.g, p = this.p, at = p.pos; // el área va centrada en Kira
+    // dentro del área (siempre lo está): sus recargas avanzan más rápido, como antes
+    for (const id in g.toolCd) if (g.toolCd[id] > 0) g.toolCd[id] = Math.max(0, g.toolCd[id] - dt * d.cdHeal);
+    p.cd = Math.max(0, p.cd - dt * d.cdHeal);
     for (const t of this.combat.inCircle(at.x, at.z, d.radius)) { this.combat.slow(t, d.slowF, 0.6); this.dot(t, d.damage, dt); }
     this.freezeT -= dt;
-    if (this.freezeT <= 0) { // pulso de congelación: cristales que brotan bajo los enemigos
+    if (this.freezeT <= 0) { // pulso de congelación dentro del aro
       this.freezeT = d.freezeEvery;
-      this.sfx('chime');
-      this.vfx.ring(at.x, null, at.z, { r0: 0.5, r1: d.radius, dur: 0.7, color: 0xa0f0ff });
+      this.vfx.ring(at.x, null, at.z, { r0: 0.5, r1: d.radius, dur: 0.7, color: 0xa0f0ff, opacity: 0.6 });
       for (const t of this.combat.inCircle(at.x, at.z, d.radius)) {
         this.combat.root(t, d.freezeT);
         this.vfx.ice(t.pos.x, t.pos.y + 0.4, t.pos.z, 6);
-        this.vfx.ring(t.pos.x, null, t.pos.z, { r0: 0.3, r1: t.radius + 1.2, dur: 0.5, color: 0xffffff });
       }
     }
-    // partículas de hielo y destellos de colores de la aurora
-    const a = rnd(0, TAU), r = Math.sqrt(Math.random()) * d.radius;
-    const x = at.x + Math.cos(a) * r, z = at.z + Math.sin(a) * r, y = terrainH(x, z);
-    g.fx.iceShard(x, y + 0.2, z, 0.8);
-    if (Math.random() < 0.5) g.fx.sparkle(x, y + rnd(0.5, 3), z, [0x60ffa0, 0x40e0ff, 0xa070ff, 0x40ffd0][Math.floor(Math.random() * 4)], 0.8);
-    if (Math.random() < 0.4) g.fx.snow(at.x, y + 4, at.z);
+    if (Math.random() < 0.4) { const a = rnd(0, TAU), r = Math.sqrt(Math.random()) * d.radius, x = at.x + Math.cos(a) * r, z = at.z + Math.sin(a) * r; g.fx.iceShard(x, terrainH(x, z) + 0.2, z, 0.8); }
   }
 }
 
