@@ -326,6 +326,59 @@ function buildCataclismoModel() {
   return { root, body, shards, limbs: [], mats: [core], fireMat, iceMat, rockMat };
 }
 
+// FÉNIX OSCURO (procedural de reserva hasta que exista fenix.glb): cuerpo de plumas negras con vetas de fuego,
+// cuello y cabeza con pico y ojos carmesí, dos alas articuladas (hombro + mano) de plumas oscuras con bordes en
+// llamas, cola larga de plumas de fuego y patas con garras. Las alas, la cola y las llamas se animan en syncTransform.
+function buildFenixModel() {
+  const dark = std(0x1a0a08, { roughness: 0.55, metalness: 0.2, emissive: 0x3a0800, emissiveIntensity: 0.6 });
+  const ember = std(0x3a0a04, { roughness: 0.5, emissive: 0xff3a0a, emissiveIntensity: 1.2 });
+  const fireA = glow(0xff4a10, 2.6), fireB = glow(0xffb020, 2.8), eye = glow(0xff2010, 3.2);
+  const beakM = std(0x2a2a2e, { roughness: 0.3, metalness: 0.6 });
+  const root = new THREE.Group(), body = new THREE.Group();
+  root.add(body);
+  M(sph(0.75), dark, body, { y: 2.1, sy: 1.25, sz: 1.1 });                 // torso
+  M(sph(0.55), ember, body, { y: 1.9, z: 0.25, sy: 1.1, sx: 0.8 });          // pecho incandescente
+  const neck = new THREE.Group(); neck.position.set(0, 2.9, 0.25); body.add(neck);
+  M(cap(0.22, 0.5), dark, neck, { y: 0.25, rx: 0.3 });
+  const head = new THREE.Group(); head.position.set(0, 0.7, 0.25); neck.add(head);
+  M(sph(0.32), dark, head);
+  M(cone(0.12, 0.45), beakM, head, { z: 0.38, y: -0.05, rx: Math.PI / 2 + 0.25 });
+  for (const s of [-1, 1]) M(sph(0.06), eye, head, { x: s * 0.16, y: 0.08, z: 0.24 });
+  for (let i = 0; i < 6; i++) M(cone(0.06, 0.55), i % 2 ? fireA : fireB, head, { y: 0.25, z: -0.15 - i * 0.04, x: (i - 2.5) * 0.06, rx: -0.9 - i * 0.08 }); // cresta de fuego
+  // ALAS: hombro → mano, con plumas oscuras y bordes de fuego
+  const wings = [];
+  for (const s of [-1, 1]) {
+    const sh = new THREE.Group(); sh.position.set(s * 0.55, 2.45, -0.05); body.add(sh);
+    const arm = new THREE.Group(); arm.position.set(s * 1.3, 0, 0); sh.add(arm);
+    M(cap(0.12, 1.2), dark, sh, { x: s * 0.65, rz: Math.PI / 2 });
+    M(cap(0.09, 1.3), dark, arm, { x: s * 0.7, rz: Math.PI / 2 });
+    for (let i = 0; i < 7; i++) M(cone(0.16, 1.1), i % 3 ? dark : ember, sh, { x: s * (0.25 + i * 0.17), y: -0.5, rz: s * (0.12 + i * 0.03), sz: 0.25, rx: 0.1 }); // secundarias
+    for (let i = 0; i < 8; i++) { // primarias de la mano, más largas, con la punta encendida
+      const a = s * (0.2 + i * 0.13);
+      M(cone(0.15, 1.6), dark, arm, { x: s * (0.3 + i * 0.18), y: -0.6, rz: a, sz: 0.22 });
+      M(cone(0.07, 0.7), i % 2 ? fireA : fireB, arm, { x: s * (0.3 + i * 0.18) + Math.sin(a) * 0.9, y: -1.35, rz: a, sz: 0.3 });
+    }
+    wings.push({ sh, arm, s });
+  }
+  // COLA de plumas de fuego
+  const tail = [];
+  for (let i = 0; i < 7; i++) {
+    const t = new THREE.Group(); t.position.set((i - 3) * 0.12, 1.5, -0.6); body.add(t);
+    M(cone(0.13, 2.2), i % 2 ? dark : ember, t, { y: -1.0, z: -0.3, rx: -0.5, sz: 0.4 });
+    M(cone(0.1, 1.2), i % 2 ? fireA : fireB, t, { y: -2.1, z: -0.9, rx: -0.5, sz: 0.5 });
+    tail.push(t);
+  }
+  // PATAS con garras
+  for (const s of [-1, 1]) {
+    const leg = new THREE.Group(); leg.position.set(s * 0.3, 1.45, 0.1); body.add(leg);
+    M(cap(0.08, 0.7), dark, leg, { y: -0.45 });
+    for (let i = 0; i < 3; i++) M(cone(0.04, 0.3), beakM, leg, { y: -0.95, z: 0.1, x: (i - 1) * 0.08, rx: Math.PI / 2 + 0.4 });
+  }
+  const flames = []; // lenguas de fuego que salen del lomo (parpadean)
+  for (let i = 0; i < 9; i++) flames.push(M(cone(0.1, 0.8), i % 2 ? fireA : fireB, body, { x: rnd(-0.4, 0.4), y: 2.5 + rnd(0, 0.5), z: -0.4 + rnd(-0.2, 0.2), rx: -0.4 }));
+  return { root, body, wings, tail, flames, neck, head, limbs: [], mats: [dark, ember], flies: true };
+}
+
 // --- Modelos con escala maestra (scale.js): GLB real si ya está cargado; si no, el procedural de reserva ---
 function glbModel(gltf, S) {
   // SkeletonUtils.clone: copia también el esqueleto (un clone() normal dejaría la malla atada a los huesos del original)
@@ -377,7 +430,7 @@ export function preloadAlly(kind) {
   if (S && S.glb) loadGLB(modelUrl(S.glb)).catch(() => {});
 }
 
-const MODEL_BUILDERS = { minotauro: buildMinotauroModel, kerberos: buildKerberosModel, medusa: buildMedusaModel, basilisco: buildBasiliscoModel, kraken: buildKrakenModel, fenrir: buildFenrirModel, long: buildLongModel, cataclismo: buildCataclismoModel };
+const MODEL_BUILDERS = { minotauro: buildMinotauroModel, kerberos: buildKerberosModel, medusa: buildMedusaModel, basilisco: buildBasiliscoModel, kraken: buildKrakenModel, fenrir: buildFenrirModel, long: buildLongModel, fenix: buildFenixModel, cataclismo: buildCataclismoModel };
 
 /* ------------------------------------------------------------------ */
 /*  Clase base: máquina de estados y combate, compartida por los 7     */
@@ -873,6 +926,19 @@ export class BossBase {
       mesh.emissive.setRGB(this.hitFlash + c.r * g + st, this.hitFlash * 0.3 + c.g * g + st + gd * 0.6, c.b * g + st + gd);
       mesh.emissiveIntensity = 1;
     }
+    if (this.model.wings) { // FÉNIX: aleteo (más rápido al cargar y atacar), cola ondulante y llamas que parpadean
+      const fast = this.state === 'charge' || this.state === 'tg_charge' || this.state === 'slam' || this.state === 'tg_slam' || (this.sig && this.sig.flap);
+      const rate = this.state === 'dead' ? 0.5 : fast ? 9 : 4.2, amp = fast ? 0.75 : 0.5, ph = this.t * rate;
+      for (const w of this.model.wings) {
+        w.sh.rotation.z = w.s * (Math.sin(ph) * amp + 0.15);
+        w.arm.rotation.z = w.s * (Math.sin(ph - 0.7) * amp * 0.7);
+        w.sh.rotation.y = w.s * 0.15 * Math.cos(ph);
+      }
+      this.model.tail.forEach((t, i) => { t.rotation.x = Math.sin(this.t * 3 + i * 0.6) * 0.18; t.rotation.z = Math.sin(this.t * 2.2 + i) * 0.12; });
+      this.model.flames.forEach((f, i) => f.scale.set(1, 0.7 + 0.5 * Math.abs(Math.sin(this.t * 11 + i * 1.7)), 1));
+      if (this.model.neck) this.model.neck.rotation.x = Math.sin(this.t * 1.7) * 0.08 + (this.state === 'tg_slam' ? -0.4 : 0);
+      if (Math.random() < 0.35) { const p = this.model.root.position; this.ctx.fx.ember(p.x + rnd(-1.2, 1.2), p.y + rnd(1, 3) * this.baseScale, p.z + rnd(-1.2, 1.2), 1); } // cenizas ardientes
+    }
     if (this.model.shards) {
       this.model.shards.forEach((sg, i) => {
         const a = (i / this.model.shards.length) * TAU + this.t * 0.8;
@@ -904,12 +970,13 @@ export const Medusa = defineBoss('medusa', { name: 'Medusa', icon: '🐍', color
 export const Basilisco = defineBoss('basilisco', { name: 'Basilisco', icon: '🐉', color: 0xd8b020, cssColor: '#e0b830', chargeName: 'Embestida desde la arena', slamName: 'Tormenta de arena' });
 export const Kraken = defineBoss('kraken', { name: 'Kraken', icon: '🐙', color: 0x2a6aff, cssColor: '#3a8aff', chargeName: 'Golpe de tentáculo', slamName: 'Ola gigante' });
 export const Fenrir = defineBoss('fenrir', { name: 'Fenrir', icon: '🐺', color: 0x8ad0ff, cssColor: '#9ad8ff', chargeName: 'Embestida helada', slamName: 'Aullido de hielo' });
+export const Fenix = defineBoss('fenix', { name: 'Fénix Oscuro', icon: '🔥', color: 0xff3a10, cssColor: '#ff4a2a', chargeName: 'Picado ígneo', slamName: 'Explosión de llamas oscuras' });
 export const Long = defineBoss('long', { name: 'Long', icon: '🐲', color: 0x5ac8ff, cssColor: '#6ad0ff', chargeName: 'Picado aéreo', slamName: 'Tormenta de rayos' });
 // El jefe final de Apocalia no es un monstruo más: es el propio Cataclismo que ha conectado
 // todas las catástrofes de la campaña. Más vida y más ritmo que el resto (mismo framework).
 export const Cataclismo = defineBoss('cataclismo', { name: 'El Cataclismo', icon: '☄️', color: 0x9a3cff, cssColor: '#b05aff', chargeName: 'Embestida del vacío', slamName: 'Onda elemental', hpMax: 190 });
 
-const BOSSES = { minotauro: Minotauro, kerberos: Kerberos, medusa: Medusa, basilisco: Basilisco, kraken: Kraken, fenrir: Fenrir, long: Long, cataclismo: Cataclismo };
+const BOSSES = { minotauro: Minotauro, kerberos: Kerberos, medusa: Medusa, basilisco: Basilisco, kraken: Kraken, fenrir: Fenrir, long: Long, fenix: Fenix, cataclismo: Cataclismo };
 
 export function createBoss(kind, ctx, arena) {
   const C = BOSSES[kind];

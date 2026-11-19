@@ -338,6 +338,15 @@ export const BOSS_ATTACKS = {
     statues: 3, statueLife: 9, statueR: 0.9, statueH: 2.6,
     recover: 1.0,
   },
+  // FÉNIX OSCURO — se eleva y lanza una lluvia de bolas de fuego oscuro sobre las zonas marcadas; después cae en
+  // picado envuelto en llamas a lo largo de una franja; al final de la caída, explosión de fuego y cenizas
+  fenix: {
+    name: 'Lluvia de Llamas Oscuras',
+    riseT: 0.9, riseH: 5,           // se eleva antes de atacar
+    zones: [4, 5, 6], zoneRadius: 2.3, zoneGap: 0.32, fallT: 0.75, // bolas por fase, radio, ritmo y caída de cada bola
+    diveTelegraph: 1.3, diveSpeed: 26, diveWidth: 2.6, blastRadius: 4.2,
+    recover: 1.0,
+  },
   fenrir: {
     name: 'Devorador del Eclipse',
     solar: { swipeTelegraph: 0.55, swipeArc: 110, swipeRange: 6.5, chargeSpeedMul: 1.35 },

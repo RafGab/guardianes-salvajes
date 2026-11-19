@@ -9,6 +9,7 @@ export const LEVELS = [
     gauge: 'FUEGO', intro: '🌲 CAMP FIRE · PARADISE', introSub: 'Explora, rescata y lleva a todos al campamento · busca las piñas doradas y los lugares secretos',
     failTitle: 'El fuego ha alcanzado Paradise', reward: null,
     mechanic: 'El fuego se propaga por el bosque y el pueblo. Hay piñas doradas, plataformas, cuevas y 3 lugares secretos por descubrir.',
+    boss: 'fenix', bossName: 'Fénix Oscuro', bossTitle: 'Ignivar, el Fénix Oscuro',
   },
   {
     n: 2, id: 'sandstorm', scenario: 'sandstorm', icon: '🏜️', kicker: 'MUNDO 2 · DUST STORM', name: 'Dust Storm', place: 'Haboura: desierto con dunas, pueblo de adobe y oasis', color: '#D6A84F', d: 5,
@@ -53,6 +54,7 @@ export const LEVELS = [
     gauge: 'AGUA', intro: '🌊 ¡TSUNAMI STRIKE EN NÁUFORA!', introSub: 'El río se ha desbordado: sube a lugares altos y rescata a todos',
     failTitle: 'El agua ha cubierto Náufora', reward: 'wind',
     mechanic: 'El agua sube sin parar y crea corrientes en las calles.',
+    boss: 'kraken', bossName: 'Kraken', bossTitle: 'Fuerza del Océano',
   },
   {
     n: 7, id: 'fire', scenario: 'fire', icon: '🔥', kicker: 'MUNDO 7 · VOLCANO FURY', name: 'Volcano Fury', place: 'Cenizara: el volcán en erupción y la ciudad arrasada', color: '#F57C00', d: 3,

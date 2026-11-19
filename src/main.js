@@ -28,7 +28,7 @@ import { TEAM } from './skills/config.js';
 import { TOON } from './toon.js';
 
 const $ = (id) => document.getElementById(id);
-const BOSS_ICON = { minotauro: '👹', kerberos: '🐕‍🦺', medusa: '🐍', basilisco: '🐉', kraken: '🐙', fenrir: '🐺', long: '🐲', cataclismo: '☄️' };
+const BOSS_ICON = { minotauro: '👹', kerberos: '🐕‍🦺', medusa: '🐍', basilisco: '🐉', kraken: '🐙', fenrir: '🐺', long: '🐲', fenix: '🔥', cataclismo: '☄️' };
 const stage = $('stage');
 let quality = 'high';
 try { quality = localStorage.getItem('gs_quality') || 'high'; } catch (e) { /* sin almacenamiento */ }

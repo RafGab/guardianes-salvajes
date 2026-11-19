@@ -908,6 +908,91 @@ class FenrirAtk extends Attack {
   }
 }
 
+/* ====================================================================== */
+/*  FÉNIX OSCURO — Lluvia de Llamas Oscuras                                */
+/*  1) se eleva batiendo las alas · 2) lanza bolas de fuego oscuro a las   */
+/*  zonas marcadas (una tras otra, sobre el héroe) · 3) picado envuelto en */
+/*  llamas por una franja marcada que termina en una explosión de fuego.   */
+/* ====================================================================== */
+class FenixAtk extends Attack {
+  build() {
+    const c = this.cfg;
+    return [
+      { name: 'elevarse', dur: c.riseT, enter: () => { this.flap = true; this.ctx.ui.alert('🔥 ¡El Fénix Oscuro se eleva! Esquiva las llamas que caen', 2200); this.boom(0.4, 300, 0.6); }, tick: (dt, k) => { this.b.anim.dy = c.riseH * Math.sin(k * Math.PI * 0.5); this.b.anim.rx = -0.25 * k; } },
+      { name: 'lluvia', dur: 0.4 + this.nZones() * c.zoneGap + c.fallT + 0.3, enter: this.enterRain, tick: this.tickRain, exit: () => this.zones.forEach((z) => z.tg.kill()) },
+      { name: 'picado-aviso', dur: c.diveTelegraph, enter: this.enterDiveTg, tick: this.tickDiveTg },
+      { name: 'picado', dur: 1.2, enter: this.enterDive, tick: this.tickDive, exit: () => { if (this.strip) this.strip.kill(); } },
+      { name: 'recuperacion', dur: c.recover, enter: () => { this.flap = false; }, tick: (dt, k) => { this.b.anim.dy = lerp(this.b.anim.dy, 0, k); this.b.anim.rx = lerp(this.b.anim.rx, 0, k); } },
+    ];
+  }
+  nZones() { return this.cfg.zones[Math.min(2, (this.b.phase || 1) - 1)]; }
+  enterRain() {
+    const c = this.cfg, n = this.nZones();
+    this.zones = [];
+    for (let i = 0; i < n; i++) {
+      const a = this.b.aimPoint(), j = i === 0 ? 0 : 2.6; // la primera, sobre el héroe; las demás alrededor
+      const x = a.x + rnd(-j, j), z = a.z + rnd(-j, j);
+      this.zones.push({ x, z, at: 0.4 + i * c.zoneGap, ball: null, done: false, tg: this.track(this.vfx.telegraph('disc', { x, z, r: c.zoneRadius, color: 0xff3a10, opacity: 0.45 })) });
+    }
+  }
+  tickRain(dt) {
+    const c = this.cfg, b = this.b;
+    for (const zn of this.zones) {
+      if (zn.done) continue;
+      const k = (this.t - zn.at) / c.fallT;
+      zn.tg.setProgress(Math.min(1, Math.max(0, (this.t) / (zn.at + c.fallT))));
+      if (k < 0) continue;
+      if (!zn.ball) { // bola de fuego oscuro que sale del pico del fénix
+        const from = new THREE.Vector3(b.pos.x, this.gy(b.pos.x, b.pos.z) + b.flyHeight + this.b.anim.dy + 3, b.pos.z);
+        zn.from = from;
+        zn.ball = this.vfx.orb(from.clone(), { r: 0.6, color: 0xff3a10, life: c.fallT + 0.05 });
+        this.boom(0.25, 500, 0.2);
+      }
+      const to = new THREE.Vector3(zn.x, this.gy(zn.x, zn.z) + 0.3, zn.z), p = new THREE.Vector3().lerpVectors(zn.from, to, Math.min(1, k));
+      p.y += Math.sin(Math.min(1, k) * Math.PI) * 2;
+      if (zn.ball && zn.ball.obj) zn.ball.obj.position.copy(p);
+      this.ctx.fx.flame(p.x, p.y, p.z, 0.8, 0.25);
+      if (Math.random() < 0.6) this.ctx.fx.ember(p.x, p.y, p.z, 1);
+      if (k >= 1) {
+        zn.done = true; zn.tg.kill();
+        this.vfx.ring(zn.x, null, zn.z, { r0: 0.4, r1: c.zoneRadius + 1, dur: 0.45, color: 0xff6a1a });
+        this.vfx.ring(zn.x, null, zn.z, { r0: 0.2, r1: c.zoneRadius, dur: 0.6, color: 0x3a0a0a, opacity: 0.6, additive: false }); // ceniza negra
+        this.vfx.fire(zn.x, to.y, zn.z, 10, 1.4);
+        for (let i = 0; i < 8; i++) this.ctx.fx.ember(zn.x + rnd(-1, 1), to.y + rnd(0, 1.5), zn.z + rnd(-1, 1), 1);
+        this.shake(0.18); this.boom(0.45, 220, 0.4);
+        if (this.playerInCircle(zn.x, zn.z, c.zoneRadius)) this.hurt();
+      }
+    }
+  }
+  enterDiveTg() {
+    const b = this.b, a = b.aimPoint();
+    const dx = a.x - b.pos.x, dz = a.z - b.pos.z, l = Math.hypot(dx, dz) || 1, ext = Math.min(b.arena.r * 1.6, l + 6);
+    this.from = { x: b.pos.x, z: b.pos.z };
+    this.to = { x: b.pos.x + (dx / l) * ext, z: b.pos.z + (dz / l) * ext };
+    this.strip = this.track(this.vfx.telegraph('strip', { x: this.from.x, z: this.from.z, x2: this.to.x, z2: this.to.z, width: this.cfg.diveWidth * 1.4, color: 0xff3a10, opacity: 0.4 }));
+    this.ctx.ui.alert('🔥 ¡Va a caer en picado! Sal de la franja', 1800);
+  }
+  tickDiveTg(dt, k) { const b = this.b; this.strip.setProgress(k); b.facing = Math.atan2(this.to.x - b.pos.x, this.to.z - b.pos.z); b.anim.rx = -0.4 * k; this.shake(0.02 + 0.03 * k); }
+  enterDive() { this.u = 0; this.hitDone = false; this.boom(0.6, 260, 0.8); this.len = Math.hypot(this.to.x - this.from.x, this.to.z - this.from.z) || 1; }
+  tickDive(dt) {
+    const c = this.cfg, b = this.b, st = this.stages[this.i];
+    this.u = Math.min(1, this.u + (c.diveSpeed * dt) / this.len);
+    b.pos.x = lerp(this.from.x, this.to.x, this.u); b.pos.z = lerp(this.from.z, this.to.z, this.u);
+    b.anim.dy = lerp(this.cfg.riseH, -1.2, Math.min(1, this.u * 1.6)); b.anim.rx = 0.9;
+    const gy = this.gy(b.pos.x, b.pos.z);
+    this.ctx.fx.flame(b.pos.x + rnd(-0.6, 0.6), gy + 0.5, b.pos.z + rnd(-0.6, 0.6), 1, 0.3);
+    if (!this.hitDone && Math.hypot(this.player.pos.x - b.pos.x, this.player.pos.z - b.pos.z) < c.diveWidth + this.player.R) { this.hitDone = true; this.hurt(); this.combat.pushPlayer(this.player.pos.x - b.pos.x, this.player.pos.z - b.pos.z, 10); }
+    if (this.u >= 1) { // EXPLOSIÓN DE LLAMAS OSCURAS al tocar el suelo
+      this.vfx.ring(b.pos.x, null, b.pos.z, { r0: 0.5, r1: c.blastRadius * 1.3, dur: 0.6, color: 0xff4a10 });
+      this.vfx.ring(b.pos.x, null, b.pos.z, { r0: 0.3, r1: c.blastRadius, dur: 0.8, color: 0x200404, opacity: 0.7, additive: false });
+      this.vfx.fire(b.pos.x, gy + 0.3, b.pos.z, 22, 2);
+      this.shake(0.45); this.boom(0.7, 120, 0.9);
+      if (!this.hitDone && this.playerInCircle(b.pos.x, b.pos.z, c.blastRadius)) { this.hitDone = true; this.hurt(); }
+      st.dur = this.t;
+    }
+  }
+}
+
 export const SIGS = {
   minotauro: MinotauroAtk,
   kraken: KrakenAtk,
@@ -916,4 +1001,5 @@ export const SIGS = {
   long: LongAtk,
   medusa: MedusaAtk,
   fenrir: FenrirAtk,
+  fenix: FenixAtk,
 };

@@ -1709,7 +1709,12 @@ export class Game {
     if (this.state === 'playing' && this.t >= this.missionTime && !this.ended) {
       // a más dificultad (hz), más margen para aprobar: los niveles suben de dificultad pero siguen siendo superables
       const need = clamp(0.7 - ((this.mission.hz || 1) - 1) * 0.06, 0.52, 0.7);
-      this.end(this.delivered >= Math.ceil(this.total * need));
+      const enough = this.delivered >= Math.ceil(this.total * need);
+      // JEFE OBLIGATORIO: si se acaba el tiempo con suficientes rescates, el mundo NO se da por superado sin pelear:
+      // aparece el jefe de zona (antes se terminaba aquí con victoria y el combate no llegaba a ocurrir).
+      // Haber vencido a este jefe en otra partida (Save.bossDefeated) no influye: cada rescate exige su combate.
+      if (enough && this.mission.boss && !this.bossDone) { ui.banner('find', '⏱️ ¡Se acabó el tiempo!', `${this.mission.bossName || 'El jefe de zona'} aparece: derrótalo para completar el rescate`); this.prepareBoss(); }
+      else this.end(enough);
     }
     if (this.state === 'ending') {
       this.endT += real;
