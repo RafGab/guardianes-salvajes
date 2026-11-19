@@ -226,6 +226,14 @@ export class Input {
       || Math.abs(this.pad.x) + Math.abs(this.pad.y) > 0.4 || this.pad.jump || Math.abs(this.touch.x) + Math.abs(this.touch.y) > 0.4 || this.touch.jumpHeld;
   }
 
+  // ejes de movimiento sin consumir pulsaciones (para dirigir un ataque mientras el héroe va guiado)
+  moveAxes() {
+    const k = this.keys;
+    const x = (k.has('KeyD') || k.has('ArrowRight') ? 1 : 0) - (k.has('KeyA') || k.has('ArrowLeft') ? 1 : 0) + this.pad.x + this.touch.x;
+    const y = (k.has('KeyW') || k.has('ArrowUp') ? 1 : 0) - (k.has('KeyS') || k.has('ArrowDown') ? 1 : 0) + this.pad.y + this.touch.y;
+    return { x: Math.max(-1, Math.min(1, x)), y: Math.max(-1, Math.min(1, y)) };
+  }
+
   getMove() {
     const k = this.keys;
     let x = (k.has('KeyD') ? 1 : 0) - (k.has('KeyA') ? 1 : 0);

@@ -7,6 +7,7 @@ import { terrainH } from '../terrain.js';
 import { ui } from '../ui.js';
 import { Trail } from '../weapons/system.js';
 import { SPEED2 } from './speedfx2.js';
+import { propsNear, captureProp, dropFlung } from './envreact.js';
 
 // ACTUALIZACIÓN DE BOTONES: animaciones de VELOCIDAD (botón 1), ARMAS (7), Tornados y Garras de Ámbar, Visión de Lira.
 // Números en skills/config.js (HERO_SKILLS / HERO_BUTTONS).
@@ -700,17 +701,15 @@ export class KatanaSkill extends WeaponSkill {
   build() {
     const d = this.def, extra = this.drawn ? 0.1 : 0;
     const slash = (arc, tilt, mul, vertical = false) => () => {
-      this.W.swing(d.swing + 0.1);
+      this.W.swing(d.swing + 0.16); // estela de la hoja algo más larga
       this.sfx('snap');
       const p = this.p;
       this.crescent(p.pos.y + p.H * 0.55, { r: d.range, arc, color: d.color, tilt, vertical });
       this.crescent(p.pos.y + p.H * 0.5, { r: d.range * 0.8, arc: arc * 0.8, color: 0xff8a2a, tilt: tilt * 0.8, width: 0.15, vertical });
-      const n = this.hitArc(d.range, arc, d.damage * mul, d.force, (t) => {
-        this.impactAt(t);
-        this.vfx.sparks(t.pos.x, t.pos.y + 0.8, t.pos.z, 0xffb060, 8, 2.6);
-        this.vfx.bolt(this.tipPos(), V(t.pos.x, t.pos.y + 0.8, t.pos.z), { color: 0x6ac8ff, life: 0.12, jag: 0.25, segs: 6 });
-      });
-      if (n) this.shake(0.15);
+      this.crescent(p.pos.y + p.H * 0.6, { r: d.range * 1.12, arc: arc * 0.9, color: 0x6ac8ff, tilt: tilt * 1.1, width: 0.06, vertical, life: 0.18 }); // filo de energía azul (lava y trueno)
+      this.katanaFlash(0.8);
+      const n = this.hitArc(d.range, arc, d.damage * mul, d.force, (t) => this.katanaImpact(t, 1));
+      if (n) { this.shake(0.15); this.g.chase.fovKick = Math.max(this.g.chase.fovKick, 2); }
     };
     const fire = () => this.energy(0xff7a1a, 2, 1.8);
     if (this.step === 1) return [ // revés horizontal: la hoja vuelve de lado a lado
@@ -726,9 +725,10 @@ export class KatanaSkill extends WeaponSkill {
         const p = this.p, f = this.fwd;
         this.crescent(p.pos.y + p.H * 0.55, { r: d.range * 1.3, arc: 30, color: 0xffd070, vertical: true, width: 0.12, life: 0.2 });
         this.v2.beam(this.center(0.55), V(p.pos.x + f.x * d.range * 1.5, p.pos.y + p.H * 0.55, p.pos.z + f.z * d.range * 1.5), { r: 0.07, color: 0xff9a3a, opacity: 0.85, life: 0.18 });
-        const n = this.hitArc(d.range * 1.4, 40, d.damage * this.mul, d.force * 1.6, (t) => this.impactAt(t, 1.3));
+        const n = this.hitArc(d.range * 1.4, 40, d.damage * this.mul, d.force * 1.6, (t) => this.katanaImpact(t, 1.6));
         this.finisher(0xff7a1a, 0x4aa8ff);
-        if (n) this.shake(0.25);
+        this.katanaFinale();
+        if (n) this.shake(0.3);
       } }),
       this.recover(d.recover + 0.12),
     ];
@@ -739,6 +739,38 @@ export class KatanaSkill extends WeaponSkill {
     ];
   }
 }
+
+/* EFECTOS DE COMBATE DE LA KATANA (Jaglion): destello en el filo al cortar, impacto con fuerza (destello,
+   onda, chispas de lava, rayo azul y una sacudida breve) y un remate final con onda de energía y rayos. */
+Object.assign(KatanaSkill.prototype, {
+  katanaFlash(k = 1) {
+    const tp = this.tipPos();
+    if (this.vfx.orb) this.vfx.orb(tp.clone(), { r: 0.25 * k, color: 0xffd8a0, opacity: 0.85, life: 0.12, grow: 1.5 });
+    for (let i = 0; i < 5; i++) this.g.fx.spark.emit(tp.x, tp.y, tp.z, rnd(-3, 3), rnd(-1, 3), rnd(-3, 3), 0.25, 0.08, 0.02, 0xffffff, 0xff7a1a, 1, 0, 6, 2);
+  },
+  katanaImpact(t, k = 1) {
+    this.impactAt(t, k);
+    const y = t.pos.y + (t.heavy ? t.S.height * 0.45 : 0.8), at = V(t.pos.x, y, t.pos.z);
+    if (this.vfx.orb) this.vfx.orb(at.clone(), { r: 0.45 * k, color: 0xffc080, opacity: 0.85, life: 0.16, grow: 1.4 });
+    this.vfx.ring(t.pos.x, y, t.pos.z, { r0: 0.2, r1: 1.4 * k, dur: 0.22, color: 0xff8a2a, opacity: 0.8 });
+    this.vfx.ring(t.pos.x, null, t.pos.z, { r0: 0.3, r1: 1.6 * k, dur: 0.35, color: 0x6ac8ff, opacity: 0.5 });
+    this.vfx.sparks(t.pos.x, y, t.pos.z, 0xffb060, Math.round(10 * k), 2.8 * k);
+    for (let i = 0; i < 6; i++) this.g.fx.ember(t.pos.x + rnd(-0.3, 0.3), y, t.pos.z + rnd(-0.3, 0.3), 1);
+    this.vfx.bolt(this.tipPos(), at.clone(), { color: 0x6ac8ff, life: 0.12, jag: 0.25, segs: 6 });
+    this.shake(0.06 * k);
+  },
+  // REMATE: onda de energía que barre el suelo, columna de luz en el filo y rayos radiales
+  katanaFinale() {
+    const p = this.p, c = V(p.pos.x, p.pos.y + 0.2, p.pos.z);
+    this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 0.5, r1: 6, dur: 0.5, color: 0xff7a1a, opacity: 0.75 });
+    this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 0.3, r1: 4.5, dur: 0.6, color: 0x4aa8ff, opacity: 0.6 });
+    for (let i = 0; i < 6; i++) { const a = p.facing + (i - 2.5) * 0.35, r = rnd(3, 5.5); this.vfx.bolt(c.clone(), V(p.pos.x + Math.sin(a) * r, p.pos.y + 0.3, p.pos.z + Math.cos(a) * r), { color: i % 2 ? 0x6ac8ff : 0xffb060, life: 0.2, jag: 0.5, segs: 7 }); }
+    const tp = this.tipPos();
+    this.v2.beam(tp, V(tp.x, tp.y + 4, tp.z), { r: 0.12, color: 0xffd070, opacity: 0.7, life: 0.2 });
+    for (let i = 0; i < 12; i++) this.g.fx.flame(p.pos.x + rnd(-1.2, 1.2), p.pos.y + 0.2, p.pos.z + rnd(-1.2, 1.2), 0.6, 0.2);
+    this.g.chase.fovKick = Math.max(this.g.chase.fovKick, 5);
+  },
+});
 
 /* ---------------------------------------------------------------------- */
 /*  KAIRO — MARTILLO · martillazo → barrido lateral → salto y golpe al suelo */
@@ -1073,9 +1105,18 @@ export class DiscSkill extends WeaponSkill {
     this.draw();
     const W = this.W, parts = (W && W.cur && W.cur.parts) || [];
     const ready = parts.map((pt, i) => (pt.home ? i : -1)).filter((i) => i >= 0);
-    if (parts.length && !ready.length) return false; // los dos discos están volando: se espera a que vuelvan
-    // cada lanzamiento suelta LOS DOS discos (uno por ala), cada uno hacia su propio objetivo
-    this.which = ready.length ? ready : [0];
+    // REMATE con los dos discos aún en el aire: los llama de vuelta y los relanza juntos en cuanto llegan a sus alas
+    this.recall = false;
+    if (parts.length && !ready.length) {
+      if (this.step !== 2) return false; // fuera del remate: se espera a que vuelvan (como antes)
+      this.recall = true;
+      parts.forEach((pt) => { pt.recall = true; });
+    }
+    // COMBO DE DISCOS (mismo sistema de combos que las demás armas: W.nextStep, ritmo de pulsación):
+    //  1.º golpe → un disco con un ala · 2.º → el otro disco con la otra ala · 3.º (remate) → los discos que
+    //  estén en sus alas a la vez, más rápidos y con curva. Así puede encadenar lanzamientos seguidos.
+    const pick = (pref) => (ready.includes(pref) ? [pref] : [ready[0]]);
+    this.which = this.recall ? parts.map((_, i) => i) : !ready.length ? [0] : this.step === 2 ? ready : pick(this.step === 1 ? 1 : 0);
     this.wing = !!(parts[0] && parts[0].wing);
     this.start();
     return true;
@@ -1084,10 +1125,14 @@ export class DiscSkill extends WeaponSkill {
     const d = this.def, extra = this.drawn ? 0.12 : 0;
     this.armPart = this.which.length > 1 ? -1 : this.which[0];
     const both = this.which.length > 1;
+    const call = this.recall ? [{ name: 'llamar', dur: 1.4, tick: () => { // las alas se abren y los discos vuelven volando
+      this.energy(0xffc020, 1, 1);
+      if (this.W.cur.parts.every((pt) => pt.home)) this.endStage();
+    } }] : [];
     if (this.wing) {
       this.thrown = false;
       const sideSpin = both ? 0 : (this.W.cur.parts[this.which[0]].side > 0 ? 0.35 : -0.35); // el cuerpo acompaña al ala que lanza
-      return [
+      return [...call,
         // el ala se abre hacia fuera y atrás (carga)
         this.stage('apuntar', d.prep + extra + (both ? 0.08 : 0), { x: 0.85, y: -0.45, f: -0.25, w: 0.1 }, { spin: -sideSpin, rx: -0.05, tick: () => this.energy(0xff4a2a, 1, 0.8) }),
         // barrido rápido hacia delante: el disco sale a mitad del gesto, con la velocidad del ala
@@ -1097,7 +1142,7 @@ export class DiscSkill extends WeaponSkill {
         this.recover(d.recover + 0.08),
       ];
     }
-    return [
+    return [...call,
       this.stage('apuntar', d.prep + extra + (this.step === 2 ? 0.1 : 0), { x: -0.8, y: -0.45, f: -0.3 }, { spin: this.step === 1 ? 0.5 : -0.5, enter: () => { this.p.powerAnim = 1; }, tick: () => this.energy(0xff4a2a, 2, 1) }),
       this.stage('lanzar', 0.12, { x: -0.8, y: 0.4, f: -0.3 }, { spin: this.step === 1 ? -0.3 : 0.4, easeFn: back, enter: () => { this.which.forEach((i, k) => this.throwDisc(i, k)); if (this.step === 2) this.finisher(0xff3a1a, 0xffc020); } }),
       this.recover(d.recover),
@@ -1107,6 +1152,7 @@ export class DiscSkill extends WeaponSkill {
     const d = this.def, p = this.p, f = this.fwd, W = this.W;
     const part = W.cur && W.cur.parts[idx];
     if (part && !part.home) return; // ya está volando
+    if (part) part.recall = false;
     const pr = W.projectile(idx);
     const g = pr ? pr.group : new THREE.Group();
     const spin = pr && pr.spin;
@@ -1119,7 +1165,11 @@ export class DiscSkill extends WeaponSkill {
     W.setHome(idx, false);
     W.swing(0.25);
     this.sfx('wind');
-    const trail = new Trail(this.g.scene, 0xff3a1a, 0xffc020, 20);
+    const trail = new Trail(this.g.scene, 0xff3a1a, 0xffc020, 26, 0.6); // estela más larga y viva
+    const glow = new Trail(this.g.scene, 0xffe080, 0xff5a1a, 14, 0.35);
+    const fast = this.step === 2 ? 1.25 : 1; // el remate sale más rápido
+    // salida: destello y chispas en el ala (sensación de potencia)
+    vfxOut(this, startP);
     const combat = this.combat, vfx = this.vfx, sfx = (n) => this.sfx(n), fx = this.g.fx, dmg = d.damage * this.mul;
     const hit = new Set();
     // con los dos discos, cada uno busca un enemigo distinto
@@ -1132,14 +1182,16 @@ export class DiscSkill extends WeaponSkill {
     W.partLight(idx, 1);
     const LIFE = 8; // margen de sobra: el disco siempre vuelve antes (antes, a los 5 s desaparecía en el aire)
     const it0 = vfx.add(g, LIFE, (it, dt) => {
-      if (spin) spin.rotation.z += dt * 30;
+      if (spin) spin.rotation.z += dt * (back ? 22 : 46); // gira mucho más rápido al ir lanzado
       if (!back) g.quaternion.slerp(qFly, Math.min(1, dt * 14)); // se aplana al salir (sin giro brusco)
       light = back ? Math.max(0, light - dt / 0.15) : 1; // al volver: se apaga en 0,15 s, sin cortes bruscos
       W.partLight(idx, light);
       const r = 0.2, a = it.t * 30;
-      if (!back) trail.push(V(g.position.x + Math.cos(a) * r, g.position.y, g.position.z + Math.sin(a) * r), V(g.position.x - Math.cos(a) * r, g.position.y, g.position.z - Math.sin(a) * r));
-      trail.update(dt, !back);
+      if (!back) { trail.push(V(g.position.x + Math.cos(a) * r, g.position.y, g.position.z + Math.sin(a) * r), V(g.position.x - Math.cos(a) * r, g.position.y, g.position.z - Math.sin(a) * r)); glow.push(V(g.position.x, g.position.y + 0.08, g.position.z), V(g.position.x, g.position.y - 0.08, g.position.z)); }
+      trail.update(dt, !back); glow.update(dt, !back);
+      if (!back && Math.random() < 0.5) fx.spark.emit(g.position.x, g.position.y, g.position.z, -dir.x * 4 + rnd(-1, 1), rnd(-0.5, 1), -dir.z * 4 + rnd(-1, 1), 0.25, 0.07, 0.02, 0xffe080, 0xff3a1a, 0.9, 0, 0, 2); // chispas de energía
       if (!back && Math.random() < 0.7) fx.sparkle(g.position.x, g.position.y, g.position.z, Math.random() < 0.5 ? 0xff3a1a : 0xffc020, 1.2);
+      if (part && part.recall && !back) { back = true; part.recall = false; } // llamado para el remate
       if (back) { // vuelve exactamente al punto del ala (o de la mano) que lo sujeta
         const home = part ? W.partCenter(part, V()) : V(p.pos.x, p.pos.y + p.H * 0.55, p.pos.z);
         dir.subVectors(home, g.position);
@@ -1158,7 +1210,12 @@ export class DiscSkill extends WeaponSkill {
         if (l < 0.6) { // impacto y rebote al siguiente
           combat.damage(target, dmg);
           hit.add(target);
-          vfx.ring(target.pos.x, to.y, target.pos.z, { r0: 0.2, r1: 1.4, dur: 0.3, color: 0xff3a1a });
+          // IMPACTO: destello, onda, chispas y una pequeña sacudida
+          vfx.ring(target.pos.x, to.y, target.pos.z, { r0: 0.2, r1: 1.6, dur: 0.3, color: 0xff3a1a });
+          vfx.ring(target.pos.x, null, target.pos.z, { r0: 0.2, r1: 1.2, dur: 0.35, color: 0xffc020, opacity: 0.6 });
+          if (vfx.orb) vfx.orb(to.clone(), { r: 0.45, color: 0xffd080, opacity: 0.8, life: 0.18, grow: 1.2 });
+          vfx.sparks(to.x, to.y, to.z, 0xffb040, 10, 3);
+          this.shake(0.06);
           W.impact(to.x, to.y, to.z, 1);
           sfx('stick');
           if (bounces-- > 0) {
@@ -1171,20 +1228,29 @@ export class DiscSkill extends WeaponSkill {
         }
         dir.divideScalar(l);
       }
-      g.position.addScaledVector(dir, d.speed * dt);
-      travelled += d.speed * dt;
+      // el remate curva su trayectoria (los dos discos se abren en arco y convergen)
+      if (fast > 1 && !target) { const c = order ? -1 : 1; dir.x += -dir.z * c * dt * 1.4; dir.z += dir.x * c * dt * 1.4; dir.normalize(); }
+      g.position.addScaledVector(dir, d.speed * fast * dt);
+      travelled += d.speed * fast * dt;
       if (!target && travelled > d.range) back = true;
     });
     // al terminar su vuelo, el disco reaparece en la mano
     let finished = false;
     const orig = it0.onUpdate;
-    it0.onUpdate = (it, dt) => { orig(it, dt); if (!finished && it.t >= LIFE - 0.001) { finished = true; trail.dispose(); W.partLight(idx, 0); W.setHome(idx, true); } };
+    it0.onUpdate = (it, dt) => { orig(it, dt); if (!finished && it.t >= LIFE - 0.001) { finished = true; trail.dispose(); glow.dispose(); W.partLight(idx, 0); W.setHome(idx, true); } };
   }
 }
 
 /* ====================================================================== */
 /*  ÁMBAR — ESCUDO: TORNADOS ENVOLVENTES                                   */
 /* ====================================================================== */
+// destello de salida de un disco (en el ala que lo lanza)
+function vfxOut(sk, at) {
+  sk.vfx.ring(at.x, at.y, at.z, { r0: 0.1, r1: 0.9, dur: 0.18, color: 0xffc020, opacity: 0.7 });
+  if (sk.vfx.orb) sk.vfx.orb(at.clone(), { r: 0.3, color: 0xffe0a0, opacity: 0.8, life: 0.14, grow: 1 });
+  for (let i = 0; i < 6; i++) sk.g.fx.sparkle(at.x, at.y, at.z, i % 2 ? 0xff3a1a : 0xffc020, 2.2);
+}
+const TORN_DEB = { geo: null, mat: null }; // piedras, ramas y hojas que arrancan los tornados (compartidas)
 export class TornadoShieldSkill extends Skill {
   begin() { this.start(); return true; }
   build() {
@@ -1192,7 +1258,7 @@ export class TornadoShieldSkill extends Skill {
     return [
       { name: 'invocar', dur: d.prep, enter: this.enterCall, tick: (dt, k) => { pose.rx = -0.2 * k; pose.spin = k * TAU * 0.5; this.place(back(k), 1, dt); } },
       { name: 'escudo', dur: d.exec, tick: this.tickShield },
-      { name: 'disipar', dur: d.recover, tick: (dt, k) => { pose.spin = 0; this.place(1 - k, 1 + 0.6 * k, dt); } },
+      { name: 'disipar', dur: d.recover, enter: () => this.releaseDebris(), tick: (dt, k) => { pose.spin = 0; this.place(1 - k, (this.rr || 1) + 0.6 * k, dt); } },
     ];
   }
   enterCall() {
@@ -1224,6 +1290,8 @@ export class TornadoShieldSkill extends Skill {
       return { m, h, tilt: rnd(-0.18, 0.18) };
     });
     this.ringT = 0;
+    this.rr = 1;
+    this.gatherDebris();
   }
   // los tornados orbitan a su alrededor siguiendo al águila (también en el aire); k = tamaño, rr = escala del radio
   place(k, rr = 1, dt = 1 / 60) {
@@ -1245,7 +1313,73 @@ export class TornadoShieldSkill extends Skill {
       c.m.material.uniforms.uO.value = 0.7 * Math.min(1, k);
     }
   }
+  /* FUERZA DE SUCCIÓN CON FÍSICA: los objetos cercanos (los del escenario que se pueden arrastrar y piedras, ramas
+     y hojas que arranca del suelo) se aceleran hacia la tormenta, se elevan y giran a su alrededor, cada uno con su
+     radio, altura, velocidad y giro propios. Al terminar, la fuerza se apaga poco a poco y caen con gravedad,
+     rebotando y quedándose en el suelo (no desaparecen de golpe ni atraviesan el terreno). */
+  gatherDebris() {
+    const g = this.g, p = this.p, d = this.def;
+    this.debris = [];
+    for (const pr of propsNear(g, p.pos.x, p.pos.z, d.radius * 1.6)) { const it = captureProp(g, pr); if (it) this.debris.push(this.initDebris(it)); }
+    // piedras, ramas y hojas del suelo
+    if (!TORN_DEB.geo) {
+      TORN_DEB.geo = [new THREE.DodecahedronGeometry(1, 0), new THREE.BoxGeometry(0.25, 0.25, 2.2), new THREE.PlaneGeometry(1, 0.7)];
+      TORN_DEB.mat = [new THREE.MeshStandardMaterial({ color: 0x8a7a66, roughness: 0.95, flatShading: true }), new THREE.MeshStandardMaterial({ color: 0x6a4a2a, roughness: 0.9 }), new THREE.MeshStandardMaterial({ color: 0x8aa04a, roughness: 0.8, side: THREE.DoubleSide })];
+    }
+    const n = 12;
+    for (let i = 0; i < n; i++) {
+      const kind = i % 4 === 0 ? 1 : i % 3 === 0 ? 2 : 0, a = rnd(0, TAU), r = rnd(2.5, d.radius * 1.4);
+      const x = p.pos.x + Math.cos(a) * r, z = p.pos.z + Math.sin(a) * r;
+      const m = new THREE.Mesh(TORN_DEB.geo[kind], TORN_DEB.mat[kind]);
+      const s = kind === 0 ? rnd(0.12, 0.3) : kind === 1 ? rnd(0.35, 0.6) : rnd(0.25, 0.45);
+      m.scale.setScalar(s); m.castShadow = true;
+      m.position.set(x, terrainH(x, z) + s * 0.5, z);
+      m.rotation.set(rnd(0, TAU), rnd(0, TAU), rnd(0, TAU));
+      g.scene.add(m);
+      this.debris.push(this.initDebris({ mesh: m, size: s * (kind === 1 ? 2 : 1), spin: new THREE.Vector3(rnd(-4, 4), rnd(-4, 4), rnd(-4, 4)), own: true }));
+      this.g.fx.dustPuff(x, terrainH(x, z) + 0.1, z, 0.8);
+    }
+  }
+  initDebris(it) {
+    const d = this.def;
+    it.vel = new THREE.Vector3(0, 0, 0);
+    it.orbitR = d.orbit * rnd(0.85, 1.45); // cada uno con su órbita, altura y velocidad
+    it.orbitH = rnd(0.6, 3.4);
+    it.wSpeed = rnd(4, 8) * (Math.random() < 0.85 ? 1 : 1.3);
+    it.phase = rnd(0, TAU);
+    it.delay = rnd(0, 0.5);                // no arrancan todos a la vez
+    return it;
+  }
+  tickDebris(dt, strength) {
+    const p = this.p;
+    for (const it of this.debris || []) {
+      it.delay -= dt;
+      if (it.delay > 0) continue;
+      const m = it.mesh, dx = m.position.x - p.pos.x, dz = m.position.z - p.pos.z, r = Math.hypot(dx, dz) || 0.001;
+      const ux = dx / r, uz = dz / r;
+      // fuerza radial hacia su órbita + empuje tangencial (giro) + sustentación hacia su altura, con amortiguación
+      const R = it.orbitR * (this.rr || 1), wantY = p.pos.y + it.orbitH + 0.25 * Math.sin(this.t * 2 + it.phase);
+      const fr = (R - r) * 9, ft = it.wSpeed * 2.6 - (it.vel.x * -uz + it.vel.z * ux) * 1.8, fy = (wantY - m.position.y) * 7;
+      it.vel.x += (ux * fr - uz * ft) * strength * dt;
+      it.vel.z += (uz * fr + ux * ft) * strength * dt;
+      it.vel.y += (fy * strength - 18 * (1 - strength)) * dt;
+      it.vel.multiplyScalar(Math.exp(-1.6 * dt));
+      m.position.addScaledVector(it.vel, dt);
+      const gy = terrainH(m.position.x, m.position.z) + it.size * 0.35;
+      if (m.position.y < gy) { m.position.y = gy; it.vel.y = Math.max(0, it.vel.y); }
+      const tumble = 0.6 + Math.min(2, it.vel.length() * 0.15);
+      m.rotation.x += it.spin.x * dt * tumble; m.rotation.y += it.spin.y * dt * tumble; m.rotation.z += it.spin.z * dt * tumble;
+    }
+  }
+  // al terminar: pierden la fuerza poco a poco (se abren hacia fuera con su propia inercia) y caen con gravedad
+  releaseDebris() {
+    if (!this.debris || !this.debris.length) return;
+    const items = this.debris; this.debris = [];
+    for (const it of items) { it.vel.y = Math.max(it.vel.y, 1.5); it.vel.x *= 0.8; it.vel.z *= 0.8; }
+    dropFlung(this.g, items, 12);
+  }
   dispose() {
+    this.releaseDebris();
     for (const t of this.torn || []) for (const m of t.layers) { m.geometry.dispose(); m.material.dispose(); }
     for (const c of this.currents || []) { c.m.geometry.dispose(); c.m.material.dispose(); }
     this.torn = []; this.currents = [];
@@ -1254,7 +1388,13 @@ export class TornadoShieldSkill extends Skill {
   tickShield(dt) {
     const d = this.def, p = this.p, c = this.combat;
     this.pose.spin = 0;
-    this.place(1 + 0.05 * Math.sin(this.t * 9), 1, dt);
+    // SE ABREN Y SE CIERRAN: abiertos (lejos, Ámbar bien visible en el centro) ↔ cerrados (pegados a ella, protección)
+    const cyc = 0.5 + 0.5 * Math.sin(this.t * (TAU / 2.4) - Math.PI / 2), open = cyc * cyc * (3 - 2 * cyc);
+    this.rr = lerp(0.72, 1.4, open);
+    if (this.wasOpen !== undefined && open < 0.15 && this.wasOpen >= 0.15) { this.sfx('wind'); this.shake(0.12); this.vfx.ring(p.pos.x, p.pos.y + 1, p.pos.z, { r0: d.orbit * 1.4, r1: d.orbit * 0.5, dur: 0.35, color: 0xe8f6ff, opacity: 0.5 }); } // se cierran con fuerza
+    this.wasOpen = open;
+    this.place(1 + 0.05 * Math.sin(this.t * 9) + 0.15 * (1 - open), this.rr, dt);
+    this.tickDebris(dt, 1);
     // polvo y hojas que suben en espiral por cada embudo
     for (const t of this.torn) {
       if (Math.random() < 0.55) {
@@ -1297,8 +1437,8 @@ export class WindClawsSkill extends WeaponSkill {
     SW.forEach((s, i) => {
       const wind = i === 0 ? 0.08 : 0.11, cut = 0.09, follow = i === SW.length - 1 ? 0.18 : 0.06;
       st.push({ name: `carga${i}`, dur: wind, enter: () => { this.sw = s; this.phase = 'carga'; }, tick: (dt, k) => { this.swK = -ease(k); pose.spin = (s.arm === 'R' ? -0.35 : s.arm === 'L' ? 0.35 : 0) * ease(k); pose.rx = 0.1; } });
-      st.push({ name: `corte${i}`, dur: cut, enter: () => { this.phase = 'corte'; this.slash(s, i); }, tick: (dt, k) => { this.swK = -1 + 2 * back(k); pose.spin = (s.arm === 'R' ? lerp(-0.35, 0.45, back(k)) : s.arm === 'L' ? lerp(0.35, -0.45, back(k)) : 0); pose.rx = 0.18 + (s.arm === 'B' ? 0.12 * k : 0); } });
-      st.push({ name: `sigue${i}`, dur: follow, enter: () => { this.phase = 'sigue'; }, tick: (dt, k) => { this.swK = 1 - 0.4 * ease(k); } });
+      st.push({ name: `corte${i}`, dur: cut, enter: () => { this.phase = 'corte'; this.slash(s, i); this.kickHit(s); }, tick: (dt, k) => { this.swK = -1 + 2 * back(k); pose.spin = (s.arm === 'R' ? lerp(-0.35, 0.45, back(k)) : s.arm === 'L' ? lerp(0.35, -0.45, back(k)) : 0); pose.rx = 0.18 + (s.arm === 'B' ? 0.12 * k : 0); pose.dy = s.arm === 'B' ? 0.35 * Math.sin(k * Math.PI * 0.5) : 0; } });
+      st.push({ name: `sigue${i}`, dur: follow, enter: () => { this.phase = 'sigue'; }, tick: (dt, k) => { this.swK = 1 - 0.4 * ease(k); pose.dy = s.arm === 'B' ? 0.35 * (1 - ease(k)) : 0; } });
     });
     st.push({ name: 'recuperacion', dur: d.recover, enter: () => { this.phase = 'fin'; }, tick: (dt, k) => { this.swK = 0.6 * (1 - ease(k)); this.wind = 1 - ease(k); pose.spin = lerp(pose.spin, 0, k); pose.rx = lerp(0.15, 0, k); this.clawK = 1 - ease(k); } });
     return st;
@@ -1332,6 +1472,20 @@ export class WindClawsSkill extends WeaponSkill {
         fx.rot(B[`hand_${S}`], 0, 0, 1, sg * (0.3 * up - 0.4 * cut));                   // la muñeca acompaña el arco
       }
       fx.rot(B.spine || B.spine_1, 0, 1, 0, s ? (s.arm === 'R' ? -0.3 : s.arm === 'L' ? 0.3 : 0) * k : 0); // el torso gira con el zarpazo
+      // PATADAS COORDINADAS CON LOS ZARPAZOS: con el zarpazo derecho patea la pata izquierda y al revés (como un
+      // luchador); en el doble zarpazo final salta y patea con las dos. Cada patada: recoge la pata (muslo arriba,
+      // rodilla flexionada), la extiende con fuerza hacia delante y la recoge de nuevo. La cadera y el pecho
+      // compensan para no perder el equilibrio.
+      const kick = s ? (s.arm === 'R' ? 'L' : s.arm === 'L' ? 'R' : 'B') : null;
+      for (const S of ['L', 'R']) {
+        const act = kick && (kick === S || kick === 'B') ? 1 : 0;
+        const ch = act ? (k < 0 ? -k : Math.max(0, 1 - k) * 0.4) : 0, ext = act ? Math.max(0, k) : 0;
+        fx.rot(B[`thigh_${S}`], 1, 0, 0, -(0.9 * ch + 1.25 * ext) * w);          // muslo arriba (recoger) y adelante (patear)
+        fx.rot(B[`shin_${S}`], 1, 0, 0, (1.25 * ch + 0.1 * ext) * w);           // rodilla flexionada → pata extendida
+        if (B[`foot_${S}`]) fx.rot(B[`foot_${S}`], 1, 0, 0, (-0.4 * ch + 0.35 * ext) * w); // garras por delante en el golpe
+        fx.rot(B[`thigh_${S}`], 0, 0, 1, (S === 'L' ? 1 : -1) * 0.12 * ext * w); // la patada se abre un poco hacia fuera
+      }
+      if (kick) fx.rot(B.chest || B.spine, 1, 0, 0, -0.12 * Math.max(0, k) * w);       // el pecho se echa atrás al patear (equilibrio)
     });
   }
   charge(k) {
@@ -1359,6 +1513,14 @@ export class WindClawsSkill extends WeaponSkill {
     }
     if (this.clawMat) this.clawMat.opacity = 0.9 * (this.clawK ?? 1);
     return done;
+  }
+  // la patada también golpea: un pequeño impacto de aire delante de la pata (mismo daño de su zarpazo, no más)
+  kickHit(s) {
+    const p = this.p, f = this.fwd, x = p.pos.x + f.x * 1.1, z = p.pos.z + f.z * 1.1;
+    const foot = boneWorld(this, s.arm === 'R' ? 'foot_L' : 'foot_R') || V(x, p.pos.y + 0.6, z);
+    this.vfx.ring(foot.x, foot.y, foot.z, { r0: 0.1, r1: 0.8, dur: 0.16, color: 0xe8f8ff, opacity: 0.5 });
+    for (let i = 0; i < 4; i++) this.g.fx.mist(foot.x + f.x * 0.3, foot.y, foot.z + f.z * 0.3, 0xeef8ff, 0.4);
+    for (const t of this.combat.inCircle(x, z, 0.9)) this.combat.push(t, f.x, f.z, 3);
   }
   // en el instante del corte: cuchillas de viento comprimido que salen en la dirección de la garra
   slash(s, i) {

@@ -296,10 +296,11 @@ export class Game {
     this.selectAbility((this.abIndex + dir + this.abilities.length) % this.abilities.length);
   }
   useAbility() {
-    if (this.state !== 'playing' || this.player.locked || this.player.scripted) return false;
+    if (this.state !== 'playing' || this.player.locked) return false;
     const a = this.abilities[this.abIndex];
     if (!a) return false;
-    if (a.hs && this.skills.canRecast(a.key)) return this.skills.recast(a.key); // segunda pulsación (espejismo, aterrizar, salir de la roca)
+    if (a.hs && this.skills.canRecast(a.key)) return this.skills.recast(a.key); // la 2.ª pulsación vale aunque el poder guíe al héroe (picado de Ámbar)
+    if (this.player.scripted) return false; // segunda pulsación (espejismo, aterrizar, salir de la roca)
     if (a.id === 'power') {
       const p = this.player;
       if (p.fly) { ui.banner('find', a.icon, 'No disponible mientras vuelas'); return false; }

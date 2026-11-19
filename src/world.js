@@ -535,6 +535,7 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
 
     // cuerpos flotantes
     for (const b of bodies) {
+      if (b.frozenUntil && performance.now() < b.frozenUntil) continue; // congelado por la Aurora Polar: no flota ni se mueve
       const target = W.waterY - b.draft;
       const should = target > b.restY + 0.03;
       if (should && !b.floating && target > b.restY + 0.12) b.floating = true;

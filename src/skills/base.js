@@ -105,15 +105,32 @@ export function powerTail(skill, color) {
   if (lift.lengthSq() < 0.05) lift.crossVectors(dir, new THREE.Vector3(0, 0, 1));
   lift.normalize();
   const st = { k: 0, whip: 0, kk: 0, ww: 0 };
+  const side = new THREE.Vector3().crossVectors(dir, lift).normalize();
+  // las OTRAS tres colas: se calman mientras esta lanza el poder (no se confunden con la protagonista)
+  const others = [];
+  for (const c of ['pink', 'red', 'orange', 'blue']) if (c !== color) for (let k = 1; k <= 8; k++) if (m.bones[`tail_${c}_${k}`]) others.push(m.bones[`tail_${c}_${k}`]);
+  const qI = new THREE.Quaternion();
+  // PERSONALIDAD DE CADA COLA (su estación): primavera ondula suave como una rama en flor, verano chisporrotea
+  // como una llama, otoño gira en remolino como las hojas y el invierno se alza rígida y cristalina
+  const STYLE = {
+    pink: (i, t) => [Math.sin(t * 3 - i * 0.6) * 0.14, Math.sin(t * 1.6 - i * 0.5) * 0.12],
+    red: (i, t) => [Math.sin(t * 15 - i * 1.4) * 0.07 + Math.sin(t * 9 - i) * 0.05, Math.sin(t * 11 - i * 1.1) * 0.06],
+    orange: (i, t) => [Math.sin(t * 5.5 - i * 0.75) * 0.17, Math.cos(t * 5.5 - i * 0.75) * 0.17],
+    blue: (i, t) => [Math.sin(t * 1.4 - i * 0.3) * 0.04, Math.sin(t * 0.9) * 0.03],
+  };
+  const LIFT = { pink: 1, red: 1.15, orange: 1, blue: 1.3 };
+  const style = STYLE[color] || STYLE.pink, liftK = LIFT[color] || 1;
   const fn = (B, dt, t, fx) => {
     st.kk += (st.k - st.kk) * (1 - Math.exp(-10 * dt)); // transición suave entre reposo y lanzamiento
     st.ww += (st.whip - st.ww) * (1 - Math.exp(-18 * dt));
     st.whip *= Math.exp(-5 * dt);
+    for (const b of others) b.quaternion.slerp(qI, 0.55 * st.kk);
     const n = chain.length;
     chain.forEach((b, i) => {
-      const w = (i + 1) / n;
-      const a = st.kk * (0.2 + 0.16 * i) + st.ww * 0.35 * w + Math.sin(t * 7 - i * 0.8) * 0.06 * st.kk;
+      const w = (i + 1) / n, [s1, s2] = style(i, t);
+      const a = st.kk * liftK * (0.2 + 0.16 * i) + st.ww * 0.38 * w + s1 * st.kk;
       fx.rot(b, lift.x, lift.y, lift.z, a);
+      if (s2) fx.rot(b, side.x, side.y, side.z, s2 * st.kk);
     });
   };
   m.tailFx = fn;

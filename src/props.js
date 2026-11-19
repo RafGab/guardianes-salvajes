@@ -27,6 +27,9 @@ const FILES = {
   arbolseco_lo: 'props/arbolseco_lo.glb', arbolfuego_lo: 'props/arbolfuego_lo.glb', cristal_lo: 'props/cristal_lo.glb', rocas_lo: 'props/rocas_lo.glb',
 };
 
+// modelos que NO son objetos del escenario (piezas de personajes, armas y efectos): la Aurora no los congela aparte
+const NOT_FROSTABLE = new Set(['soldado', 'hacha', 'roca']);
+
 export function preloadProps() {
   return Promise.all(Object.values(FILES).map((f) => loadGLB(modelUrl(f)).catch(() => null)));
 }
@@ -38,6 +41,7 @@ export function propModel(name) {
   const { root } = normalizeModel(g.scene.clone(true));
   prepareMeshes(root);
   root.traverse((o) => { if (o.isMesh) o.frustumCulled = true; });
+  if (!NOT_FROSTABLE.has(name)) root.userData.frostable = name; // la Aurora Polar puede congelarlo
   return root;
 }
 

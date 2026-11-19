@@ -696,6 +696,7 @@ export class FlightSkill extends Skill {
     const d = this.def, p = this.p;
     p.fly = { kind: d.id, t: 0, max: d.flyT, speed: d.speed, climb: d.climb, sink: d.sink, ceil: d.ceil, lean: this.ears ? 0.25 : 0.75, minT: 0.6 };
     if (!this.ears && d.levels) { p.fly.levels = d.levels; p.fly.level = 1; } // águila: tres niveles de altura
+    if (!this.ears) this.g.chase.flight = p; // cámara de vuelo
     p.vy = d.climb * 1.4;
     p.grounded = false; p.support = null;
     if (!this.ears) { this.camWas = { dist: this.g.chase.distTarget }; ui.banner('find', '🦅', d.levels ? 'SALTAR = subir de nivel (3 alturas) · V o Ctrl = bajar · L = aterrizar · SPRINT = más rápido' : 'SALTAR = subir · suelta = planear · SPRINT = más rápido · baja al suelo para aterrizar'); }
@@ -735,9 +736,26 @@ export class FlightSkill extends Skill {
     this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 0.3, r1: 3, dur: 0.45, color: this.ears ? 0xffd890 : 0xffffff });
     this.restoreCam();
   }
-  restoreCam() { if (this.camWas) { this.g.chase.distTarget = this.p.cam.dist; this.camWas = null; } }
+  restoreCam() { if (this.g.chase.flight === this.p) this.g.chase.flight = null; if (this.camWas) { this.g.chase.distTarget = this.p.cam.dist; this.camWas = null; } }
+  /* CABEZA LIBRE EN VUELO (Ámbar): el cuello y la cabeza giran a derecha e izquierda sin girar el cuerpo. Mira hacia
+     donde gira (anticipa la curva) y, en vuelo recto, de vez en cuando explora el paisaje a un lado y al otro.
+     Muelle amortiguado (acelera y frena con suavidad) y límite anatómico de ±50°. */
+  headLook(bones, dt, fx) {
+    const H = this.hl || (this.hl = { y: 0, v: 0, prev: this.p.facing, scanT: 2.5, hold: 0, glance: 0 });
+    const f = this.p.facing, turn = Math.atan2(Math.sin(f - H.prev), Math.cos(f - H.prev)) / Math.max(dt, 1e-3);
+    H.prev = f;
+    H.scanT -= dt;
+    if (H.hold > 0) { H.hold -= dt; if (H.hold <= 0) H.glance = 0; }
+    else if (H.scanT <= 0 && Math.abs(turn) < 0.4) { H.scanT = 2.8 + Math.random() * 3; H.hold = 0.9 + Math.random() * 0.8; H.glance = (Math.random() < 0.5 ? -1 : 1) * (0.45 + Math.random() * 0.4); }
+    const target = clamp(turn * 0.3 + H.glance, -0.87, 0.87);
+    H.v += ((target - H.y) * 34 - H.v * 9.5) * dt;
+    H.y = clamp(H.y + H.v * dt, -0.87, 0.87);
+    if (bones.neck) fx.rot(bones.neck, 0, 1, 0, H.y * 0.45);
+    if (bones.head) { fx.rot(bones.head, 0, 1, 0, H.y * 0.55); fx.rot(bones.head, 0, 0, 1, -H.y * 0.12); } // una leve inclinación al mirar
+  }
   // aleteo de alas u orejas encima de la animación
   bonesFx(bones, dt, t, fx) {
+    if (!this.ears && this.stageName === 'vuelo') this.headLook(bones, dt, fx);
     this.flapPh = (this.flapPh || 0) + dt * this.def.flap * 0.4 * (this.flapRate || 1);
     const ph = this.flapPh, s = Math.sin(ph);
     if (this.wings) { // alas: batido amplio que se curva en la punta; planeo = alas abiertas y quietas
@@ -905,17 +923,16 @@ export class SolsticeSkill extends Skill {
     aimShow(this, this.def.range, this.def.radius, 0xffc040);
   }
   // el sol cargado sale de sus manos y vuela hasta el punto elegido
+  // el MISMO sol que se ha cargado delante de ella sale volando hacia el punto elegido (no se crea otro)
   enterThrow() {
-    const c = this.center(0.6);
-    this.from = c.clone();
-    this.ball = this.track(this.v2.shell(c, { r: 0.5, color: 0xff8a10, rim: 0xffe070, opacity: 0.9, power: 1.6, core: 0.3, life: 0 }));
+    this.from = this.ball.mesh.position.clone();
     this.sfx('whoosh');
   }
   tickThrow(dt, k) {
     const a = this.from, b = this.at, e = ease(k);
     const x = lerp(a.x, b.x, e), z = lerp(a.z, b.z, e), y = lerp(a.y, b.y + 0.8, e) + Math.sin(k * Math.PI) * 1.6;
     this.ball.mesh.position.set(x, y, z);
-    this.ball.mesh.scale.setScalar(0.7 + 0.5 * k);
+    this.ball.mesh.scale.setScalar(this.ballS * (1 + 0.5 * k));
     this.pose.rx = 0.15; this.pose.dy = 0.6 * (1 - k * 0.3);
     if (Math.random() < 0.8) this.vfx.sparks(x, y, z, 0xffe080, 2, 1.4);
   }
@@ -923,18 +940,26 @@ export class SolsticeSkill extends Skill {
     const d = this.def, total = 60; // dura lo que tarde en lanzarse; se apaga al terminar
     this.lock(true);
     this.amb = this.v2.ambience({ color: '#ffb040', alpha: 0.2, blend: 'screen', exposure: 1.18, dur: total, fin: d.prep, fout: 0.9 });
-    this.aura = this.track(this.v2.shell(this.center(0.5), { r: 0.6, color: 0xff8a10, rim: 0xffe070, opacity: 0.8, power: 1.8, core: 0.25, life: 0 }));
-    this.sun = this.v2.skyBody('sun', { size: 12, hold: true, glow: 0xffa030, side: 0.4 });
+    // UN SOLO SOL: nace delante de ella y crece mientras acumula energía; es el mismo que después se lanza
+    // (antes había además un sol en el cielo y una esfera solar alrededor de su cuerpo: ya no)
+    this.sun = null; this.aura = null;
+    this.ball = this.track(this.v2.shell(this.sunPos(), { r: 0.2, color: 0xff8a10, rim: 0xffe070, opacity: 0.9, power: 1.6, core: 0.3, life: 0 }));
+    this.ballS = 0.2;
     this.sfx('sun');
     this.rayA = 0;
   }
+  // posición del sol: delante de ella, a la altura del pecho
+  sunPos() { const p = this.p, f = this.fwd; return V(p.pos.x + f.x * 0.95, p.pos.y + p.H * 0.62 + (this.pose.dy || 0), p.pos.z + f.z * 0.95); }
   tickAura(dt, k) {
-    const d = this.def, pose = this.pose, c = this.center(0.5);
-    this.p.evadeT = Math.max(this.p.evadeT, 0.15); // ESCUDO: el aura solar la protege
+    const d = this.def, pose = this.pose;
+    this.p.evadeT = Math.max(this.p.evadeT, 0.15); // ESCUDO: la energía solar la protege (como antes)
     this.combat.deflect(this.p.pos.x, this.p.pos.z, 3);
     pose.dy = 0.6 * ease(k); pose.rx = 0.15 * Math.sin(this.t * 4) * k; pose.sy = 1 + 0.06 * k;
-    this.aura.mesh.position.copy(c);
-    this.aura.mesh.scale.setScalar(0.7 + 0.9 * k + 0.08 * Math.sin(this.t * 14));
+    // el sol acumula la energía: crece y late delante de ella
+    const c = this.sunPos();
+    this.ballS = 0.2 + 0.45 * ease(k) + 0.04 * Math.sin(this.t * 14);
+    this.ball.mesh.position.copy(c);
+    this.ball.mesh.scale.setScalar(this.ballS);
     // rayos solares que giran a su alrededor
     this.rayA += dt * 2.5;
     if (Math.random() < 0.6) {
@@ -970,8 +995,6 @@ export class SolsticeSkill extends Skill {
     const d = this.def;
     this.p.evadeT = Math.max(this.p.evadeT, 0.15);
     this.pose.dy = 0.6; this.pose.rx = 0.15;
-    this.aura.mesh.position.copy(this.center(0.5));
-    this.aura.mesh.scale.setScalar(Math.max(0.01, 1.6 * (1 - k)));
     this.dome.mesh.position.set(this.at.x, this.at.y + 0.6, this.at.z);
     this.dome.mesh.scale.set(d.radius * back(k), d.radius * 0.6 * back(k), d.radius * back(k));
     this.dome.mat.uniforms.uOp.value = 0.85 * (1 - k);

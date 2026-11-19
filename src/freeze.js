@@ -16,7 +16,8 @@ export class FrostFreeze {
     this.T = 0; this.dur = 0; this.k = 0;
     this.fin = FADE_IN; this.fout = FADE_OUT;
     this.items = new Map();  // raíz del personaje → { overlays, crystals, shell, box }
-    this.mat = new THREE.MeshStandardMaterial({ color: 0xd8f4ff, emissive: 0x5ac8ff, emissiveIntensity: 0.18, roughness: 0.15, metalness: 0.05, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
+    // ESTATUA DE HIELO: capa de hielo casi opaca, azulada y brillante que cubre todo el cuerpo (se ve como una escultura)
+    this.mat = new THREE.MeshStandardMaterial({ color: 0xcfeeff, emissive: 0x3a9ee0, emissiveIntensity: 0.3, roughness: 0.06, metalness: 0.25, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 });
     this.cMat = new THREE.MeshStandardMaterial({ color: 0xbfeaff, emissive: 0x3ab8e0, emissiveIntensity: 0.25, roughness: 0.1, metalness: 0.1, transparent: true, opacity: 0.85, flatShading: true });
     this.cGeo = new THREE.ConeGeometry(0.09, 0.5, 5); this.cGeo.translate(0, 0.25, 0);
     // bloque de hielo: poliedro facetado con la base en y = 0 (crece desde los pies hacia arriba)
@@ -29,6 +30,22 @@ export class FrostFreeze {
   start(dur, { fin = FADE_IN, fout = FADE_OUT, area = null } = {}) {
     if (this.T > 0) { this.T = Math.max(this.T, dur); this.dur = Math.max(this.dur, dur); if (area) this.area = area; return; }
     this.T = dur; this.dur = dur; this.fin = fin; this.fout = fout; this.area = area;
+    this.scenery = area ? this.sceneryList() : [];
+  }
+  // OBJETOS DEL ESCENARIO congelables (una vez por lanzamiento): coches y vehículos que flotan en la inundación
+  // (cuerpos del mundo) y los modelos 3D del escenario (coches aparcados, camiones, ambulancias, helicópteros,
+  // troncos, árboles sueltos...). Los edificios enteros no (demasiado grandes).
+  sceneryList() {
+    const g = this.g, out = [];
+    for (const b of (g.world && g.world.bodies) || []) if (b.mesh) out.push({ root: b.mesh, ent: { pos: b, radius: Math.max(b.hx || 1, b.hz || 1), freeze: (s) => { b.frozenUntil = performance.now() + s * 1000; } } });
+    const box = new THREE.Box3(), sz = new THREE.Vector3();
+    g.scene.traverse((o) => {
+      if (!o.userData.frostable || !o.visible) return;
+      box.setFromObject(o); box.getSize(sz);
+      if (Math.max(sz.x, sz.y, sz.z) > 9) return;
+      out.push({ root: o, ent: { pos: box.getCenter(new THREE.Vector3()), radius: Math.max(sz.x, sz.z) * 0.5 } });
+    });
+    return out;
   }
   // multiplicador del tiempo de un personaje (1 normal … 0 congelado): solo para los que están dentro del hielo
   factor(root) { return root && this.items.has(root) ? 1 - this.k : 1; }
@@ -62,6 +79,7 @@ export class FrostFreeze {
       if (g.ally && g.ally.model && g.ally.model.root) out.push({ root: g.ally.model.root });
     }
     for (const v of g.victims || []) if (v.root && v.state !== 'carried' && v.state !== 'saved' && v.root.visible) out.push({ root: v.root, ent: v });
+    if (this.scenery) out.push(...this.scenery);
     return out.filter((e) => e.root && e.root !== me);
   }
   // ¿está dentro del área de congelación?
@@ -123,11 +141,11 @@ export class FrostFreeze {
     if (!thawing) for (const e of this.roots()) {
       if (this.items.has(e.root) || !this.inArea(e)) continue;
       this.items.set(e.root, this.frost(e.root));
-      // los orcos además se quedan sin atacar mientras dure (hasta el deshielo, igual que los demás)
-      if (e.ent && e.ent.freeze && e.ent.orc) e.ent.freeze(Math.max(0.1, this.T - this.fout));
+      // orcos y vehículos: además quedan bloqueados hasta el deshielo (igual que los demás)
+      if (e.ent && e.ent.freeze && (e.ent.orc || !e.ent.update)) e.ent.freeze(Math.max(0.1, this.T - this.fout));
     }
-    this.mat.opacity = 0.5 * this.k;
-    this.mat.emissiveIntensity = 0.14 + 0.2 * this.k;
+    this.mat.opacity = (this.area ? 0.86 : 0.5) * this.k;   // con la Aurora Polar: estatuas de hielo
+    this.mat.emissiveIntensity = 0.14 + (this.area ? 0.3 : 0.2) * this.k;
     const fx = this.g.fx;
     for (const [r, it] of this.items) {
       for (const c of it.crystals) c.scale.setScalar(Math.max(0.0001, c.userData.s * this.k));
@@ -155,7 +173,7 @@ export class FrostFreeze {
   clear() {
     for (const it of this.items.values()) this.unfrost(it);
     this.items.clear();
-    this.area = null;
+    this.area = null; this.scenery = [];
     this.mat.opacity = 0;
   }
 }

@@ -637,15 +637,25 @@ class DiveSkill extends Skill {
     this.start();
     return true;
   }
+  /* MÁQUINA DE ESTADOS: preparación → ascenso (animación original) → DESCENSO DIRIGIDO (espera la confirmación)
+     → picado → impacto → recuperación. El picado solo empieza con la segunda pulsación del botón. */
   build() {
     const d = this.def, pose = this.pose;
     return [
       { name: 'preparacion', dur: d.prep, enter: () => { this.lock(true); audio.whoosh(); }, tick: (dt, k) => { pose.sy = 1 - 0.1 * k; pose.rx = -0.3 * k; } },
       { name: 'ascenso', dur: d.charge, enter: this.enterAscend, tick: this.tickAscend },
+      { name: 'descenso', dur: d.waitMax || 9, enter: this.enterAim, tick: this.tickAim, exit: () => { if (this.t >= (d.waitMax || 9) - 0.001) this.cancelled = true; } },
       { name: 'picado', dur: 1, enter: this.enterDive, tick: this.tickDive },
       { name: 'impacto', dur: 0.35, enter: this.enterImpact, tick: (dt, k) => { pose.sy = lerp(0.8, 1, k); pose.rx = lerp(0.3, 0, k); } },
       { name: 'recuperacion', dur: d.recover, tick: (dt, k) => { pose.sy = 1; } },
     ];
+  }
+  get canRecast() { return this.stageName === 'descenso'; }
+  recast() {
+    if (this.stageName !== 'descenso') return false;
+    this.endStage(); // CONFIRMADO: ahora sí, el picado hacia el punto elegido
+    if (this.g.armButton) this.g.armButton(this.key);
+    return true;
   }
   enterAscend() {
     const d = this.def;
@@ -663,16 +673,52 @@ class DiveSkill extends Skill {
       this.vfx.bolt(c, V(c.x + rnd(-1.4, 1.4), c.y + rnd(-1, 1.2), c.z + rnd(-1.4, 1.4)), { color: 0xbfe8ff, life: 0.1, jag: 0.3, segs: 5 });
     }
   }
+  enterAim() {
+    this.top = this.p.pos.clone();
+    this.ready = 0;
+    ui.banner('find', '⚡ Picado preparado', 'Dirígelo con las teclas de dirección y pulsa otra vez el botón para lanzar el ataque');
+    audio.sfx && audio.sfx('shimmer');
+  }
+  // DESCENSO DIRIGIDO: baja despacio envuelta en rayos; las teclas mueven el punto de impacto (siempre a la vista)
+  tickAim(dt, k) {
+    const d = this.def, p = this.p, pose = this.pose, g = this.g;
+    const ax = g.input && g.input.moveAxes ? g.input.moveAxes() : { x: 0, y: 0 }, yaw = g.chase.yaw;
+    const fx = -Math.sin(yaw), fz = -Math.cos(yaw), rx = Math.cos(yaw), rz = -Math.sin(yaw);
+    const mx = fx * ax.y + rx * ax.x, mz = fz * ax.y + rz * ax.x;
+    if (Math.hypot(mx, mz) > 0.05) {
+      this.land.x += mx * d.steerSpeed * dt; this.land.z += mz * d.steerSpeed * dt;
+      const ox = this.land.x - this.from.x, oz = this.land.z - this.from.z, l = Math.hypot(ox, oz);
+      if (l > d.range) { this.land.x = this.from.x + (ox / l) * d.range; this.land.z = this.from.z + (oz / l) * d.range; }
+      this.land.y = p.floorY(this.land.x, this.land.z, this.land.y + 4);
+    }
+    // va bajando poco a poco (sin llegar al suelo) y se orienta hacia el objetivo
+    const floor = p.floorY(p.pos.x, p.pos.z, p.pos.y), hover = floor + d.hoverH;
+    p.pos.y = Math.max(hover, p.pos.y - d.descendSpeed * dt);
+    p.facing = Math.atan2(this.land.x - p.pos.x, this.land.z - p.pos.z);
+    pose.rx = 0.35 + 0.08 * Math.sin(this.t * 6); pose.sy = 1.05;
+    this.mark.set(this.land.x, this.land.z, {}); this.mark.setProgress(0.6 + 0.4 * (0.5 + 0.5 * Math.sin(this.t * 8))); // señal parpadeante: listo, esperando la orden
+    // RAYOS: alrededor del cuerpo y sobre la zona de impacto (cada vez más intensos)
+    const c = this.center(0.5), I = Math.min(1, 0.4 + this.t * 0.5);
+    if (Math.random() < 0.7 * I) this.vfx.bolt(c, V(c.x + rnd(-1.6, 1.6), c.y + rnd(-1.2, 1.4), c.z + rnd(-1.6, 1.6)), { color: 0xbfe8ff, life: 0.09, jag: 0.35, segs: 6 });
+    if (Math.random() < 0.35 * I) { const a = rnd(0, TAU), r = rnd(0, d.waveRadius * 0.5), gx = this.land.x + Math.cos(a) * r, gz = this.land.z + Math.sin(a) * r, gy = this.gy(gx, gz); this.vfx.bolt(V(gx, gy + rnd(3, 6), gz), V(gx, gy + 0.1, gz), { color: 0x9ad8ff, life: 0.1, jag: 0.5, segs: 7 }); }
+    if (Math.random() < 0.25) this.vfx.bolt(c, V(this.land.x, this.land.y + 0.3, this.land.z), { color: 0x6ad0ff, life: 0.06, jag: 0.4, segs: 8 }); // hilo de energía hacia el objetivo
+    if (Math.random() < 0.3) this.vfx.orb(c, { r: 0.35 + 0.2 * I, color: 0x9ad8ff, opacity: 0.4, life: 0.15 });
+  }
   enterDive() {
+    if (this.cancelled) { // no se confirmó: baja a tierra sin atacar
+      const p = this.p; this.land = V(p.pos.x, p.floorY(p.pos.x, p.pos.z, p.pos.y), p.pos.z);
+      ui.banner('find', '⚡', 'Picado cancelado: no se confirmó el ataque');
+    }
     this.p.facing = Math.atan2(this.land.x - this.p.pos.x, this.land.z - this.p.pos.z);
     this.diveFrom = this.p.pos.clone();
-    this.stages[this.i].dur = Math.max(0.12, this.diveFrom.distanceTo(this.land) / this.def.diveSpeed);
+    this.stages[this.i].dur = Math.max(0.12, this.diveFrom.distanceTo(this.land) / (this.cancelled ? 5 : this.def.diveSpeed));
     this.mark.setProgress(1);
     audio.noiseBurst(0.3, 800, 0.4, 'bandpass');
   }
   tickDive(dt, k) {
     const p = this.p;
     p.pos.lerpVectors(this.diveFrom, this.land, k * k * (1.4 - 0.4 * k));
+    if (this.cancelled) { this.pose.rx = 0.15; this.pose.sy = 1; return; } // baja planeando, sin picado
     this.pose.rx = 1.35; this.pose.sy = 1.18;
     const c = this.center(0.5);
     this.vfx.orb(c, { r: 0.5, color: 0xbfe8ff, life: 0.25 });
@@ -684,6 +730,7 @@ class DiveSkill extends Skill {
     this.release(0, 0, 0);
     this.lock(false);
     this.mark.kill();
+    if (this.cancelled) return; // sin confirmación no hay impacto
     this.shake(d.shake); audio.noiseBurst(0.5, 200, 0.6, 'lowpass');
     this.vfx.ring(l.x, null, l.z, { r0: 0.6, r1: d.waveRadius, dur: 0.55, color: 0xffffff });
     this.vfx.ring(l.x, null, l.z, { r0: 0.3, r1: d.waveRadius * 0.8, dur: 0.45, color: 0x6ad0ff });

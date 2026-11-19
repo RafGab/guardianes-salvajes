@@ -80,7 +80,7 @@ export const HERO_SKILLS = {
     ears: {
       id: 'ears', name: 'Vuelo de Orejas', icon: '👂', cd: 14,
       chargeT: 3,                   // CARGA: 3 s en que las orejas se preparan y acumulan energía (sin despegar)
-      takeoffT: 0.5, flyT: 10,      // despegue y tiempo de vuelo: exactamente 10 s (luego desciende suave hasta el suelo)
+      takeoffT: 0.5, flyT: 13,      // despegue y tiempo de vuelo: 13 s (3 s más que antes; luego desciende suave hasta el suelo)
       speed: 7, climb: 5.5, sink: 1.1, ceil: 8.4, // velocidad, subida (mantén SALTAR), descenso suave y altura máxima (algo más alta: 7,5 → 8,4 m; Ámbar llega a 24 m)
       flap: 26,                     // velocidad del aleteo de las orejas
     },
@@ -124,6 +124,7 @@ export const HERO_SKILLS = {
     // SOLSTICIO DE VERANO: aura solar dorada y expansión de luz cálida
     solstice: {
       id: 'solstice', name: 'Solsticio de Verano', icon: '🌞', cd: 20,
+      ownShield: true,              // su protección es la del propio sol (sin la burbuja genérica de escudo, que parecía un segundo sol)
       prep: 0.75, exec: 1.1, recover: 0.5,
       range: 10, fly: 0.45,         // CARGA → DIRECCIÓN → LANZAMIENTO: alcance del lanzamiento (m) y vuelo del sol (s)
       radius: 10, damage: 20, force: 15, burnT: 3, burnDps: 3, // expansión (donde cae el sol): daño, empuje y quemadura
@@ -143,6 +144,9 @@ export const HERO_SKILLS = {
       diveSpeed: 38,
       waveRadius: 6.8, damage: 22, force: 14,
       shake: 0.5,                   // sacudida de cámara al impactar
+      // DESCENSO DIRIGIDO: tras el ascenso baja despacio con rayos; el jugador orienta el ataque con las teclas de
+      // dirección y lo CONFIRMA volviendo a pulsar el botón. Nunca se lanza solo: si no se confirma, aterriza sin atacar.
+      descendSpeed: 1.6, hoverH: 2.4, steerSpeed: 9, waitMax: 9,
     },
     // VUELO LIBRE (sin botón): DOBLE SALTO en el aire para despegar; aterriza al tocar el suelo
     flight: {

@@ -645,6 +645,8 @@ export class ChaseCam {
 
   update(dt, target, look) {
     // look: {dx, dy}
+    this.manualT = (this.manualT || 0) + dt;
+    if (look && (Math.abs(look.dx) > 1e-4 || Math.abs(look.dy) > 1e-4)) this.manualT = 0; // el jugador mueve la cámara
     if (look) {
       this.yaw -= look.dx;
       this.pitch = clamp(this.pitch + look.dy, -0.35, 1.25);
@@ -659,6 +661,20 @@ export class ChaseCam {
     const cp = Math.cos(this.pitch), sp = Math.sin(this.pitch);
     const off = this.tmpV.set(Math.sin(this.yaw) * cp, sp, Math.cos(this.yaw) * cp).multiplyScalar(this.dist);
     const tgt = this.tmpD.set(target.x, target.y + this.aim, target.z);
+    // CÁMARA DE VUELO (Ámbar): sigue el CUERPO y su trayectoria (nunca la cabeza); objetivo suavizado (sin
+    // vibraciones del aleteo), ligera anticipación hacia donde vuela y, si el jugador no mueve la cámara, se coloca
+    // poco a poco detrás de la trayectoria. El terreno no se interpone entre la cámara y el águila.
+    const F = this.flight;
+    this.flightK = damp(this.flightK || 0, F ? 1 : 0, 3, dt || 0.016);
+    if (F && !snap) {
+      const vx = F.vx || 0, vz = F.vz || 0, sp = Math.hypot(vx, vz);
+      const lead = Math.min(3.2, sp * 0.22), lx = sp > 0.5 ? (vx / sp) * lead : 0, lz = sp > 0.5 ? (vz / sp) * lead : 0;
+      this.fLead = this.fLead || new THREE.Vector3();
+      this.fLead.x = damp(this.fLead.x, lx, 2.2, dt); this.fLead.z = damp(this.fLead.z, lz, 2.2, dt);
+      this.fY = this.fY === undefined ? tgt.y : damp(this.fY, tgt.y, 6, dt);
+      tgt.x += this.fLead.x; tgt.z += this.fLead.z; tgt.y = this.fY;
+      if (sp > 2 && this.manualT > 1.2) this.yaw = dampAngle(this.yaw, Math.atan2(-vx, -vz), 1.4 * Math.min(1, (sp - 2) / 6), dt);
+    } else { this.fY = undefined; if (this.fLead) this.fLead.set(0, 0, 0); }
     this.side = damp(this.side, this.sideTarget, 8, dt);
     if (Math.abs(this.side) > 0.001) { tgt.x += Math.cos(this.yaw) * this.side; tgt.z -= Math.sin(this.yaw) * this.side; } // al hombro
     const desired = new THREE.Vector3().copy(tgt).add(off);
@@ -688,9 +704,17 @@ export class ChaseCam {
     desired.set(ox + ddx * tHit, oy + ddy * tHit, oz + ddz * tHit);
     const gy = terrainH(desired.x, desired.z) + 0.5;
     if (desired.y < gy) desired.y = gy;
+    if (this.flightK > 0.01) { // en vuelo: que ni una ladera ni una duna tapen al águila (línea de visión libre)
+      let need = 0;
+      for (const u of [0.25, 0.5, 0.75, 1]) {
+        const x = ox + (desired.x - ox) * u, z = oz + (desired.z - oz) * u, ly = oy + (desired.y - oy) * u;
+        need = Math.max(need, (terrainH(x, z) + 1.2 - ly) / u);
+      }
+      if (need > 0) desired.y += need * this.flightK;
+    }
     if (snap) this.pos.copy(desired);
     else {
-      const k = tHit < 1 ? 20 : 12;
+      const k = (tHit < 1 ? 20 : 12) * (1 - 0.45 * this.flightK); // en vuelo, seguimiento más suave (cinematográfico)
       this.pos.x = damp(this.pos.x, desired.x, k, dt);
       this.pos.y = damp(this.pos.y, desired.y, k, dt);
       this.pos.z = damp(this.pos.z, desired.z, k, dt);
