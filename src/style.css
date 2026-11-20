@@ -851,3 +851,13 @@ html.touch .bag.show { animation: none; }
 .wi-prev { perspective: 600px; }
 @keyframes wi3d { 0%, 100% { transform: rotateY(-9deg) rotateX(4deg) translateY(0); } 50% { transform: rotateY(9deg) rotateX(2deg) translateY(-4px); } }
 .wi-th.th3d img { object-fit: contain; background: #050814; }
+
+/* transición entre el rescate y el combate final contra el jefe */
+#bosstrans { position: fixed; inset: 0; z-index: 58; display: flex; align-items: center; justify-content: center; pointer-events: none; opacity: 0; transition: opacity .45s ease; background: radial-gradient(circle at 50% 45%, color-mix(in srgb, var(--wc, #ffd45a) 30%, transparent), rgba(4, 6, 14, .94) 70%); }
+#bosstrans.show { opacity: 1; pointer-events: auto; }
+#bosstrans .bt-card { text-align: center; color: #fff; padding: 22px 28px; transform: scale(.92); transition: transform .6s cubic-bezier(.2, 1.4, .4, 1); }
+#bosstrans.show .bt-card { transform: scale(1); }
+#bosstrans .bt-k { font-size: 14px; letter-spacing: 3px; color: #7dffa0; font-weight: 800; }
+#bosstrans .bt-t { margin: 10px 0 14px; font-size: clamp(24px, 6vw, 44px); font-weight: 900; letter-spacing: 2px; text-shadow: 0 0 22px var(--wc, #ffd45a); }
+#bosstrans .bt-b { font-size: clamp(20px, 4.4vw, 32px); font-weight: 800; color: var(--wc, #ffd45a); }
+#bosstrans .bt-s { opacity: .8; font-size: 14px; margin-top: 4px; }

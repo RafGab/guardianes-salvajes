@@ -32,6 +32,8 @@ import { spawnOrcs } from './orcs.js';
 const HERO_SKILLS_CD = (id) => (HERO_SKILLS[id] && HERO_SKILLS[id].flight ? HERO_SKILLS[id].flight.cd : 4);
 import { IS_TOUCH } from './platform.js';
 import { CampFireRuntime } from './scenarios/campfire_rt.js';
+import { BossArena, ARENA } from './arena.js';
+import { clearPortalView } from './portalview.js';
 import { CenizaraRuntime } from './scenarios/cenizara_rt.js';
 const KEY = (k, icon) => (IS_TOUCH ? icon : `<kbd>${k}</kbd>`);
 
@@ -112,6 +114,7 @@ export class Game {
     this.portal = new RescuePortal(this);  // portal de rescate del refugio: su aspecto depende del héroe activo
     this.bubbles = new RescueBubbles(this); // rescate con burbujas de energía (una por víctima, siguen al héroe)
     this.aimSys = new AimSystem(this);      // mira de Halley (T / botón 🎯)
+    this.arena = new BossArena(this);       // escenario de combate propio de cada jefe (arena.js)
     this.allies = new Allies(this);         // combate de jefe: los otros dos héroes del equipo luchan a la vez
     this.team = new Team();          // equipo del combate de jefe (vida por héroe, cambio en combate)
     this.bag = new Bag();            // mochila de recuperación (bebidas y botiquines)
@@ -202,6 +205,8 @@ export class Game {
 
   /* ---------- víctimas ---------- */
   clearVictims() {
+    if (this.arena) this.arena.exit();
+    this.prepToken = (this.prepToken || 0) + 1; // cancela una transición al jefe pendiente
     if (this.bubbles) this.bubbles.clear();
     for (const v of this.victims) {
       if (v.root.parent) v.root.parent.remove(v.root);
@@ -604,6 +609,7 @@ export class Game {
     this.buildAbilities();
     // portal de rescate único del nivel, con la variante del héroe elegido
     this.portal.mount(world.sc.safeObj, def.element);
+    if (!world.portalCleared) { world.portalCleared = true; clearPortalView(this); } // delante del portal, vista despejada (una vez por escenario)
     const pspots = this.portal.spots(this.safeSpots.length);
     if (pspots) this.safeSpots = pspots;
 
@@ -700,7 +706,7 @@ export class Game {
           break;
         }
         case 'flyLevel': { // ÁMBAR: cambio de nivel de vuelo
-          const NAMES = ['🛬 Aterrizando…', '🦅 Nivel 1 · vuelo bajo', '🦅 Nivel 2 · vuelo medio', '🦅 Nivel 3 · vuelo alto'];
+          const NAMES = ev.ears ? ['', '👂 Nivel 1 · vuelo bajo', '👂 Nivel 2 · vuelo alto'] : ['🛬 Aterrizando…', '🦅 Nivel 1 · vuelo bajo', '🦅 Nivel 2 · vuelo medio', '🦅 Nivel 3 · vuelo alto'];
           ui.alert(NAMES[ev.level] || NAMES[0], 900);
           audio.whoosh && audio.whoosh();
           break;
@@ -868,14 +874,34 @@ export class Game {
   /* ---------- combate contra el jefe de nivel ---------- */
   // Descubrimiento de la zona del jefe: el juego se detiene y main.js abre la selección y formación del equipo
   prepareBoss() {
+    if (this.state === 'prep') return;
     this.state = 'prep';
     this.player.locked = true;
+    this.player.vx = this.player.vz = this.player.vy = 0;
     this.skills.reset();
     this.team.clear();
     ui.hud(false);
-    // COMBATE INDIVIDUAL: contra el jefe de zona lucha SOLO el héroe con el que se ha jugado el mundo
-    // (sin pantalla de equipo, sin compañeros ni aliados que ayuden)
-    this.startBoss([this.hero.id]);
+    // FASE DE RESCATE TERMINADA → PANTALLA DE TRANSICIÓN → ARENA DEL JEFE (escenario de combate propio)
+    const tok = this.prepToken = (this.prepToken || 0) + 1;
+    ui.bossTransition(this.mission, true);
+    setTimeout(() => {
+      if (tok !== this.prepToken || this.state !== 'prep') return; // la partida cambió mientras tanto
+      try {
+        // EQUIPO DE 3: entra el héroe con el que se ha jugado el mundo y se puede cambiar entre los 3 héroes durante
+        // el combate (el equipo guardado completa los huecos; si falta alguno, los primeros héroes disponibles)
+        const ids = [this.hero.id];
+        for (const id of [...Save.team, ...HEROES.map((h) => h.id)]) if (ids.length < TEAM.size && !ids.includes(id) && HEROES.some((h) => h.id === id)) ids.push(id);
+        this.startBoss(ids);
+      } catch (e) {
+        // nunca dejar la pantalla bloqueada: si algo falla al montar el combate, se informa y se puede seguir
+        console.error('combate de jefe', e);
+        this.arena.exit();
+        this.state = 'playing'; this.player.locked = false; ui.hud(true);
+        ui.banner('find', '⚠️', 'No se pudo iniciar el combate: inténtalo de nuevo');
+      } finally {
+        setTimeout(() => ui.bossTransition(this.mission, false), 250);
+      }
+    }, 2600);
   }
 
   // Comienza el combate con el equipo elegido (ids en orden; el primero sale al campo)
@@ -891,7 +917,9 @@ export class Game {
     lm.setVisible(true);
     this.state = 'playing';
     ui.hud(true);
-    const arena = world.sc.bossArena || { x: CFG.SAFE.x, z: CFG.SAFE.z - 18, r: 16 };
+    // ESCENARIO DE COMBATE PROPIO: llano, despejado y con la estética de su mundo (el de exploración queda en pausa)
+    this.arena.enter(this.mission);
+    const arena = { x: ARENA.x, z: ARENA.z, r: ARENA.r };
     player.pos.set(arena.x, terrainH(arena.x, arena.z + arena.r * 0.7) + 0.5, arena.z + arena.r * 0.7);
     player.vx = 0; player.vz = 0; player.vy = 0;
     player.facing = Math.PI;
@@ -1565,13 +1593,14 @@ export class Game {
 
     if (this.state === 'playing') this.skills.update(dtg); // habilidades del héroe (mueven al héroe antes de su actualización)
     player.update(dtg, move, chase.yaw);
+    if (this.arena.active) { this.arena.clamp(player.pos); this.arena.tick(); }
     this.aimSys.update(real); // con la mira, Halley mira hacia la retícula
     this.updateCloseIn(dtg); this.bodyBlock(); // embestida hacia el enemigo y choque de cuerpos (no se atraviesan)
     this.weapons.update(dtg); // después de animar al héroe: el arma sigue al hueso de la mano
     this.bubbles.update(dtg); // las burbujas de los rescatados siguen al héroe (después de que se mueva)
     this.handlePlayerEvents();
     player.events.length = 0;
-    if (this.hazards && (this.state === 'playing' || this.state === 'ending')) this.hazards.update(envDt, this.t);
+    if (this.hazards && !this.arena.active && (this.state === 'playing' || this.state === 'ending')) this.hazards.update(envDt, this.t);
     if (this.levelRt) this.levelRt.update(envDt, this.state === 'playing' && !this.boss);
     if (this.levelRt2) this.levelRt2.update(envDt, this.state === 'playing' && !this.boss);
     if (this.playerHitT > 0) this.playerHitT = Math.max(0, this.playerHitT - real);
@@ -1616,7 +1645,7 @@ export class Game {
       v.update(v.state === 'carried' ? dtg : charDt * ff(v.root)); // las que esperan o caminan se detienen con el tiempo (y con la aurora)
       v.root.getWorldPosition(v.wpos);
       if (v.state === 'waiting') {
-        if (v.hidden) {
+        if (v.hidden || this.arena.active) { // en la arena del jefe no se ven las personas ni sus iconos «!» del mapa de exploración
           v.root.visible = false;
           v.marker.visible = false;
           continue;

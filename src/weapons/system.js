@@ -38,6 +38,7 @@ export class Trail {
     this.mesh.frustumCulled = false;
     this.mesh.visible = false;
     this.mesh.userData.own = true;
+    this.mesh.userData.arenaKeep = true;
     scene.add(this.mesh);
   }
   push(a, b) {

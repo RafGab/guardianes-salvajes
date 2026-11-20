@@ -248,14 +248,14 @@ function glowTex() {
   return GLOW_TEX;
 }
 // disco luminoso horizontal (bajo la zapatilla) + núcleo brillante: devuelve { group, set(pos, k, flash) , dispose }
-export function cometDisc(parent) {
+export function cometDisc(parent, col = {}) {
   const tex = glowTex();
-  const mk = (op) => { const m = new THREE.MeshBasicMaterial({ map: tex, color: 0xffffff, transparent: true, opacity: op, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }); m.userData.own = true; return m; };
+  const mk = (op) => { const m = new THREE.MeshBasicMaterial({ map: tex, color: col.disc != null ? col.disc : 0xffffff, transparent: true, opacity: op, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }); m.userData.own = true; return m; };
   const disc = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mk(0));
   disc.rotation.x = -Math.PI / 2;
-  const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: 0xcfeaff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
+  const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, color: col.core != null ? col.core : 0xcfeaff, transparent: true, opacity: 0, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false }));
   core.material.userData.own = true;
-  const ringM = mk(0); ringM.color.setHex(0x5aa8ff);
+  const ringM = mk(0); ringM.color.setHex(col.ring != null ? col.ring : 0x5aa8ff);
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.42, 0.5, 32), ringM);
   ring.rotation.x = -Math.PI / 2;
   const g = new THREE.Group();
@@ -294,7 +294,7 @@ export function speedLines(k) {
     x.translate(256, 256);
     for (let i = 0; i < 140; i++) {
       const a = Math.random() * TAU, r0 = 150 + Math.random() * 60, r1 = r0 + 60 + Math.random() * 120;
-      x.strokeStyle = `rgba(${Math.random() < 0.5 ? '200,230,255' : '120,180,255'},${0.25 + Math.random() * 0.5})`;
+      x.strokeStyle = `rgba(${Math.random() < 0.5 ? '255,232,190' : '255,170,90'},${0.25 + Math.random() * 0.5})`;
       x.lineWidth = 0.6 + Math.random() * 1.8;
       x.beginPath(); x.moveTo(Math.cos(a) * r0, Math.sin(a) * r0); x.lineTo(Math.cos(a) * r1, Math.sin(a) * r1); x.stroke();
     }

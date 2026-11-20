@@ -142,6 +142,13 @@ export function createWorld(scene, renderer, { quality = 'high', scenario = 'flo
     for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) grid[j * GN + i].push(s);
   }
   W.dynSolids = [];
+  // retira sólidos del escenario que cumplan una condición (p. ej. la vegetación delante del portal); devuelve cuántos
+  W.removeSolids = (pred) => {
+    let n = 0;
+    for (const cell of grid) for (let k = cell.length - 1; k >= 0; k--) if (pred(cell[k])) { cell.splice(k, 1); n++; }
+    for (let k = sc.solids.length - 1; k >= 0; k--) if (pred(sc.solids[k])) sc.solids.splice(k, 1);
+    return n;
+  };
   let stamp = 0;
   W.solidsNear = (x0, x1, z0, z1, out) => {
     out.length = 0;

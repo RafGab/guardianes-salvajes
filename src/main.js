@@ -487,10 +487,13 @@ async function buildGame(scenario) {
   renderer.toneMappingExposure = baseExposure = world.look.exposure;
   if (bloomPass) bloomPass.threshold = world.look.bloom ? Math.min(world.look.bloom, TOON.bloom.threshold + 0.04) : TOON.bloom.threshold;
   await nextFrame();
+  const preSys = new Set(scene.children); // lo que hay hasta aquí es el escenario de exploración
+  world.ownKids = preSys;
   fx = new FX(scene);
   player = new Player(world);
   chase = new ChaseCam(camera, world);
   game = new Game({ scene, camera, renderer, world, player, chase, fx, input });
+  for (const o of scene.children) if (!preSys.has(o)) o.userData.arenaKeep = true; // efectos y sistemas del juego: siguen visibles en la arena del jefe
   game.getMainRT = () => (composer ? composer.renderTarget1 : null); // destino real del dibujo (para precompilar sombreadores con las mismas opciones)
   game.onBossPrep = enterTeam;
   window.__g = { game, world, player, chase, input, camera, scene, renderer, get mode() { return mode; }, setMode: (m) => (mode = m), enterSelect, beginMission, showHero, HEROES, fx, LEVELS, Save, ITEMS, pickMission, enterMissions, buildGame, loadLevel, startNextLevel, get level() { return currentLevel; } };

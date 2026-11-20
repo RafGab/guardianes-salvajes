@@ -14,7 +14,18 @@ const ROAD = [[0, 68], [-14, 44], [-34, 20], [-38, -12], [-24, -44], [0, -62], [
 
 function alpineTerrain(x, z) {
   let h = 2 + 6 * n2(x, z, 0.02) - 2.6 + 2.4 * n2(x + 40, z, 0.06, 3);
-  h += smoothstep(56, 112, Math.hypot(x * 0.8, z + 6)) * (26 + 16 * n2(x, z, 0.03));
+  // ladera de nieve del borde del mapa; se rebaja delante del refugio y en el camino hacia él para que el portal de rescate
+  // y los personajes que lo cruzan se vean bien (antes un banco de nieve tapaba el portal)
+  let rise = smoothstep(56, 112, Math.hypot(x * 0.8, z + 6)) * (26 + 16 * n2(x, z, 0.03));
+  {
+    const S = CFG.SAFE, T = CFG.START;
+    let ux = T.x - S.x, uz = T.z - S.z; const l = Math.hypot(ux, uz) || 1; ux /= l; uz /= l;
+    const rx = x - S.x, rz = z - S.z, d = rx * ux + rz * uz, lat = Math.abs(rx * uz - rz * ux);
+    const near = smoothstep(30, 16, Math.hypot(rx, rz));
+    const fan = smoothstep(-6, 2, d) * smoothstep(48, 32, d) * smoothstep(12 + d * 0.5, 6 + d * 0.35, lat);
+    rise *= 1 - Math.max(near, fan);
+  }
+  h += rise;
   const ld = Math.hypot(x - LAKE.x, z - LAKE.z);
   h = lerp(h, 0.2, smoothstep(LAKE.r + 8, LAKE.r - 2, ld));
   const pd = pathDist(x, z, ROAD);

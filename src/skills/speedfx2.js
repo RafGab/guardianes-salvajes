@@ -5,8 +5,8 @@ import { Trail } from '../weapons/system.js';
 import { cometDisc, speedLines } from './magicfx.js';
 
 // MEJORAS DEL BOTÓN DE VELOCIDAD (se instalan sobre SpeedFxSkill, en powers2.js):
-//  · KAIRO — carrera cometaria: llamas pequeñas en los pies y una estela tipo cometa Halley por detrás y por debajo
-//    (sin resplandor que tape al personaje)
+//  · KAIRO — carrera de FUEGO tipo cometa: llamas en los pies, estela de fuego dinámica y chispas, todo por debajo
+//    y por detrás (sin resplandor que tape al personaje)
 //  · KIRA — brazos de patinadora (equilibrio, compensación en las curvas, codos flexionados), sobre su animación de patinaje
 //  · BADA — cuerpo de arena viva: granos que se desprenden y se recomponen, y textura granulada mientras corre
 //    (se conserva el remolino de arena de los pies)
@@ -73,10 +73,11 @@ export function sandMaterial(src, U) {
 }
 
 export const SPEED2 = {
-  // ---------------- KAIRO: CARRERA SUPERSÓNICA CON DOS COMETAS DE ENERGÍA ----------------
-  // Exactamente DOS cometas, uno bajo cada zapatilla, que siguen cada uno a su pie (huesos foot_L / foot_R):
-  // disco de energía azul eléctrico con núcleo blanco, estela propia de cada pie (nunca unidas), chispas hacia atrás
-  // y pequeñas descargas. Al apoyar un pie, su cometa destella y suelta una pequeña explosión de partículas.
+  // ---------------- KAIRO: CARRERA SUPERSÓNICA CON DOS COMETAS DE FUEGO ----------------
+  // Exactamente DOS cometas de fuego, uno bajo cada zapatilla, que siguen cada uno a su pie (huesos foot_L / foot_R):
+  // brasa ardiente naranja con núcleo amarillo, llamas bajas que salen de los pies y se quedan atrás, estela de fuego
+  // propia de cada pie (nunca unidas) y chispas/brasas hacia atrás. Al apoyar un pie, su cometa destella y suelta
+  // una pequeña explosión de chispas. Las llamas son cortas y van hacia atrás: el cuerpo se ve siempre entero.
   // Zancadas mucho más rápidas, líneas de velocidad en los bordes de la pantalla. El cuerpo se ve siempre entero.
   kairo(dt, k, bx, bz, sp) {
     const pose = this.pose, p = this.p, fx = this.g.fx;
@@ -86,8 +87,8 @@ export const SPEED2 = {
     this.kAnim = damp(this.kAnim || 1, on ? 1.45 : 1, on ? 6 : 4, dt);
     p.animMul = this.kAnim;
     const feet = feetPos(this);
-    const tr = trails(this, '_cometTr', 0x1a4cff, 0x6ab8ff, 22, 0.34);
-    const C = this._comets || (this._comets = [0, 1].map(() => ({ d: cometDisc(this.g.scene), flash: 0, prevY: null, k: 0 })));
+    const tr = trails(this, '_cometTr', 0xff3a08, 0xffb020, 22, 0.34);
+    const C = this._comets || (this._comets = [0, 1].map(() => ({ d: cometDisc(this.g.scene, { disc: 0xff6a14, core: 0xffe08a, ring: 0xff8a20 }), flash: 0, prevY: null, k: 0 })));
     const gy0 = p.pos.y;
     feet.forEach((f, i) => {
       const c = C[i];
@@ -96,8 +97,8 @@ export const SPEED2 = {
       // APOYO: el pie baja y toca el suelo → destello intenso y explosión de chispas
       if (c.prevY !== null && on && lift < 0.1 && c.prevY >= 0.1) {
         c.flash = 1;
-        for (let j = 0; j < 7; j++) { const a = rnd(0, TAU), v = rnd(1.5, 3.5); fx.spark.emit(f.x, gy0 + 0.05, f.z, Math.cos(a) * v + bx * 2, rnd(0.6, 2), Math.sin(a) * v + bz * 2, rnd(0.18, 0.35), 0.07, 0.015, 0xffffff, 0x2a7bff, 1, 0, 6, 1); }
-        if (this.vfx.ring) this.vfx.ring(f.x, gy0 + 0.04, f.z, { r0: 0.1, r1: 0.7, dur: 0.18, color: 0x6ab8ff, opacity: 0.8 });
+        for (let j = 0; j < 7; j++) { const a = rnd(0, TAU), v = rnd(1.5, 3.5); fx.spark.emit(f.x, gy0 + 0.05, f.z, Math.cos(a) * v + bx * 2, rnd(0.6, 2), Math.sin(a) * v + bz * 2, rnd(0.18, 0.35), 0.07, 0.015, 0xfff0b0, 0xff4a10, 1, 0, 6, 1); }
+        if (this.vfx.ring) this.vfx.ring(f.x, gy0 + 0.04, f.z, { r0: 0.1, r1: 0.7, dur: 0.18, color: 0xff8a20, opacity: 0.8 });
       }
       c.prevY = lift;
       c.flash = Math.max(0, c.flash - dt * 7);
@@ -108,14 +109,12 @@ export const SPEED2 = {
       tpush(tr[i], this, V(pos.x + bx * 0.05, pos.y + 0.01, pos.z + bz * 0.05), V(pos.x + bx * 0.08, pos.y + 0.12 + 0.05 * k, pos.z + bz * 0.08));
       tr[i].update(dt, on && sp > 1.5);
       if (!on || c.k < 0.05) return;
-      // chispas eléctricas que salen disparadas hacia atrás
+      // LLAMAS en el pie: lenguas de fuego cortas y bajas que se quedan atrás (cola del cometa), nunca suben por el cuerpo
+      const nf = 2 + Math.round(2 * k);
+      for (let j = 0; j < nf; j++) fx.fire.emit(pos.x + rnd(-0.07, 0.07), pos.y + 0.03, pos.z + rnd(-0.07, 0.07), bx * rnd(1.5, 3.5) * (0.5 + k), rnd(0.25, 0.8), bz * rnd(1.5, 3.5) * (0.5 + k), rnd(0.2, 0.34), rnd(0.22, 0.32), 0.04, 0xffd060, 0xff2a00, 0.9, 0, 0, 1.5);
+      // chispas y brasas que salen disparadas hacia atrás
       const n = 1 + Math.round(2 * k);
-      for (let j = 0; j < n; j++) fx.spark.emit(pos.x + rnd(-0.05, 0.05), pos.y + 0.02, pos.z + rnd(-0.05, 0.05), bx * rnd(3, 6) * (0.5 + k), rnd(0.2, 1), bz * rnd(3, 6) * (0.5 + k), rnd(0.15, 0.3), 0.06, 0.01, 0xe8f6ff, 0x1a5cff, 0.95, 0, 3, 2);
-      // pequeñas descargas de energía alrededor del pie
-      if (Math.random() < 0.25 * k && this.v2 && this.v2.beam) {
-        const a = rnd(0, TAU), r = rnd(0.15, 0.35);
-        this.v2.beam(V(pos.x, pos.y + 0.05, pos.z), V(pos.x + Math.cos(a) * r, pos.y + rnd(0.05, 0.3), pos.z + Math.sin(a) * r), { r: 0.012, color: 0x9fd4ff, opacity: 0.9, life: 0.06 });
-      }
+      for (let j = 0; j < n; j++) fx.spark.emit(pos.x + rnd(-0.05, 0.05), pos.y + 0.02, pos.z + rnd(-0.05, 0.05), bx * rnd(3, 6) * (0.5 + k), rnd(0.2, 1), bz * rnd(3, 6) * (0.5 + k), rnd(0.15, 0.3), 0.06, 0.01, 0xfff0b0, 0xff4a10, 0.95, 0, 3, 2);
     });
     // líneas de velocidad (y sensación de desenfoque en los bordes) según lo rápido que va
     speedLines(on ? clamp((sp - 3) / 9, 0, 1) : 0);

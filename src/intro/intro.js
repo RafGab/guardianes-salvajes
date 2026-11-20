@@ -284,12 +284,17 @@ export class CinematicIntro {
     let seen = false; try { seen = localStorage.getItem('catac7_intro_seen') === '1'; } catch (e) { /* */ }
     this.skipBtn.classList.toggle('show', true);
     this.skipBtn.classList.toggle('late', !seen);
-    try { this.score = new Score(); } catch (e) { this.score = null; }
+    // el sonido se crea y se activa DENTRO del gesto del jugador (requisito de los navegadores)
+    try { this.score = new Score(); this.score.wake(); } catch (e) { this.score = null; }
     if (!this.three) await this.setup();
+    if (this.score) this.score.wake();
     this.reset();
     if (this.score) this.score.play(0.25);
     this.clock0 = performance.now() / 1000 + 0.25;
     this.last = performance.now() / 1000;
+    // si el sonido quedó en pausa, el siguiente toque o tecla lo reactiva (sin reiniciar la intro)
+    this.wakeAudio = () => { if (this.score) this.score.wake(); };
+    ['pointerdown', 'keydown', 'touchend'].forEach((n) => window.addEventListener(n, this.wakeAudio, { passive: true }));
     const loop = () => { if (!this.playing) return; this.raf = requestAnimationFrame(loop); this.frame(); };
     loop();
   }
@@ -695,6 +700,7 @@ export class CinematicIntro {
     this.playing = false; this.active = false;
     if (this.raf) cancelAnimationFrame(this.raf);
     if (this.score) { this.score.stop(skipped ? 0.4 : 0.2); this.score = null; }
+    if (this.wakeAudio) { ['pointerdown', 'keydown', 'touchend'].forEach((n) => window.removeEventListener(n, this.wakeAudio)); this.wakeAudio = null; }
     try { localStorage.setItem('catac7_intro_seen', '1'); } catch (e) { /* */ }
     this.el.classList.add('out');
     setTimeout(() => { this.el.classList.remove('show', 'playing', 'out'); this.skipBtn.classList.remove('show'); }, 900);

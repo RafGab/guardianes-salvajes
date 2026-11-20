@@ -185,6 +185,18 @@ export function makeFacadeTextures(scale = 1) {
 /* ------------------------------------------------------------------ */
 /*  Kit de construcción                                                */
 /* ------------------------------------------------------------------ */
+// VISTA DEL PORTAL DE RESCATE: el portal mira desde el refugio hacia el inicio del nivel. En ese abanico (y en un
+// círculo alrededor del refugio) no se plantan árboles ni rocas/matorrales pequeños: el héroe y los rescatados
+// se ven siempre al llegar y cruzar el portal. El resto del escenario conserva toda su vegetación.
+export function portalFront(x, z) {
+  const S = CFG.SAFE, T = CFG.START;
+  if (!S || !T) return false;
+  let ux = T.x - S.x, uz = T.z - S.z; const l = Math.hypot(ux, uz) || 1; ux /= l; uz /= l;
+  const rx = x - S.x, rz = z - S.z, d = rx * ux + rz * uz, lat = Math.abs(rx * uz - rz * ux);
+  if (Math.hypot(rx, rz) < 10) return true;
+  return d > -2 && d < 30 && lat < 6.5 + d * 0.6;
+}
+
 export function createKit({ scene, seed = 1, mobile = false } = {}) {
   const rng = makeRng(seed);
   const batch = new Batch();
@@ -215,17 +227,19 @@ export function createKit({ scene, seed = 1, mobile = false } = {}) {
     return sol ? solid(cx - r, cx + r, y0 - 0.5, y0 + h, cz - r, cz + r, tag) : null;
   };
   K.cone = (cx, y0, cz, r, h, color, { key = 'flat' } = {}) => batch.add(unitCone, key, M4(cx, y0, cz, r, h, r), color);
-  K.ico = (cx, cy, cz, sx, sy, sz, color, { key = 'flat', ry = 0 } = {}) => batch.add(unitIco, key, M4(cx, cy, cz, sx, sy, sz, ry), color);
+  K.ico = (cx, cy, cz, sx, sy, sz, color, { key = 'flat', ry = 0 } = {}) => { if (Math.max(sx, sy, sz) < 2.4 && cy < terrainH(cx, cz) + 3 && portalFront(cx, cz)) return; batch.add(unitIco, key, M4(cx, cy, cz, sx, sy, sz, ry), color); }; // matorrales y piedras pequeñas: tampoco delante del portal
   K.prism = (cx, y0, cz, w, h, d, color, ry = 0) => batch.add(unitPrism, 'flat', M4(cx, y0, cz, w, h, d, ry), color);
 
   K.rock = (x, z, s = 1, color = 0x7a746a, { solidBox = true } = {}) => {
     const y = terrainH(x, z);
     const sx = s * rng.range(0.8, 1.3), sy = s * rng.range(0.6, 1.1), sz = s * rng.range(0.8, 1.3);
+    if (s < 3 && portalFront(x, z)) return; // delante del portal de rescate: sin rocas que tapen
     batch.add(unitIco, 'flat', M4(x, y + sy * 0.3, z, sx, sy, sz, rng.range(0, 3)), color);
     if (solidBox && s > 1.1) solid(x - sx * 0.8, x + sx * 0.8, y - 1, y + sy * 1.0, z - sz * 0.8, z + sz * 0.8, 'rock');
   };
 
   K.tree = (kind, x, z, s = 1) => {
+    if (portalFront(x, z)) return; // delante del portal de rescate: sin árboles que tapen
     if (!treeList[kind]) treeList[kind] = [];
     const y = terrainH(x, z);
     treeList[kind].push({ x, y: y - 0.1, z, s, ry: rng.range(0, TAU), tint: rng.range(0.85, 1.12) });

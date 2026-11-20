@@ -26,7 +26,7 @@ export class Score {
     const AC = window.AudioContext || window.webkitAudioContext;
     this.ctx = new AC();
     const c = this.ctx;
-    this.out = c.createGain(); this.out.gain.value = 0.9;
+    this.out = c.createGain(); this.out.gain.value = 1.25;
     const comp = c.createDynamicsCompressor();
     comp.threshold.value = -14; comp.knee.value = 10; comp.ratio.value = 4; comp.attack.value = 0.004; comp.release.value = 0.25;
     this.out.connect(comp); comp.connect(c.destination);
@@ -74,6 +74,9 @@ export class Score {
       const x = c.createOscillator(); x.type = type; x.frequency.value = f * mul; x.detune.value = det; x.connect(lp); x.start(t); x.stop(t + dur + 0.1); this.track(x);
     }
     lfo.start(t); lfo.stop(t + dur + 0.1); this.track(lfo);
+    // CAPA AUDIBLE: los graves (36–110 Hz) no se oyen en altavoces pequeños; las octavas 4.ª y 6.ª del mismo dron sí
+    const hl = c.createBiquadFilter(); hl.type = 'lowpass'; hl.frequency.value = 1100; hl.connect(g);
+    for (const [mul, v] of [[4, 0.35], [6, 0.22], [8, 0.12]]) { const x = c.createOscillator(), xg = c.createGain(); x.type = 'triangle'; x.frequency.value = f * mul; xg.gain.value = v; x.connect(xg); xg.connect(hl); x.start(t); x.stop(t + dur + 0.1); this.track(x); }
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + Math.min(4, dur * 0.4)); g.gain.setValueAtTime(vol, t + dur - Math.min(2, dur * 0.3)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   }
   wind(t, dur, vol = 0.06) {
@@ -107,6 +110,8 @@ export class Score {
     const x = c.createOscillator(), g = c.createGain(); x.type = 'sine';
     x.frequency.setValueAtTime(150 * pitch, t); x.frequency.exponentialRampToValueAtTime(45 * pitch, t + 0.35);
     x.connect(g); g.connect(o); this.env(g, t, 0.004, vol, 0.04, 0.7); x.start(t); x.stop(t + 1); this.track(x);
+    const h = c.createOscillator(), hg = c.createGain(); h.type = 'triangle'; h.frequency.setValueAtTime(450 * pitch, t); h.frequency.exponentialRampToValueAtTime(180 * pitch, t + 0.2);
+    h.connect(hg); hg.connect(o); this.env(hg, t, 0.003, vol * 0.35, 0.02, 0.25); h.start(t); h.stop(t + 0.4); this.track(h); // cuerpo audible del tambor
     const s = c.createBufferSource(); s.buffer = this.noise; const lp = c.createBiquadFilter(); lp.type = 'lowpass'; lp.frequency.value = 900;
     const ng = c.createGain(); s.connect(lp); lp.connect(ng); ng.connect(o); this.env(ng, t, 0.002, vol * 0.5, 0.01, 0.18);
     s.start(t, Math.random()); s.stop(t + 0.3); this.track(s);
@@ -129,6 +134,8 @@ export class Score {
     const c = this.ctx, x = c.createOscillator(), g = c.createGain(); x.type = 'sine';
     x.frequency.setValueAtTime(f0, t); x.frequency.exponentialRampToValueAtTime(f1, t + len * 0.7);
     x.connect(g); g.connect(this.bus(0.3)); this.env(g, t, 0.005, vol, 0.1, len); x.start(t); x.stop(t + len + 0.2); this.track(x);
+    const h = c.createOscillator(), hg = c.createGain(); h.type = 'triangle'; h.frequency.setValueAtTime(f0 * 4, t); h.frequency.exponentialRampToValueAtTime(f1 * 4, t + len * 0.6);
+    h.connect(hg); hg.connect(this.bus(0.5)); this.env(hg, t, 0.005, vol * 0.25, 0.08, len * 0.7); h.start(t); h.stop(t + len); this.track(h); // armónico del impacto
     const s = c.createBufferSource(); s.buffer = this.noise; const lp = c.createBiquadFilter(); lp.type = 'lowpass';
     lp.frequency.setValueAtTime(5000, t); lp.frequency.exponentialRampToValueAtTime(120, t + 1.2);
     const ng = c.createGain(); s.connect(lp); lp.connect(ng); ng.connect(this.bus(0.7)); this.env(ng, t, 0.003, vol * 0.55, 0.05, 1.4);
@@ -177,8 +184,8 @@ export class Score {
     this.wind(at(0), 40, 0.05);
     this.heart(at(2.4), 0.25);
     this.boom(at(3.1), 0.35, 60, 30, 3);               // primera revelación: los ojos de Lira
-    this.pad(at(3.1), 6.6, [N.D3, N.A3, N.D4], 0.035, 900);
-    this.chime(at(4.2), N.A4, 0.035); this.chime(at(5.5), N.D5, 0.04); this.chime(at(7.5), N.F5, 0.035);
+    this.pad(at(3.1), 6.6, [N.D3, N.A3, N.D4], 0.05, 1100);
+    this.chime(at(4.2), N.A4, 0.055); this.chime(at(5.5), N.D5, 0.06); this.chime(at(7.5), N.F5, 0.055);
     this.heart(at(6.2), 0.3); this.heart(at(8.6), 0.34);
     this.whoosh(at(9.0), 1.0, 0.13);
     // ACTO 2 — DESCUBRIMIENTO: un acorde por guardián
@@ -226,6 +233,8 @@ export class Score {
     this.dry.gain.setValueAtTime(0.0001, at(40.5)); this.dry.gain.linearRampToValueAtTime(1, at(40.55));
     this.verbOut.gain.setValueAtTime(1, at(39.95)); this.verbOut.gain.linearRampToValueAtTime(0.0001, at(40.1)); this.verbOut.gain.setValueAtTime(0.0001, at(41.15)); this.verbOut.gain.linearRampToValueAtTime(1, at(41.2));
   }
+  // por si el navegador suspende el sonido (pestaña oculta, primer gesto no reconocido): reactivarlo
+  wake() { try { if (this.ctx.state !== 'running') this.ctx.resume(); } catch (e) { /* */ } }
   get time() { return this.ctx.currentTime - (this.t0 || this.ctx.currentTime); }
   stop(fade = 0.6) {
     const c = this.ctx;

@@ -300,6 +300,7 @@ export class Combat {
       m.update(dt * (this.game.frost && this.game.frost.area ? this.game.frost.factor(m.group) : 1)); // Aurora Polar: solo los de dentro del aro
     }
     for (let i = this.orcs.length - 1; i >= 0; i--) {
+      if (this.game.arena && this.game.arena.active) break; // en la arena del jefe los orcos del escenario quedan en pausa
       const o = this.orcs[i];
       if (o.dead) { this.orcs.splice(i, 1); continue; }
       o.update(dt * (this.game.frost && this.game.frost.area ? this.game.frost.factor(o.group) : 1));

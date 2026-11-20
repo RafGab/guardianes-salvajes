@@ -694,13 +694,13 @@ export class FlightSkill extends Skill {
   }
   enterFly() {
     const d = this.def, p = this.p;
-    p.fly = { kind: d.id, t: 0, max: d.flyT, speed: d.speed, climb: d.climb, sink: d.sink, ceil: d.ceil, lean: this.ears ? 0.25 : 0.75, minT: 0.6 };
+    p.fly = { kind: d.id, t: 0, max: d.flyT, speed: d.speed, climb: d.climb, sink: d.sink, ceil: d.ceil, ceil2: d.ceil2 || 0, lean: this.ears ? 0.25 : 0.75, minT: 0.6 };
     if (!this.ears && d.levels) { p.fly.levels = d.levels; p.fly.level = 1; } // águila: tres niveles de altura
     if (!this.ears) this.g.chase.flight = p; // cámara de vuelo
     p.vy = d.climb * 1.4;
     p.grounded = false; p.support = null;
     if (!this.ears) { this.camWas = { dist: this.g.chase.distTarget }; ui.banner('find', '🦅', d.levels ? 'SALTAR = subir de nivel (3 alturas) · V o Ctrl = bajar · L = aterrizar · SPRINT = más rápido' : 'SALTAR = subir · suelta = planear · SPRINT = más rápido · baja al suelo para aterrizar'); }
-    else ui.banner('find', '👂', 'Mantén SALTAR para subir');
+    else { ui.banner('find', '👂', d.ceil2 ? 'Mantén SALTAR para subir · arriba, SALTAR otra vez = nivel 2 · V o Ctrl = volver al nivel 1' : 'Mantén SALTAR para subir'); this.camWas = { dist: this.g.chase.distTarget }; }
     this.flapT = 0;
   }
   tickFly(dt) {
@@ -719,6 +719,11 @@ export class FlightSkill extends Skill {
     if (this.ears) { if (Math.random() < 0.35) this.vfx.sparks(c.x, c.y + p.H * 0.4, c.z, 0xffe0a0, 1, 1); }
     else if (Math.random() < 0.4) this.g.fx.mist(c.x - Math.sin(p.facing) * 0.8, c.y, c.z - Math.cos(p.facing) * 0.8, 0xe8f6ff, 0.5); // estela de aire
     if (this.ears && f.max - f.t < 1.2 && Math.random() < 0.2) ui.alert('👂 ¡Se cansan las orejas!', 700);
+    if (this.ears && this.camWas) { // la cámara acompaña la altura: se aleja y sube un poco en el nivel 2
+      const ch = this.g.chase, want = this.camWas.dist + (f.lvl2 ? 4 : 1);
+      ch.distTarget = lerp(ch.distTarget, want, Math.min(1, dt * 1.5));
+      if (f.lvl2 && ch.pitch < 0.55) ch.pitch = lerp(ch.pitch, 0.55, Math.min(1, dt * 1.2));
+    }
     // cámara aérea del águila: se aleja y mira desde arriba para explorar el mapa
     if (!this.ears) {
       const ch = this.g.chase;

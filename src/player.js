@@ -202,6 +202,9 @@ export class Player {
     const len = Math.hypot(dx, dz) || 1;
     const moving = Math.hypot(this.dirX, this.dirZ) > 0.1;
     const hid = this.hero.id;
+    // Kyra (zorra) en el mundo de nieve (Glacier): su poder de velocidad dura el DOBLE (misma velocidad y efectos)
+    const iceX2 = hid === 'kyra' && type === 'ice' && w.sc && w.sc.id === 'ice';
+    const sdur = iceX2 ? 10 : 5;
     if (type === 'dash' && hid === 'kairo') {
       // Kairo: CARRERA SUPERSÓNICA durante 5 s (aceleración explosiva hasta ×2 de su velocidad), con dos cometas de
       // energía bajo los pies; sin impulso de cohete hacia delante ni salto
@@ -230,7 +233,7 @@ export class Player {
       if (moving) this.speedBoost(5, 1.6, 0.8); // corriendo: túnel de tierra
       else { w.spawnPillar(this.pos.x, this.pos.z, this.pos.y); this.vy = Math.max(this.vy, 0); } // quieta: pilar de tierra (como siempre)
     } else if ((type === 'ice' || type === 'surf') && (!w.hasWater || (w.sc && w.sc.id === 'campfire'))) { // en Camp Fire: impulso de velocidad, como en los escenarios sin agua
-      this.speedBoost(5, hid === 'halley' ? 1.7 : hid === 'nilo' ? 1.6 : 1.65, 0.8);
+      this.speedBoost(type === 'ice' ? sdur : 5, hid === 'halley' ? 1.7 : hid === 'nilo' ? 1.6 : 1.65, 0.8);
       this.grip = type === 'ice';
     } else if (type === 'ice') {
       const tx = this.pos.x + (dx / len) * 3.6, tz = this.pos.z + (dz / len) * 3.6;
@@ -239,7 +242,7 @@ export class Player {
         return false;
       }
       w.spawnIce(tx, tz);
-      this.speedBoost(5, 1.4, 0.5); this.grip = true;
+      this.speedBoost(sdur, 1.4, 0.5); this.grip = true;
     } else if (type === 'surf') {
       if (depthHere < 0.2 && !this.swimming && this.surfT <= 0) {
         this.events.push({ type: 'fail', msg: 'Este poder funciona sobre el agua. Acércate a la inundación.' });
@@ -247,7 +250,7 @@ export class Player {
       }
       this.surfT = 5; this.speedBoost(5, 1, 0.1);
     }
-    this.cd = this.cdMax * this.cdMul; // = 5 s activa + 5 s de recarga (BUTTON_TIMES.velocidad)
+    this.cd = this.cdMax * this.cdMul + (sdur - 5); // = 5 s activa + 5 s de recarga (BUTTON_TIMES.velocidad); con duración doble, la recarga sigue siendo la misma
     this.powerAnim = 1;
     this.events.push({ type: 'power', power: type });
     return true;
@@ -412,8 +415,17 @@ export class Player {
       if (fly.t >= fly.max) fly.ending = true; // se acaba el tiempo: desciende suave hasta aterrizar
       const alt = pos.y - this.floorY(pos.x, pos.z, pos.y);
       // al acabarse el tiempo baja suave pero sin eternizarse: más deprisa en lo alto y frenando cerca del suelo
-      let tv = !frozen && inp.jump && !fly.ending ? fly.climb : fly.ending ? -Math.min(6, Math.max(fly.sink * 2.2, 1.2 + alt * 0.8)) : -fly.sink;
-      if (alt > fly.ceil && tv > 0) tv = Math.min(tv, (fly.ceil - alt) * 2); // techo de vuelo
+      // SEGUNDO NIVEL DE VUELO (orejas de Bada): el nivel 1 es el de siempre (mantén SALTAR para subir hasta su techo y
+      // al soltar baja despacio). Pulsando SALTAR otra vez cerca de ese techo sube al nivel 2, más alto, donde se
+      // mantiene planeando; V o Ctrl la devuelven al nivel 1. La subida y la bajada son suaves (muelle de velocidad).
+      if (fly.ceil2 && !fly.ending && !frozen) {
+        if (!fly.lvl2 && inp.jumpPressed && alt > fly.ceil - 0.8) { fly.lvl2 = true; this.events.push({ type: 'flyLevel', level: 2, ears: true }); }
+        else if (fly.lvl2 && inp.downPressed) { fly.lvl2 = false; this.events.push({ type: 'flyLevel', level: 1, ears: true }); }
+      }
+      if (fly.ending) fly.lvl2 = false;
+      let tv = fly.lvl2 ? clamp((fly.ceil2 - alt) * 1.4, -4, fly.climb * 1.2)
+        : !frozen && inp.jump && !fly.ending ? fly.climb : fly.ending ? -Math.min(6, Math.max(fly.sink * 2.2, 1.2 + alt * 0.8)) : -fly.sink;
+      if (!fly.lvl2 && alt > fly.ceil && tv > 0) tv = Math.min(tv, (fly.ceil - alt) * 2); // techo del nivel 1
       if (fly.t < 0.45) tv = Math.max(tv, fly.climb * 1.2); // despegue
       this.vy = damp(this.vy, tv, 4, dt);
     } else if (this.swimming && this.mantling <= 0 && this.vy < 4) {

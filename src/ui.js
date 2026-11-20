@@ -519,6 +519,16 @@ export const ui = {
   fade(on) { $('fade').classList.toggle('on', on); },
 
   // PANTALLA DE VICTORIA ante un jefe de zona: título, jefe derrotado, el equipo y las recompensas (una a una)
+  // RESCATE TERMINADO → COMBATE FINAL: pantalla de transición entre la fase de rescate y la arena del jefe
+  bossTransition(m, on) {
+    let el = document.getElementById('bosstrans');
+    if (!el) { el = document.createElement('div'); el.id = 'bosstrans'; (document.getElementById('app') || document.body).appendChild(el); }
+    if (on) {
+      el.innerHTML = `<div class="bt-card"><div class="bt-k">✔ MISIÓN DE RESCATE COMPLETADA</div><div class="bt-t">COMIENZA EL COMBATE FINAL</div><div class="bt-b">${m.bossName || 'Jefe de zona'}</div><div class="bt-s">${m.bossTitle || ''}</div></div>`;
+      el.style.setProperty('--wc', m.color || '#ffd45a');
+    }
+    el.classList.toggle('show', !!on);
+  },
   bossVictory(d, onContinue) {
     let el = document.getElementById('bossvictory');
     if (!el) { el = document.createElement('div'); el.id = 'bossvictory'; document.getElementById('app')?.appendChild(el) || document.body.appendChild(el); }

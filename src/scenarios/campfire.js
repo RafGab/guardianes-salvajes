@@ -306,10 +306,7 @@ export function build(K, { scene }) {
   /* (más deportivos al final de la construcción, cuando ya están todos los árboles y edificios) */
   // piñas por la Skyway
   for (let i = 0; i < 16; i++) { const p = pathPoint(ROAD, 0.04 + i * 0.058); if (!nearSafe(p[0], p[1], 14) && !nearStart(p[0], p[1], 6)) pineG(p[0] + (i % 2 ? 1.2 : -1.2), p[1]); }
-  // cartel de bienvenida del pueblo
-  K.box(-1, TOWN.y, 12, 0.25, 1.6, 0.25, 0x6a4a2a, { solid: false });
-  K.box(6, TOWN.y, 12, 0.25, 1.6, 0.25, 0x6a4a2a, { solid: false });
-  K.box(2.5, TOWN.y + 1.6, 12, 8, 1.4, 0.3, 0x2e7a4a, { solid: false });
+  // (el cartel de bienvenida del pueblo —dos postes de madera y un tablero verde— se ha retirado: estorbaba el paso y la vista)
   // árboles de las calles y del borde del pueblo
   for (const p of K.scatter(70, { x0: TOWN.x0 - 8, x1: TOWN.x1 + 6, z0: TOWN.z0 - 8, z1: TOWN.z1 + 6 }, { minDist: 6, accept: (x, z) => streetD(x, z) > 3 && roadD(x, z) > 5 && !lots.some((L) => Math.abs(L.x - x) < 9 && Math.abs(L.z - z) < 5.5) && !nearSafe(x, z, 16) && !nearTunnel(x, z) && (x < -20 || x > 40 || z > 2 || z < -56) })) {
     K.tree(rng.chance(0.55) ? 'pine' : 'broad', p.x, p.z, rr(0.9, 1.3));

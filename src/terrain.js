@@ -19,6 +19,7 @@ let _terrain = () => 0;
 export function terrainH(x, z) {
   return _terrain(x, z);
 }
+export function getTerrain() { return _terrain; }
 export function setTerrain(fn) {
   _terrain = fn;
 }

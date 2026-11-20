@@ -509,9 +509,7 @@ export function build(K, { scene }) {
   })) deadTree(p.x, p.z, rr(0.8, 1.3));
   // la avenida principal: candidatos, piñas y cartel de la ciudad
   for (let i = 0; i < 12; i++) { const z = 96 - i * 5, x = rr(-3, 3); if (z < 44) break; cand('street', x, G(x, z), z, { zone: 'avenida del volcán', type: 'street' }); if (i % 2) coneG(i % 4 === 1 ? 2 : -2, z); }
-  K.box(-5, CITY_Y, 92, 0.25, 1.8, 0.25, 0x4a3a2a, { solid: false });
-  K.box(5, CITY_Y, 92, 0.25, 1.8, 0.25, 0x4a3a2a, { solid: false });
-  K.box(0, CITY_Y + 1.8, 92, 10, 1.4, 0.3, 0x3a2a24, { solid: false, ry: 0.06 });
+  // (el cartel de la ciudad —dos postes y un tablero de madera, igual que el de Camp Fire— se ha retirado: estorbaba)
 
   /* ================= CIUDAD ALTA: TEMPLO DE LAVA Y CRIPTA ================= */
   {
