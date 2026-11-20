@@ -7,6 +7,7 @@ import { douseFires, smotherFires, propsNear, captureProp, dropFlung, wetGround 
 import { propModel } from '../props.js';
 import { auroraShield, frostArea } from './magicfx.js';
 import { MirageWard, TsunamiWave, WaterVortex, FoamPool, WaterShield, MagmaGeyser, ObsidianSpikes, CrystalDebris } from './fx4.js';
+import { envSpeedMul } from './config.js';
 
 // PODERES ESPECIALES NUEVOS (3 por héroe; la Zorra Ártica tiene 4).
 // Cada poder es una lista de etapas PREPARACIÓN → EJECUCIÓN → RECUPERACIÓN (como skills/hero.js).
@@ -641,7 +642,8 @@ export class FlightSkill extends Skill {
   begin() {
     const p = this.p;
     if (p.fly) return false;
-    if (p.swimming) { ui.banner('find', this.def.icon, 'No puedes despegar desde el agua'); return false; }
+    // (sin restricción de entorno: también despega desde el agua)
+    if (p.swimming) { p.swimming = false; p.vy = Math.max(p.vy, 4); }
     this.ears = this.def.id === 'ears';
     this.wings = this.chain('wing_L_').length ? { L: this.chain('wing_L_'), R: this.chain('wing_R_') } : null;
     this.earB = this.chain('ear_L_').length ? { L: this.chain('ear_L_'), R: this.chain('ear_R_') } : null;
@@ -1037,7 +1039,8 @@ export class RockSkill extends Skill {
     const d = this.def;
     return [
       { name: 'transformacion', dur: d.transformT, enter: this.enterTransform, tick: this.tickTransform },
-      { name: 'rodar', dur: d.rollT, enter: this.enterRoll, tick: this.tickRoll, exit: this.exitRoll },
+      // en su hábitat (mundo de roca) rueda el DOBLE de tiempo (NATURAL_ENV)
+      { name: 'rodar', dur: d.rollT * envSpeedMul(this.p.hero.id, this.g.world.sc && this.g.world.sc.id), enter: this.enterRoll, tick: this.tickRoll, exit: this.exitRoll },
       { name: 'recuperar-forma', dur: d.recover, enter: this.enterRecover, tick: this.tickRecover },
     ];
   }

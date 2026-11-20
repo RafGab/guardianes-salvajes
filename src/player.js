@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { clamp, damp, dampAngle, smoothstep, TAU } from './utils.js';
 import { CFG, terrainH } from './city.js';
 import { HERO_SCALE, cameraFor } from './scale.js';
+import { envSpeedMul } from './skills/config.js';
 
 // Radio y altura del colisionador: por héroe, desde la escala maestra (scale.js). Valores por defecto:
 const R_DEF = 0.42;
@@ -202,16 +203,17 @@ export class Player {
     const len = Math.hypot(dx, dz) || 1;
     const moving = Math.hypot(this.dirX, this.dirZ) > 0.1;
     const hid = this.hero.id;
-    // Kyra (zorra) en el mundo de nieve (Glacier): su poder de velocidad dura el DOBLE (misma velocidad y efectos)
-    const iceX2 = hid === 'kyra' && type === 'ice' && w.sc && w.sc.id === 'ice';
-    const sdur = iceX2 ? 10 : 5;
+    // ENTORNO NATURAL: en su hábitat (NATURAL_ENV) la velocidad dura el DOBLE (misma velocidad máxima y efectos);
+    // la duración se fija en cada activación (no se acumula) y la recarga posterior no cambia
+    const sdur = 5 * envSpeedMul(hid, w.sc && w.sc.id);
+    this.envBonus = sdur > 5;
     if (type === 'dash' && hid === 'kairo') {
       // Kairo: CARRERA SUPERSÓNICA durante 5 s (aceleración explosiva hasta ×2 de su velocidad), con dos cometas de
       // energía bajo los pies; sin impulso de cohete hacia delante ni salto
-      this.speedBoost(5, 2, 0.45);
+      this.speedBoost(sdur, 2, 0.45);
     } else if (type === 'dash') {
       // Jago: embestida pesada
-      this.speedBoost(5, 1.55, 0.6);
+      this.speedBoost(sdur, 1.55, 0.6);
       this.dashT = 0.36;
       this.vx = (dx / len) * 20;
       this.vz = (dz / len) * 20;
@@ -226,31 +228,31 @@ export class Player {
       this.support = null;
     } else if (type === 'rocket') {
       // Ámbar: arranque explosivo con propulsores de aire en los pies
-      this.speedBoost(5, 2.2, 0.7);
+      this.speedBoost(sdur, 2.2, 0.7);
       this.vx += (dx / len) * 6; this.vz += (dz / len) * 6;
       this.facing = Math.atan2(dx, dz);
     } else if (type === 'pillar') {
-      if (moving) this.speedBoost(5, 1.6, 0.8); // corriendo: túnel de tierra
+      if (moving) this.speedBoost(sdur, 1.6, 0.8); // corriendo: túnel de tierra
       else { w.spawnPillar(this.pos.x, this.pos.z, this.pos.y); this.vy = Math.max(this.vy, 0); } // quieta: pilar de tierra (como siempre)
-    } else if ((type === 'ice' || type === 'surf') && (!w.hasWater || (w.sc && w.sc.id === 'campfire'))) { // en Camp Fire: impulso de velocidad, como en los escenarios sin agua
-      this.speedBoost(type === 'ice' ? sdur : 5, hid === 'halley' ? 1.7 : hid === 'nilo' ? 1.6 : 1.65, 0.8);
-      this.grip = type === 'ice';
-    } else if (type === 'ice') {
+    } else {
+      // HIELO / SURF: funcionan SIEMPRE. Sobre la inundación añaden su efecto de agua (plataforma de hielo, correr
+      // sobre el agua); lejos del agua (o en mundos sin inundación) son un impulso de velocidad normal
+      const wet = w.hasWater && !(w.sc && w.sc.id === 'campfire');
       const tx = this.pos.x + (dx / len) * 3.6, tz = this.pos.z + (dz / len) * 3.6;
-      if (w.waterY - terrainH(tx, tz) < 0.15 && depthHere < 0.15) {
-        this.events.push({ type: 'fail', msg: `${this.hero.name} necesita agua para congelar. Acércate a la inundación.` });
-        return false;
+      if (type === 'ice' && wet && (w.waterY - terrainH(tx, tz) >= 0.15 || depthHere >= 0.15)) {
+        w.spawnIce(tx, tz);
+        this.speedBoost(sdur, 1.4, 0.5); this.grip = true;
+      } else if (type === 'surf' && wet && (depthHere >= 0.2 || this.swimming || this.surfT > 0)) {
+        this.surfT = sdur; this.speedBoost(sdur, 1, 0.1);
+      } else {
+        this.speedBoost(sdur, hid === 'halley' ? 1.7 : hid === 'nilo' ? 1.6 : 1.65, 0.8);
+        this.grip = type === 'ice';
       }
-      w.spawnIce(tx, tz);
-      this.speedBoost(sdur, 1.4, 0.5); this.grip = true;
-    } else if (type === 'surf') {
-      if (depthHere < 0.2 && !this.swimming && this.surfT <= 0) {
-        this.events.push({ type: 'fail', msg: 'Este poder funciona sobre el agua. Acércate a la inundación.' });
-        return false;
-      }
-      this.surfT = 5; this.speedBoost(5, 1, 0.1);
     }
-    this.cd = this.cdMax * this.cdMul + (sdur - 5); // = 5 s activa + 5 s de recarga (BUTTON_TIMES.velocidad); con duración doble, la recarga sigue siendo la misma
+    // = 5 s activa + 5 s de recarga (BUTTON_TIMES.velocidad); con duración doble, la recarga posterior sigue siendo la
+    // misma (solo si de verdad hubo impulso de velocidad: el pilar de Dona, quieta, no lo tiene)
+    const boosted = this.boostAge === 0 && this.boostDur === sdur && this.boostT > 0;
+    this.cd = this.cdMax * this.cdMul + (boosted ? sdur - 5 : 0);
     this.powerAnim = 1;
     this.events.push({ type: 'power', power: type });
     return true;

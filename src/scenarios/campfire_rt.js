@@ -2,10 +2,11 @@ import * as THREE from 'three';
 import { ui } from '../ui.js';
 import { Audio3D as audio } from '../audio.js';
 import { SEE, enableSeeThrough } from '../seethrough.js';
+import { FRUIT_BY_LEVEL, FRUIT_INFO, FruitBatch } from '../fruits.js';
 
 /* ======================================================================
    CAMP FIRE · elementos vivos del nivel
-   · Piñas doradas (coleccionables) y medallas de los lugares secretos
+   · Frutas mágicas coleccionables (la fruta propia de cada mundo, ver fruits.js) y medallas de los lugares secretos
    · Descubrimiento de lugares secretos (cueva tras la cascada, casa del árbol, túnel)
    · Troncos flotantes que van y vienen por el río: plataformas móviles sobre las que se viaja
    · Cascada y arroyo animados, luz propia de las cuevas y escenario transparente dentro de ellas
@@ -15,11 +16,7 @@ const TAU = Math.PI * 2;
 let GEO = null;
 function geos() {
   if (GEO) return GEO;
-  const cone = new THREE.SphereGeometry(0.24, 10, 8); cone.scale(1, 1.45, 1);
   GEO = {
-    cone,
-    scale: new THREE.ConeGeometry(0.1, 0.14, 5),
-    leaf: new THREE.ConeGeometry(0.09, 0.26, 5),
     halo: new THREE.PlaneGeometry(1.4, 1.4),
     disc: new THREE.CylinderGeometry(0.42, 0.42, 0.1, 28),
     ring: new THREE.TorusGeometry(0.46, 0.06, 8, 32),
@@ -61,9 +58,12 @@ void main(){
 }`;
 
 export class CampFireRuntime {
-  constructor(game, cfg) {
+  constructor(game, cfg, levelId) {
     this.g = game;
     this.cfg = cfg;
+    // fruta mágica de este mundo (sustituye a la antigua piña dorada)
+    this.fruit = FRUIT_BY_LEVEL[levelId] || 'dragon_fruit';
+    this.fInfo = FRUIT_INFO[this.fruit];
     this.group = new THREE.Group();
     game.scene.add(this.group);
     this.items = [];
@@ -77,7 +77,7 @@ export class CampFireRuntime {
     this.buildLogs();
     this.buildWater();
     this.buildCaves();
-    enableSeeThrough(game.world.mats);
+    if (cfg.seeThrough !== false) enableSeeThrough(game.world.mats); // (cuevas: el techo se vuelve transparente)
     this.hud();
   }
 
@@ -85,27 +85,22 @@ export class CampFireRuntime {
   buildCollectibles() {
     const G = geos();
     const gold = new THREE.MeshStandardMaterial({ color: 0xffc23a, emissive: 0xff9a10, emissiveIntensity: 0.3, metalness: 0.6, roughness: 0.3 });
-    const goldD = new THREE.MeshStandardMaterial({ color: 0xd8901a, emissive: 0xa85a00, emissiveIntensity: 0.4, metalness: 0.6, roughness: 0.35 });
-    const green = new THREE.MeshStandardMaterial({ color: 0x4ac05a, emissive: 0x1a6a2a, emissiveIntensity: 0.4 });
     const haloM = new THREE.MeshBasicMaterial({ map: haloTex(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0.45 });
     const medalM = new THREE.MeshStandardMaterial({ color: 0x7ae0ff, emissive: 0x2aa0ff, emissiveIntensity: 0.9, metalness: 0.5, roughness: 0.25 });
+    // frutas mágicas: un único lote instanciado para todo el mapa (ver fruits.js)
+    this.batch = new FruitBatch(this.fruit, Math.max(1, this.totalCones));
+    this.group.add(this.batch.group);
+    let fi = 0;
     for (const c of this.cfg.collectibles) {
+      if (c.kind === 'cone') {
+        this.items.push({ ...c, fi: fi++, rotY: Math.random() * TAU, sc: 1, taken: false, ph: Math.random() * TAU, pop: 0 });
+        continue;
+      }
       const root = new THREE.Group();
       root.position.set(c.x, c.y, c.z);
       const body = new THREE.Group();
       root.add(body);
-      if (c.kind === 'cone') {
-        body.add(new THREE.Mesh(G.cone, gold));
-        // escamas de la piña
-        for (let r = 0; r < 4; r++) for (let k = 0; k < 5; k++) {
-          const a = (k / 5) * TAU + r * 0.6, y = -0.22 + r * 0.15, rad = 0.2 * Math.sin(Math.PI * (0.25 + r * 0.17));
-          const sc = new THREE.Mesh(G.scale, goldD);
-          sc.position.set(Math.cos(a) * rad, y, Math.sin(a) * rad);
-          sc.lookAt(sc.position.x * 3, y - 0.3, sc.position.z * 3);
-          body.add(sc);
-        }
-        for (const a of [0, 2.1, 4.2]) { const l = new THREE.Mesh(G.leaf, green); l.position.set(Math.cos(a) * 0.05, 0.38, Math.sin(a) * 0.05); l.rotation.set(Math.sin(a) * 0.5, 0, -Math.cos(a) * 0.5); body.add(l); }
-      } else {
+      {
         const d = new THREE.Mesh(G.disc, medalM); d.rotation.x = Math.PI / 2; body.add(d);
         body.add(new THREE.Mesh(G.ring, gold));
         for (const s of [1, -1]) { const st = new THREE.Mesh(G.star, gold); st.position.z = s * 0.05 - (s < 0 ? 0.06 : 0); body.add(st); }
@@ -117,6 +112,9 @@ export class CampFireRuntime {
       this.group.add(root);
       this.items.push({ ...c, root, body, halo, taken: false, ph: Math.random() * TAU, pop: 0 });
     }
+    // posición inicial de cada fruta (antes del primer fotograma)
+    for (const it of this.items) if (it.fi !== undefined) this.batch.set(it.fi, it.x, it.y, it.z, it.rotY, 1, 0, it.ph, this.g.camera.quaternion);
+    this.batch.commit();
   }
 
   /* ---------- troncos flotantes ---------- */
@@ -183,7 +181,7 @@ export class CampFireRuntime {
     this.refresh();
   }
   refresh() {
-    if (this.el) this.el.innerHTML = `<span title="Piñas doradas">🌰 <b>${this.got}</b>/${this.totalCones}</span><span title="Lugares secretos">🗝️ <b>${this.found.size}</b>/${this.cfg.secrets.length}</span>`;
+    if (this.el) this.el.innerHTML = `<span title="${this.fInfo.plural}"><i class="cf-fruit" style="background:#${this.fInfo.glow.toString(16).padStart(6, '0')}"></i> <b>${this.got}</b>/${this.totalCones}</span>${this.cfg.secrets.length ? `<span title="Lugares secretos">🗝️ <b>${this.found.size}</b>/${this.cfg.secrets.length}</span>` : ''}`;
   }
 
   /* ---------- actualización ---------- */
@@ -191,8 +189,26 @@ export class CampFireRuntime {
     const g = this.g, p = g.player.pos;
     this.t += dt;
     const t = this.t;
-    // piñas y medallas: giran, flotan y se recogen al tocarlas
+    // frutas mágicas y medallas: giran, flotan y se recogen al tocarlas
+    const B = this.batch, camQ = g.camera.quaternion;
     for (const it of this.items) {
+      if (it.fi !== undefined) { // fruta (lote instanciado)
+        if (it.taken) {
+          if (it.pop > 0) {
+            it.pop -= dt;
+            const k = 1 - it.pop / 0.35;
+            if (it.pop <= 0) B.hide(it.fi);
+            else B.set(it.fi, it.x, it.y + k * 1.4, it.z, it.rotY, Math.max(0.01, 1 + k * 0.6 - k * k * 1.5), t, it.ph, camQ);
+          }
+          continue;
+        }
+        it.rotY += dt * 1.4;
+        B.set(it.fi, it.x, it.y + Math.sin(t * 2.2 + it.ph) * 0.12, it.z, it.rotY, 1, t, it.ph, camQ);
+        if (!playing) continue;
+        const dx = p.x - it.x, dz = p.z - it.z, dy = p.y + 0.9 - it.y;
+        if (dx * dx + dz * dz < 1.5 && Math.abs(dy) < 1.7) this.collect(it);
+        continue;
+      }
       if (it.taken) {
         if (it.pop > 0) {
           it.pop -= dt;
@@ -203,13 +219,14 @@ export class CampFireRuntime {
         }
         continue;
       }
-      it.body.rotation.y += dt * (it.kind === 'medal' ? 1.6 : 2.4);
+      it.body.rotation.y += dt * 1.6;
       it.root.position.y = it.y + Math.sin(t * 2.2 + it.ph) * 0.12;
       it.halo.quaternion.copy(g.camera.quaternion);
       if (!playing) continue;
       const dx = p.x - it.x, dz = p.z - it.z, dy = p.y + 0.9 - it.y;
       if (dx * dx + dz * dz < (it.kind === 'medal' ? 2.2 : 1.5) && Math.abs(dy) < 1.7) this.collect(it);
     }
+    B.commit();
     // troncos flotantes
     for (const L of this.logs) {
       const nx = L.cx + Math.sin(t * L.sp + L.ph) * L.amp;
@@ -266,7 +283,7 @@ export class CampFireRuntime {
     it.taken = true;
     it.pop = 0.35;
     const { x, y, z } = it;
-    for (let i = 0; i < 8; i++) g.fx.sparkle(x, y, z, it.kind === 'medal' ? 0x7ae0ff : 0xffd040, 3);
+    for (let i = 0; i < 8; i++) g.fx.sparkle(x, y, z, it.kind === 'medal' ? 0x7ae0ff : this.fInfo.glow, 3);
     if (it.kind === 'medal') {
       this.medals++;
       g.addScore(250);
@@ -279,9 +296,9 @@ export class CampFireRuntime {
       audio.tone(880 + (this.got % 5) * 90, 0.09, 'triangle', 0.07, 1320);
       if (this.got === this.totalCones) {
         g.addScore(500);
-        ui.banner('good', '🌰 ¡Todas las piñas doradas!', '+500 puntos de bonus');
+        ui.banner('good', `✨ ¡Todas las ${this.fInfo.plural}!`, '+500 puntos de bonus');
         audio.success();
-      } else if (this.got % 10 === 0) ui.alert(`🌰 ${this.got} piñas doradas`, 1800);
+      } else if (this.got % 10 === 0) ui.alert(`✨ ${this.got} ${this.fInfo.plural}`, 1800);
     }
     this.refresh();
   }

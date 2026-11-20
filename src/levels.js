@@ -6,9 +6,9 @@ export const LEVELS = [
     n: 1, id: 'campfire', scenario: 'campfire', icon: '🌲', kicker: 'MUNDO 1 · CAMP FIRE', name: 'Camp Fire', place: 'Paradise (California): pinos gigantes, el pueblo, el río y el campamento de rescate', color: '#E63946', d: 1,
     desc: 'El fuego avanza por los pinares que rodean Paradise. Explora el bosque, el río, la cascada, el pueblo y las laderas quemadas: encuentra a las personas y los animales en peligro y llévalos al campamento de rescate.',
     time: 600, victims: 12, animalRatio: 0.45, minSep: 16, minStart: 22, hz: 0.9, obstacles: 0, best: ['agua', 'hielo', 'fuego'],
-    gauge: 'FUEGO', intro: '🌲 CAMP FIRE · PARADISE', introSub: 'Explora, rescata y lleva a todos al campamento · busca las piñas doradas y los lugares secretos',
+    gauge: 'FUEGO', intro: '🌲 CAMP FIRE · PARADISE', introSub: 'Explora, rescata y lleva a todos al campamento · busca las frutas del dragón y los lugares secretos',
     failTitle: 'El fuego ha alcanzado Paradise', reward: null,
-    mechanic: 'El fuego se propaga por el bosque y el pueblo. Hay piñas doradas, plataformas, cuevas y 3 lugares secretos por descubrir.',
+    mechanic: 'El fuego se propaga por el bosque y el pueblo. Hay frutas del dragón mágicas, plataformas, cuevas y 3 lugares secretos por descubrir.',
     boss: 'fenix', bossName: 'Fénix Oscuro', bossTitle: 'Ignivar, el Fénix Oscuro',
   },
   {

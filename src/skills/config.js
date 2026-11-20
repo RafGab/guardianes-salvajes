@@ -265,6 +265,27 @@ export const HERO_SKILLS = {
 
 // TIEMPOS DE LOS BOTONES (temporizadores independientes; nunca pausan el juego ni bloquean el movimiento).
 // act = segundos que dura activa · rec = recarga que empieza al terminar. ARMA y ESPECIAL conservan su propia recarga.
+/* ======================================================================
+   VENTAJA DEL ENTORNO NATURAL (escalable): cada héroe tiene uno o varios mundos que son su hábitat.
+   Allí su habilidad de VELOCIDAD dura el DOBLE (misma velocidad máxima y mismos efectos); en cualquier otro
+   mundo funciona igual con su duración normal. Es una BONIFICACIÓN, nunca una restricción.
+   Para un héroe o mundo nuevo basta con añadir aquí su entrada (los ids son los de levels.js / escenarios).
+   ====================================================================== */
+export const NATURAL_ENV = {
+  jago: ['rockslide'],   // Jaglión: roca
+  kairo: ['fire'],       // Komodo: volcán
+  kyra: ['ice'],         // Zorro ártico: nieve y hielo
+  halley: ['sandstorm'], // Fénec: desierto
+  lira: ['quake'],       // Lince: tierra (terremoto)
+  ambar: ['hurricane'],  // Águila: viento (huracán)
+  nilo: ['flood'],       // Nutria: agua (tsunami)
+};
+export const ENV_SPEED_MUL = 2;
+// multiplicador de DURACIÓN de la velocidad del héroe en el mundo indicado (1 fuera de su hábitat)
+export function envSpeedMul(heroId, worldId) {
+  return worldId && (NATURAL_ENV[heroId] || []).includes(worldId) ? ENV_SPEED_MUL : 1;
+}
+
 export const BUTTON_TIMES = {
   velocidad: { act: 5, rec: 5 },
   poder: { act: 6, rec: 7 },   // PODER: además de su ataque, 6 s de poder aumentado (+25 % de daño)

@@ -32,6 +32,7 @@ import { spawnOrcs } from './orcs.js';
 const HERO_SKILLS_CD = (id) => (HERO_SKILLS[id] && HERO_SKILLS[id].flight ? HERO_SKILLS[id].flight.cd : 4);
 import { IS_TOUCH } from './platform.js';
 import { CampFireRuntime } from './scenarios/campfire_rt.js';
+import { FRUIT_BY_LEVEL, placeFruitSpots } from './fruits.js';
 import { BossArena, ARENA } from './arena.js';
 import { clearPortalView } from './portalview.js';
 import { CenizaraRuntime } from './scenarios/cenizara_rt.js';
@@ -544,6 +545,7 @@ export class Game {
     this.rope = null;
     if (this.boss) this.boss.dispose();
     this.boss = null;
+    this.bossPhase = null; this.prepToken = (this.prepToken || 0) + 1; // cancela una transición al jefe pendiente
     this.skills.reset(); // limpia habilidades, esbirros, proyectiles y efectos de la partida anterior
     this.combat.reset();
     this.combat.clearProps();
@@ -601,7 +603,14 @@ export class Game {
     this.hazards.reset();
     // elementos vivos propios del nivel (CAMP FIRE: coleccionables, secretos, troncos móviles, cascada, cuevas)
     if (this.levelRt) this.levelRt.dispose();
-    this.levelRt = world.sc.campfire ? new CampFireRuntime(this, world.sc.campfire) : null;
+    // frutas mágicas: Camp Fire y Volcán conservan las posiciones de sus antiguas piñas; el resto de mundos con
+    // fruta asignada (FRUIT_BY_LEVEL) las reparte por sus puntos accesibles
+    let rtCfg = world.sc.campfire;
+    if (!rtCfg && FRUIT_BY_LEVEL[level.id]) {
+      const avoid = [...slots, ...this.pickups.items];
+      rtCfg = { collectibles: placeFruitSpots(level.id, world, CFG, avoid), secrets: [], caves: [], logs: [], seeThrough: false };
+    }
+    this.levelRt = rtCfg && rtCfg.collectibles.length ? new CampFireRuntime(this, rtCfg, level.id) : null;
     if (!this.levelRt) { const el = document.getElementById('cf-hud'); if (el) el.style.display = 'none'; }
     // CENIZARA: lava, plataformas móviles, aspas, cuerdas, géiseres y obstáculos destructibles
     if (this.levelRt2) this.levelRt2.dispose();
@@ -874,8 +883,9 @@ export class Game {
   /* ---------- combate contra el jefe de nivel ---------- */
   // Descubrimiento de la zona del jefe: el juego se detiene y main.js abre la selección y formación del equipo
   prepareBoss() {
-    if (this.state === 'prep') return;
+    if (this.state === 'prep' || this.boss) return; // nunca dos combates a la vez
     this.state = 'prep';
+    this.setBossPhase('PREPARACION');
     this.player.locked = true;
     this.player.vx = this.player.vz = this.player.vy = 0;
     this.skills.reset();
@@ -887,11 +897,9 @@ export class Game {
     setTimeout(() => {
       if (tok !== this.prepToken || this.state !== 'prep') return; // la partida cambió mientras tanto
       try {
-        // EQUIPO DE 3: entra el héroe con el que se ha jugado el mundo y se puede cambiar entre los 3 héroes durante
-        // el combate (el equipo guardado completa los huecos; si falta alguno, los primeros héroes disponibles)
-        const ids = [this.hero.id];
-        for (const id of [...Save.team, ...HEROES.map((h) => h.id)]) if (ids.length < TEAM.size && !ids.includes(id) && HEROES.some((h) => h.id === id)) ids.push(id);
-        this.startBoss(ids);
+        // COMBATE INDIVIDUAL: lucha EXCLUSIVAMENTE el héroe que ha completado el mundo, con su vida, mejoras y
+        // recargas de la misión (1 héroe contra el jefe y sus soldados; sin compañeros ni cambios de héroe)
+        this.startBoss([this.hero.id]);
       } catch (e) {
         // nunca dejar la pantalla bloqueada: si algo falla al montar el combate, se informa y se puede seguir
         console.error('combate de jefe', e);
@@ -907,6 +915,11 @@ export class Game {
   // Comienza el combate con el equipo elegido (ids en orden; el primero sale al campo)
   startBoss(ids) {
     const { scene, world, player, chase, camera } = this;
+    // un solo combate: si quedara un jefe anterior (reinicio de eventos), se retira antes de crear el nuevo
+    if (this.boss) { this.boss.dispose(); this.boss = null; }
+    this.combat.reset();
+    this.allies.clear();
+    this.setBossPhase('INTRO');
     if (!this.team.on) this.saveHp(true); // la vida de la exploración pasa al combate
     if (ids && ids.length) this.team.set(ids);
     else if (!this.team.on) this.team.set([this.hero.id]);
@@ -936,7 +949,7 @@ export class Game {
     enableSeeThrough(this.world.mats); // el escenario que tape el combate se vuelve transparente
     this.allyWin = false; this.victoryT = 0; this.foesMsg = ''; this.victoryShown = false;
     this.bossStats = { t0: performance.now() / 1000, soldiers: 0, staggers: 0 }; // para la pantalla de victoria
-    this.team.allOnField = true; // los tres héroes están en el campo combatiendo (nadie descansa en reserva)
+    this.team.allOnField = true; // (combate individual: el equipo es solo el héroe que completó el mundo)
     this.pickups.placeArena(this.mission, arena);
     // (sin aliados: el combate contra el jefe es individual)
     this.setBossCamera();
@@ -949,6 +962,26 @@ export class Game {
     this.spawnFormation();
     setTimeout(() => { if (this.boss) ui.bossFight(true); }, 1500);
     ui.setTeamHud(this.team.members, this.team.active, (i) => this.switchTeamTo(i));
+  }
+  /* ESTADOS DEL COMBATE DE JEFE (transiciones controladas):
+     PREPARACION → INTRO → COMBATE → JEFE_DERROTADO → VICTORIA → FINALIZACION (y null fuera del combate).
+     Solo se avanza hacia delante; un salto hacia atrás indica un evento repetido y se ignora. */
+  setBossPhase(ph) {
+    const ORDER = ['PREPARACION', 'INTRO', 'COMBATE', 'JEFE_DERROTADO', 'VICTORIA', 'FINALIZACION'];
+    const cur = ORDER.indexOf(this.bossPhase), nxt = ORDER.indexOf(ph);
+    if (ph !== 'PREPARACION' && cur >= 0 && nxt <= cur) return false;
+    this.bossPhase = ph;
+    this.bossPhaseT = 0;
+    return true;
+  }
+  // Vigilancia del combate: en COMBATE el jugador nunca debe quedar bloqueado (control y habilidades disponibles)
+  bossWatchdog(real) {
+    this.bossPhaseT = (this.bossPhaseT || 0) + real;
+    if (this.bossPhase !== 'COMBATE' && this.bossPhase !== 'JEFE_DERROTADO') return;
+    const p = this.player;
+    if (p.locked) { p.locked = false; console.warn('combate de jefe: controles desbloqueados por seguridad'); }
+    // la presentación ya terminó: nada debe seguir retenido
+    if (this.boss && this.boss.introHold > 0 && this.bossPhaseT > 1) { this.boss.introHold = 0; if (this.boss.anim) this.boss.anim.dy = 0; }
   }
   // Cámara de combate: se ajusta al tamaño del jefe y del héroe en el campo (NUNCA se escala al héroe)
   setBossCamera() {
@@ -997,6 +1030,7 @@ export class Game {
     if ((this.bench || []).length && this.bossIntroT < TEAM.introT - 3.0) { this.bench = []; this.allies.sync(); }
     if (this.bossIntroT <= 0) {
       this.player.locked = false;
+      this.setBossPhase('COMBATE');
       const solo = this.team.members.length < 2;
       ui.banner('find', '⚔ ¡A combatir!', solo ? `${this.hero.name} se enfrenta en solitario al jefe${IS_TOUCH ? '' : ' · Q / clic: golpe con el arma · 2 poder · 3 escudo'}` : IS_TOUCH ? 'Toca los retratos para cambiar de héroe' : 'Q / clic: golpe con el arma · 2 poder · 3 escudo · Z / X cambian de héroe');
     }
@@ -1344,7 +1378,9 @@ export class Game {
       if (this.victoryT <= 0) this.showBossVictory();
       return;
     }
+    if (bossDead && this.bossPhase === 'COMBATE') this.setBossPhase('JEFE_DERROTADO');
     if (bossDead && b.deathT > 1.1 && left === 0) {
+      this.setBossPhase('VICTORIA');
       this.allyWin = true;
       this.player.celebrate = true;
       this.player.celebrateTimer = 0;
@@ -1390,12 +1426,15 @@ export class Game {
     ui.bossVictory({ icon: b.icon, name: b.name, title: b.title, team: this.team.members, rewards }, () => { this.victoryShown = false; this.finishBoss(); });
   }
   teamDefeated() {
+    this.setBossPhase('FINALIZACION');
     if (this.boss) this.boss.victory = true;
     this.allies.clear();
-    ui.banner('find', '💔 ¡El equipo ha caído!', `${this.boss ? this.boss.name : 'El jefe'} sigue en pie. Prueba otra combinación de héroes.`);
+    ui.banner('find', `💔 ¡${this.hero.name} ha caído!`, `${this.boss ? this.boss.name : 'El jefe'} sigue en pie. Recupérate y vuelve a intentarlo.`);
     this.end(false, 'El equipo ha sido derrotado');
   }
   finishBoss() {
+    if (!this.boss || this.bossDone) return; // «Continuar» pulsado dos veces
+    this.setBossPhase('FINALIZACION');
     this.bossDone = true;
     this.allies.clear();
     this.allyWin = false;
@@ -1607,6 +1646,7 @@ export class Game {
     if (this.boss && this.state === 'playing') {
       this.team.update(dtg);
       this.updateBossIntro(real);
+      this.bossWatchdog(real);
       this.updateBossHud(real);
     }
     if (this.boss && this.state === 'playing') {
