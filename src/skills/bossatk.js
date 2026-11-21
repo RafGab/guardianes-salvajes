@@ -918,16 +918,17 @@ class FenixAtk extends Attack {
   build() {
     const c = this.cfg;
     return [
-      { name: 'elevarse', dur: c.riseT, enter: () => { this.flap = true; this.ctx.ui.alert('🔥 ¡El Fénix Oscuro se eleva! Esquiva las llamas que caen', 2200); this.boom(0.4, 300, 0.6); }, tick: (dt, k) => { this.b.anim.dy = c.riseH * Math.sin(k * Math.PI * 0.5); this.b.anim.rx = -0.25 * k; } },
+      { name: 'elevarse', dur: c.riseT, enter: () => { this.flap = true; this.clip = 'run'; this.ctx.ui.alert('🔥 ¡El Fénix Oscuro se eleva! Esquiva las llamas que caen', 2200); this.boom(0.4, 300, 0.6); }, tick: (dt, k) => { this.b.anim.dy = c.riseH * Math.sin(k * Math.PI * 0.5); this.b.anim.rx = -0.25 * k; } },
       { name: 'lluvia', dur: 0.4 + this.nZones() * c.zoneGap + c.fallT + 0.3, enter: this.enterRain, tick: this.tickRain, exit: () => this.zones.forEach((z) => z.tg.kill()) },
       { name: 'picado-aviso', dur: c.diveTelegraph, enter: this.enterDiveTg, tick: this.tickDiveTg },
       { name: 'picado', dur: 1.2, enter: this.enterDive, tick: this.tickDive, exit: () => { if (this.strip) this.strip.kill(); } },
-      { name: 'recuperacion', dur: c.recover, enter: () => { this.flap = false; }, tick: (dt, k) => { this.b.anim.dy = lerp(this.b.anim.dy, 0, k); this.b.anim.rx = lerp(this.b.anim.rx, 0, k); } },
+      { name: 'recuperacion', dur: c.recover, enter: () => { this.flap = false; this.clip = 'idle'; }, tick: (dt, k) => { this.b.anim.dy = lerp(this.b.anim.dy, 0, k); this.b.anim.rx = lerp(this.b.anim.rx, 0, k); } },
     ];
   }
   nZones() { return this.cfg.zones[Math.min(2, (this.b.phase || 1) - 1)]; }
   enterRain() {
     const c = this.cfg, n = this.nZones();
+    this.clip = 'attack'; // con esqueleto (GLB): batidas de ala en cada lanzamiento
     this.zones = [];
     for (let i = 0; i < n; i++) {
       const a = this.b.aimPoint(), j = i === 0 ? 0 : 2.6; // la primera, sobre el héroe; las demás alrededor
@@ -971,9 +972,10 @@ class FenixAtk extends Attack {
     this.to = { x: b.pos.x + (dx / l) * ext, z: b.pos.z + (dz / l) * ext };
     this.strip = this.track(this.vfx.telegraph('strip', { x: this.from.x, z: this.from.z, x2: this.to.x, z2: this.to.z, width: this.cfg.diveWidth * 1.4, color: 0xff3a10, opacity: 0.4 }));
     this.ctx.ui.alert('🔥 ¡Va a caer en picado! Sal de la franja', 1800);
+    this.clip = 'cele'; // con esqueleto: se yergue con las alas abiertas antes de lanzarse
   }
   tickDiveTg(dt, k) { const b = this.b; this.strip.setProgress(k); b.facing = Math.atan2(this.to.x - b.pos.x, this.to.z - b.pos.z); b.anim.rx = -0.4 * k; this.shake(0.02 + 0.03 * k); }
-  enterDive() { this.u = 0; this.hitDone = false; this.boom(0.6, 260, 0.8); this.len = Math.hypot(this.to.x - this.from.x, this.to.z - this.from.z) || 1; }
+  enterDive() { this.clip = 'charge'; this.u = 0; this.hitDone = false; this.boom(0.6, 260, 0.8); this.len = Math.hypot(this.to.x - this.from.x, this.to.z - this.from.z) || 1; }
   tickDive(dt) {
     const c = this.cfg, b = this.b, st = this.stages[this.i];
     this.u = Math.min(1, this.u + (c.diveSpeed * dt) / this.len);

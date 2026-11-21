@@ -445,6 +445,7 @@ export class BossBase {
     this.chargeName = flavor.chargeName; this.slamName = flavor.slamName; this.S = bossScale(kind); // dimensiones objetivo (scale.js)
     this.model = makeBossModel(kind);
     this.baseScale = this.model.unit;
+    this.dyK = this.model.source === 'glb' && this.S.metricDy ? 1 / this.baseScale : 1; // anim.dy en metros (Fénix con GLB)
     this.heavy = true; // los jefes casi no se empujan ni se atraen
     this.st = newStatus(); // ralentizado / inmovilizado / cegado / marcado
     this.kbx = 0; this.kbz = 0;
@@ -547,7 +548,7 @@ export class BossBase {
     else if (s === 'charge') this.playClip('charge', { speed: 1.3 });
     else if (s === 'tg_slam') this.playClip('attack', { once: true, speed: 0.5, fade: 0.15 }); // carga el golpe (alza brazos / patas)
     else if (s === 'slam') this.playClip('attack', { once: true, speed: 1.4, fade: 0.05 });
-    else if (s === 'sig') this.playClip('attack', { speed: 0.8 });
+    else if (s === 'sig') this.playClip(this.sig && this.sig.clip && this.model.clips[this.sig.clip] ? this.sig.clip : 'attack', { speed: 0.8 }); // la habilidad puede pedir su clip (Fénix: aleteo / picado)
     else if (s === 'stagger') this.playClip(this.model.clips.stagger ? 'stagger' : 'hit', { once: true, fade: 0.06 }); // golpe poderoso: se tambalea
     else if (s === 'guard') this.playClip(this.model.clips.guard ? 'guard' : 'idle', { fade: 0.12 });            // se cubre
     else if (this.hitAnimT > 0) this.playClip('hit', { once: true, fade: 0.08 });
@@ -907,7 +908,7 @@ export class BossBase {
     const pk = this.punch > 0 ? this.punch * this.punch : 0;
     if (pk) { this.model.root.position.x += (this.punchDx || 0) * pk * 0.45; this.model.root.position.z += (this.punchDz || 0) * pk * 0.45; }
     const bob = this.state === 'idle' ? Math.sin(this.t * 2.2) * 0.04 : 0;
-    this.model.body.position.y = bob + (this.model.flies ? Math.sin(this.t * 1.4) * 0.3 : 0) + this.anim.dy;
+    this.model.body.position.y = (bob + (this.model.flies ? Math.sin(this.t * 1.4) * 0.3 : 0) + this.anim.dy) * this.dyK;
     this.model.body.rotation.x = this.anim.rx - 0.16 * pk;
     this.model.body.rotation.y = this.anim.spin;
     const windup = this.state === 'tg_charge' || this.state === 'tg_slam';
@@ -938,6 +939,9 @@ export class BossBase {
       this.model.flames.forEach((f, i) => f.scale.set(1, 0.7 + 0.5 * Math.abs(Math.sin(this.t * 11 + i * 1.7)), 1));
       if (this.model.neck) this.model.neck.rotation.x = Math.sin(this.t * 1.7) * 0.08 + (this.state === 'tg_slam' ? -0.4 : 0);
       if (Math.random() < 0.35) { const p = this.model.root.position; this.ctx.fx.ember(p.x + rnd(-1.2, 1.2), p.y + rnd(1, 3) * this.baseScale, p.z + rnd(-1.2, 1.2), 1); } // cenizas ardientes
+    } else if (this.kind === 'fenix' && Math.random() < 0.35) { // FÉNIX con GLB: las alas las mueve su esqueleto; conserva las cenizas ardientes
+      const p = this.model.root.position, H = this.S.height;
+      this.ctx.fx.ember(p.x + rnd(-1.2, 1.2), p.y + this.model.body.position.y * this.baseScale + H * rnd(0.25, 0.75), p.z + rnd(-1.2, 1.2), 1);
     }
     if (this.model.shards) {
       this.model.shards.forEach((sg, i) => {

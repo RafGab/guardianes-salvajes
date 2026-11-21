@@ -34,9 +34,10 @@ export const BOSS_SCALE = {
   fenrir:    { nombre: 'Fenrir', tipo: 'Jefe · cuadrúpedo', height: 3.8, radius: 2.2, glb: 'fenrir.glb', yaw: 0, notas: 'Enorme por volumen, altura al lomo y longitud.' },
   long:      { nombre: 'Dragón Long', tipo: 'Jefe · dragón volador', height: 4.0, radius: 1.4, glb: 'long.glb', yaw: 0, fly: 2.0, notas: 'Vuela; el modelo entregado es un dragón enroscado (poca longitud).' },
   kraken:    { nombre: 'Kraken', tipo: 'Jefe · cefalópodo', height: 5.5, radius: 1.9, glb: 'kraken.glb', yaw: 0, notas: 'Cuerpo visible 5–6 m; los tentáculos del modelo dan alcance.' },
-  // FÉNIX OSCURO (Ignivar, Camp Fire): aún SIN modelo GLB → se usa el modelo procedural animado de bosses.js.
-  // Cuando exista public/models/fenix.glb (con esqueleto y animaciones como los demás jefes), basta con poner aquí glb: 'fenix.glb'.
-  fenix:     { nombre: 'Fénix Oscuro', tipo: 'Jefe · ave de fuego voladora', height: 4.2, radius: 1.6, glb: null, yaw: 0, fly: 2.4, notas: 'Falta fenix.glb: modelo procedural de reserva.' },
+  // FÉNIX OSCURO (Ignivar, Camp Fire): modelo DARK_FENIX (H2.5 MAX) con esqueleto de 51 huesos (alas, cuello, cabeza,
+  // patas y 5 plumas de cola) y 10 animaciones de vuelo (tools/rig_geo.mjs + tools/make_fenix_anims.mjs).
+  // metricDy: las subidas y bajadas de sus ataques (anim.dy) están en metros, como en su modelo procedural de reserva.
+  fenix:     { nombre: 'Fénix Oscuro', tipo: 'Jefe · ave de fuego voladora', height: 4.2, radius: 1.6, glb: 'fenix.glb', yaw: 0, fly: 2.4, metricDy: true, notas: 'Alas abiertas: envergadura ≈ 6 m.' },
   // Jefe final de Apocalia: sin modelo GLB (procedural). PROPUESTA NUEVA — no está en la tabla del prompt.
   cataclismo: { nombre: 'El Cataclismo', tipo: 'Jefe final · elemental', height: 4.6, radius: 1.7, glb: null, yaw: 0, notas: 'Propuesta: no figuraba en la tabla del prompt.' },
 };

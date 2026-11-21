@@ -16,6 +16,8 @@ import { ui } from '../ui.js';
 import { Skill, DEG, ease, lerp, clamp, V, NEUTRAL, SKIP_TAGS, makeElastic, boneWorld, powerTail } from './base.js';
 import { POWER_CLASSES, AIM_MAX, aimPoint, aimShow, aimHide } from './powers.js';
 import { POWER2_CLASSES } from './powers2.js';
+import { findSwingAnchor, swingStages, SwingMixin, JagTongueSkill } from './swing.js';
+import { POWER3_CLASSES } from './powers3.js';
 import { SandStorm, WaterGate, SpringWard, puddle, takeGate, returnGate } from './fx3.js';
 import { smotherFires } from './envreact.js';
 const damp1 = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
@@ -55,8 +57,13 @@ class TailSkill extends Skill {
     this.target = this.combat.aimTarget(p.pos.x, p.pos.z, p.facing, d.coneDeg * DEG, d.range);
     if (this.target) this.mode = this.target.heavy ? 'hit' : 'pull';
     else {
-      this.anchor = this.findAnchor();
-      this.mode = this.anchor ? 'swing' : 'whiff';
+      // BALANCEO AL ESTILO ARAÑA (skills/swing.js) hacia un anclaje alto y lejano; si el saliente está cerca,
+      // la cola sigue sirviendo para TREPAR a él como siempre
+      const ledge = this.findAnchor(), web = findSwingAnchor(this, d.range + 4, 60);
+      const ledgeNear = ledge && Math.hypot(ledge.x - p.pos.x, ledge.z - p.pos.z) < 6;
+      if (ledge && (ledgeNear || !web)) { this.anchor = ledge; this.mode = 'swing'; }
+      else if (web) { this.anchor = web; this.mode = 'web'; this.cdFactor = 0.3; this.swingColor = 0xffd080; } // recarga corta: se encadena
+      else this.mode = 'whiff';
     }
     if (this.mode === 'whiff') { this.cdFactor = d.whiffCdFactor; ui.banner('find', '🪢', 'No hay nada al alcance de la cola'); }
     // cola con el pelaje de Jaglion (naranja con rosetas oscuras) y su borla al final; sale de la grupa y
@@ -129,6 +136,10 @@ class TailSkill extends Skill {
       pose.rx = lerp(-0.25, 0.3, k);
       pose.sy = 1 + 0.12 * k;
     }, exit: () => this.grab() });
+    if (this.mode === 'web') {
+      return [...st.slice(0, 2), ...swingStages(this, { color: 0xffd080, shoot: d.hookSpeed }),
+        { name: 'recuperacion', dur: d.recover, enter: () => { this.rope.kill(); this.clearBones(); }, tick: (dt, k) => { pose.rx = lerp(pose.rx, 0, k); pose.sy = lerp(pose.sy, 1, k); } }];
+    }
     if (this.mode === 'swing') {
       st.push({ name: 'balanceo', dur: Math.max(0.35, this.p.pos.distanceTo(this.anchor) / d.swingSpeed * 1.25), enter: this.enterSwing, tick: this.tickSwing });
       st.push({ name: 'trepado', dur: d.climbT || 0.35, tick: this.tickClimb, exit: this.exitClimb });
@@ -1022,7 +1033,8 @@ class BlinkSkill extends Skill {
   }
 }
 
-const SKILLS = { tail: TailSkill, haboob: HaboobSkill, seasons: SeasonsSkill, wheel: WheelSkill, dive: DiveSkill, tongue: TongueSkill, blink: BlinkSkill, ...POWER_CLASSES, ...POWER2_CLASSES };
+Object.defineProperties(TailSkill.prototype, Object.getOwnPropertyDescriptors(SwingMixin));
+const SKILLS = { tail: TailSkill, jtongue: JagTongueSkill, haboob: HaboobSkill, seasons: SeasonsSkill, wheel: WheelSkill, dive: DiveSkill, tongue: TongueSkill, blink: BlinkSkill, ...POWER_CLASSES, ...POWER2_CLASSES, ...POWER3_CLASSES };
 
 /* ====================================================================== */
 /*  Gestor: una habilidad principal a la vez + poderes de fondo (vuelo,    */
@@ -1168,6 +1180,9 @@ export class HeroSkills {
       // las habilidades NO se bloquean entre sí: la que estaba en curso sigue en segundo plano y empieza la nueva
       else { this.bg.push(this.cur); this.cur = null; }
     }
+    // ENCADENAR BALANCEOS (Jaglion): si cuelga de la cola o de la lengua y lanza la otra herramienta, se suelta
+    // con el impulso del péndulo y la nueva se engancha a otro punto sin perder la velocidad
+    if (Cls.prototype.letGo) this.letGoSwing();
     const p = this.g.player, wasScripted = p.scripted;
     const sk = new Cls(this, def);
     sk.key = key;
@@ -1187,6 +1202,10 @@ export class HeroSkills {
     if (g.weapons && role && role[1] === 'escudo') g.weapons.defend(1.4); // con el arma fuera: postura de defensa
     return { cdFactor: sk.cdFactor };
   }
+
+  // ¿Hay un balanceo en curso? (para dejar lanzar la otra herramienta aunque el héroe vaya guiado)
+  get swinging() { return [this.cur, ...this.bg].some((s) => s && s.swinging); }
+  letGoSwing() { let ok = false; for (const s of [this.cur, ...this.bg]) if (s && s.swinging && s.letGo('boton')) ok = true; return ok; }
 
   update(dt) {
     if (this._needWarm) { this._needWarm = false; this.prewarm(); }

@@ -8,6 +8,7 @@ import { propModel } from '../props.js';
 import { auroraShield, frostArea } from './magicfx.js';
 import { MirageWard, TsunamiWave, WaterVortex, FoamPool, WaterShield, MagmaGeyser, ObsidianSpikes, CrystalDebris } from './fx4.js';
 import { envSpeedMul } from './config.js';
+import { crackDecal } from './powers3.js';
 
 // PODERES ESPECIALES NUEVOS (3 por héroe; la Zorra Ártica tiene 4).
 // Cada poder es una lista de etapas PREPARACIÓN → EJECUCIÓN → RECUPERACIÓN (como skills/hero.js).
@@ -451,6 +452,29 @@ export class BloodMoonSkill extends Skill {
     this.shake(0.08);
     this.chargeK = 0; this.throwK = 0;
     this.setBones((B, dt, t, fx) => this.chargeBones(B, fx, t));
+    // FASE 1 · el terreno se agrieta a su alrededor y la energía carmesí brota de las grietas
+    this.cracks = crackDecal(d.radius * 0.62);
+    this.prop(this.cracks.m);
+    this.track({ kill: () => this.cracks.dispose() });
+    this.crackK = 0; this.quakeT = 0;
+  }
+  // grietas bajo Dona: crecen con la carga, laten y sueltan energía roja; vibración del suelo
+  tickCracks(dt, target) {
+    const C = this.cracks, p = this.p;
+    if (!C) return;
+    this.crackK = Math.min(target, this.crackK + dt * 0.9);
+    if (!this.waveOrigin) C.m.position.set(p.pos.x, p.pos.y + 0.04, p.pos.z);
+    C.U.uReveal.value = this.crackK; C.U.uT.value = this.t;
+    const o = C.m.position, n = 1 + Math.round(3 * this.crackK);
+    for (let i = 0; i < n; i++) { // energía que sube de las grietas ya abiertas
+      const q = C.pts[Math.floor(Math.random() * C.pts.length)];
+      if (!q || Math.hypot(q[0], q[1]) > this.crackK) continue;
+      const x = o.x + q[0] * C.radius, z = o.z - q[1] * C.radius;
+      this.g.fx.spark.emit(x, terrainH(x, z) + 0.05, z, rnd(-0.2, 0.2), rnd(1.5, 3.5), rnd(-0.2, 0.2), rnd(0.4, 0.8), 0.08, 0.02, 0xff5040, 0x8a0008, 0.9, 0, -1, 1);
+    }
+    this.quakeT -= dt;
+    if (this.quakeT <= 0) { this.quakeT = 0.35 - 0.2 * this.crackK; this.shake(0.025 + 0.05 * this.crackK); if (Math.random() < 0.4) this.g.fx.dustPuff(o.x + rnd(-2, 2) * this.crackK, o.y, o.z + rnd(-2, 2) * this.crackK, 0.8); }
+    this.pose.rz = Math.sin(this.t * 40) * 0.012 * this.crackK; // el cuerpo vibra con la energía contenida
   }
   // postura de concentración EN EL SUELO: pies plantados, rodillas flexionadas, manos juntas delante del pecho
   // (al lanzar, los brazos se abren hacia delante y arriba)
@@ -476,6 +500,7 @@ export class BloodMoonSkill extends Skill {
   }
   tickCharge(dt, k) {
     const pose = this.pose;
+    this.tickCracks(dt, 0.25 + 0.5 * k);
     this.chargeK = ease(Math.min(1, k / 0.4));
     pose.dy = 0; pose.spin = 0; pose.rx = 0.1 * this.chargeK; pose.sy = 1 - 0.04 * this.chargeK; // en el suelo: baja el centro de gravedad
     const h = this.handsPos(), c = this.center(0.45);
@@ -494,6 +519,7 @@ export class BloodMoonSkill extends Skill {
   }
   tickHold(dt) {
     const pose = this.pose, t = this.t;
+    this.tickCracks(dt, 1); // las grietas terminan de extenderse mientras espera la orden
     this.chargeK = 1;
     pose.dy = 0; pose.spin = 0; pose.rx = 0.1; pose.sy = 0.96 + 0.01 * Math.sin(t * 3.2);
     const h = this.handsPos(), pul = 1 + 0.12 * Math.sin(t * 9) + 0.06 * Math.sin(t * 23);
@@ -515,12 +541,11 @@ export class BloodMoonSkill extends Skill {
     this.g.chase.fovKick = 10;
     for (let i = 0; i < 4; i++) this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 0.5 + i, r1: d.radius * (1 - i * 0.12), dur: 0.7 + i * 0.25, color: i % 2 ? 0x8a0008 : 0xff2a2a, opacity: 0.9 });
     this.wave = this.track(this.v2.shell(this.center(0.4), { r: 1, color: 0x400005, rim: 0xff3030, opacity: 0.9, power: 1.6, core: 0.12, life: d.exec }));
-    const hitNow = this.combat.inCircle(p.pos.x, p.pos.z, d.radius);
-    for (const t of hitNow) {
-      this.hit(t, d.damage);
-      const { dx, dz } = this.awayFrom(t, p.pos.x, p.pos.z);
-      this.combat.push(t, dx, dz, d.force);
-    }
+    // FASE 2 · OLEADA DE TIERRA CARMESÍ: sale de Dona y avanza por el terreno; golpea a cada enemigo cuando la
+    // onda le alcanza (no todos a la vez) y lo lanza hacia fuera
+    this.waveOrigin = p.pos.clone();
+    this.waveHit = new Set();
+    this.rockT = 0;
     // rayos de la luna: uno por enemigo (los demás caen alrededor, solo efecto)
     const m = this.moon.group.position, tg = this.combat.targets();
     for (let i = 0; i < d.bolts; i++) {
@@ -530,11 +555,11 @@ export class BloodMoonSkill extends Skill {
       this.v2.beam(V(at.x, terrainH(at.x, at.z), at.z), V(at.x, terrainH(at.x, at.z) + 14, at.z), { r: 0.6, color: 0xff2a20, opacity: 0.8, life: 0.9 });
       if (t) this.hit(t, d.boltDamage);
     }
-    for (const t of hitNow) this.combat.mark(t, d.markT); // marca DESPUÉS del golpe: el siguiente ataque del equipo hace +50 %
     for (let i = 0; i < 30; i++) { const a = rnd(0, TAU), r = rnd(0, d.radius); this.vfx.sparks(p.pos.x + Math.cos(a) * r, p.pos.y + 0.3, p.pos.z + Math.sin(a) * r, 0xff2a2a, 1, 3); }
   }
   tickWave(dt, k) {
     const d = this.def;
+    this.waveFront(dt, k);
     this.chargeK = 1 - ease(k); this.throwK = 1;
     this.pose.dy = 0; this.pose.rx = 0.12; this.pose.spin = 0; this.pose.sy = 0.96;
     this.wave.mesh.position.copy(this.center(0.4));
@@ -543,6 +568,39 @@ export class BloodMoonSkill extends Skill {
     if (Math.random() < 0.6) { const a = rnd(0, TAU), r = d.radius * back(k); this.g.fx.smokePuff(this.p.pos.x + Math.cos(a) * r, this.p.pos.y + 0.3, this.p.pos.z + Math.sin(a) * r, 1.2, 0x400008); }
   }
 }
+
+// frente de la oleada carmesí: el suelo se levanta y se rompe a su paso (fragmentos, polvo, energía roja)
+BloodMoonSkill.prototype.waveFront = function (dt, k) {
+  const d = this.def, o = this.waveOrigin, fx = this.g.fx;
+  if (!o) return;
+  const R = d.radius * back(Math.min(1, k * 1.25)), prevR = this._wr || 0;
+  this._wr = R;
+  // las grietas se apagan mientras la onda se las lleva
+  if (this.cracks) { this.cracks.U.uOp.value = Math.max(0, 1 - k * 1.6); this.cracks.U.uT.value = this.t; }
+  // fragmentos de tierra que saltan, polvo y energía a lo largo del frente
+  const n = Math.round(10 + 14 * (1 - k));
+  for (let i = 0; i < n; i++) {
+    const a = rnd(0, TAU), x = o.x + Math.cos(a) * R, z = o.z + Math.sin(a) * R, y = terrainH(x, z);
+    if (Math.random() < 0.35) fx.rock(x, y + 0.1, z);
+    if (Math.random() < 0.3) fx.dustPuff(x, y + 0.1, z, 1.2);
+    fx.spark.emit(x, y + 0.1, z, Math.cos(a) * 2, rnd(2, 5), Math.sin(a) * 2, rnd(0.3, 0.6), 0.1, 0.02, 0xff4a3a, 0x6a0006, 0.9, 0, 6, 1);
+  }
+  this.rockT -= dt;
+  if (this.rockT <= 0 && R > 1) { this.rockT = 0.08; this.vfx.ring(o.x, null, o.z, { r0: Math.max(0.3, R - 0.8), r1: R + 0.6, dur: 0.18, color: 0xff2a2a, opacity: 0.7 }); }
+  // golpe a los enemigos que la onda alcanza (daño, empuje hacia fuera y una sacudida)
+  for (const t of this.combat.inCircle(o.x, o.z, R + 0.5)) {
+    if (this.waveHit.has(t)) continue;
+    this.waveHit.add(t);
+    this.hit(t, d.damage);
+    const { dx, dz } = this.awayFrom(t, o.x, o.z);
+    this.combat.push(t, dx, dz, d.force);
+    this.combat.mark(t, d.markT);
+    this.vfx.sparks(t.pos.x, t.pos.y + 0.5, t.pos.z, 0xff3a3a, 8, 3);
+    this.shake(0.12);
+  }
+  // la tierra que se levanta también sofoca el fuego que encuentra (poder de Dona contra el fuego: Luna de Sangre)
+  if (R - prevR > 0.01) this.doused = (this.doused || 0) + smotherFires(this.g, o.x, o.z, R, 'rock');
+};
 
 /* ====================================================================== */
 /*  FÉNEC — ESPEJISMOS (de fondo: no bloquea los demás poderes)            */
@@ -637,6 +695,8 @@ export class MirageSkill extends Skill {
 /* ====================================================================== */
 /*  VUELO (Águila: alas · Fénec: orejas) — de fondo                        */
 /* ====================================================================== */
+// impulso aéreo de las orejas de Bada: ventana al final del vuelo (s), duración (s), velocidad y algo de elevación
+const EAR_DASH = { window: 4, dur: 0.55, speed: 26, lift: 3 };
 export class FlightSkill extends Skill {
   static background = true;
   begin() {
@@ -721,6 +781,9 @@ export class FlightSkill extends Skill {
     if (this.ears) { if (Math.random() < 0.35) this.vfx.sparks(c.x, c.y + p.H * 0.4, c.z, 0xffe0a0, 1, 1); }
     else if (Math.random() < 0.4) this.g.fx.mist(c.x - Math.sin(p.facing) * 0.8, c.y, c.z - Math.cos(p.facing) * 0.8, 0xe8f6ff, 0.5); // estela de aire
     if (this.ears && f.max - f.t < 1.2 && Math.random() < 0.2) ui.alert('👂 ¡Se cansan las orejas!', 700);
+    // IMPULSO AÉREO DE LAS OREJAS (Bada): al final del vuelo puede soltar una ráfaga concentrada que la lanza hacia delante
+    if (this.ears && !this.dashed && !this.dashHint && f.max - f.t < EAR_DASH.window) { this.dashHint = true; ui.banner('find', '👂💨', 'Pulsa otra vez el botón de las orejas: ¡impulso final!'); }
+    if (this.dashT > 0) this.tickEarDash(dt);
     if (this.ears && this.camWas) { // la cámara acompaña la altura: se aleja y sube un poco en el nivel 2
       const ch = this.g.chase, want = this.camWas.dist + (f.lvl2 ? 4 : 1);
       ch.distTarget = lerp(ch.distTarget, want, Math.min(1, dt * 1.5));
@@ -770,14 +833,55 @@ export class FlightSkill extends Skill {
       this.wings.L.forEach((b, i) => fx.rot(b, 0, 0, 1, (s * amp - 0.1) * (i === 0 ? 1 : 0.45) + Math.sin(ph - i * 0.6) * 0.15 * i * 0.3));
       this.wings.R.forEach((b, i) => fx.rot(b, 0, 0, 1, -((s * amp - 0.1) * (i === 0 ? 1 : 0.45) + Math.sin(ph - i * 0.6) * 0.15 * i * 0.3)));
     }
-    if (this.earB) { // orejas: se abren hacia los lados y baten como hélices
+    if (this.earB && this.dashT > 0) { // dash: orejas recogidas hacia atrás (concentran y liberan la ráfaga)
+      const k = this.dashT / EAR_DASH.dur, back2 = k > 0.8 ? (1 - k) * 5 : 1;
+      this.earB.L.forEach((b, i) => fx.rot(b, 1, 0, 0, (i === 0 ? 1.2 : 0.35) * back2));
+      this.earB.R.forEach((b, i) => fx.rot(b, 1, 0, 0, (i === 0 ? 1.2 : 0.35) * back2));
+    } else if (this.earB) { // orejas: se abren hacia los lados y baten como hélices
       const open = 0.85, amp = 0.4;
       this.earB.L.forEach((b, i) => { fx.rot(b, 0, 0, 1, i === 0 ? -(open + s * amp) : -s * amp * 0.4); fx.rot(b, 1, 0, 0, Math.cos(ph) * 0.25); });
       this.earB.R.forEach((b, i) => { fx.rot(b, 0, 0, 1, i === 0 ? open + s * amp : s * amp * 0.4); fx.rot(b, 1, 0, 0, Math.cos(ph) * 0.25); });
     }
   }
-  get canRecast() { return false; } // el águila aterriza con V (o Ctrl) desde el nivel 1; las orejas se cansan solas
-  recast() { if (this.p.fly) this.p.fly.ending = true; ui.banner('find', '🦅', 'Aterrizando…'); return true; }
+  // el águila aterriza con V (o Ctrl) desde el nivel 1; Bada, al final del vuelo, puede hacer su impulso aéreo
+  get canRecast() { const f = this.p.fly; return !!(this.ears && this.stageName === 'vuelo' && !this.dashed && f && f.max - f.t < EAR_DASH.window); }
+  recast() {
+    if (this.ears) return this.earDash();
+    if (this.p.fly) this.p.fly.ending = true; ui.banner('find', '🦅', 'Aterrizando…'); return true;
+  }
+  // DASH AÉREO: las orejas se recogen hacia atrás concentrando el aire y lo liberan de golpe → impulso hacia delante
+  earDash() {
+    if (this.dashed) return false;
+    const p = this.p;
+    this.dashed = true;
+    this.dashT = EAR_DASH.dur;
+    const hs = Math.hypot(p.vx, p.vz);
+    this.dashDir = hs > 1 ? { x: p.vx / hs, z: p.vz / hs } : { x: Math.sin(p.facing), z: Math.cos(p.facing) };
+    p.facing = Math.atan2(this.dashDir.x, this.dashDir.z);
+    const c = this.center(0.8);
+    // onda de presión que sale de las orejas hacia atrás
+    this.vfx.ring(c.x, c.y, c.z, { r0: 0.3, r1: 3.2, dur: 0.3, color: 0xffe4b0, opacity: 0.8 });
+    this.vfx.orb(c, { r: 0.7, color: 0xfff0d0, opacity: 0.6, life: 0.14 });
+    for (let i = 0; i < 18; i++) { const a = rnd(0, TAU), v = rnd(2, 5); this.g.fx.spark.emit(c.x, c.y + 0.3, c.z, -this.dashDir.x * rnd(6, 10) + Math.cos(a) * v * 0.4, rnd(-1, 1.5), -this.dashDir.z * rnd(6, 10) + Math.sin(a) * v * 0.4, rnd(0.3, 0.5), 0.06, 0.02, 0xfff4d8, 0xd6a84f, 0.9, 0, 0, 1); }
+    this.vfx.sand(p.pos.x, p.pos.y, p.pos.z, 3);
+    this.g.chase.fovKick = 10;
+    this.shake(0.1);
+    this.sfx('wind'); this.sfx('flap');
+    return true;
+  }
+  tickEarDash(dt) {
+    const p = this.p, D = this.dashDir, k = this.dashT / EAR_DASH.dur; // 1 → 0
+    this.dashT = Math.max(0, this.dashT - dt);
+    const sp = EAR_DASH.speed * (0.55 + 0.45 * k);
+    p.vx = D.x * sp; p.vz = D.z * sp;
+    p.vy = Math.max(p.vy, EAR_DASH.lift * k);
+    this.pose.rx = 0.45 * k; this.pose.sy = 1 - 0.08 * k;
+    // estela de viento y arena que acompaña el impulso
+    const c = this.center(0.6);
+    this.g.fx.mist(c.x - D.x * 0.8, c.y, c.z - D.z * 0.8, 0xfff2dc, 0.55);
+    if (Math.random() < 0.6) this.vfx.orb(V(c.x - D.x * 0.5, c.y, c.z - D.z * 0.5), { r: 0.18, color: 0xffe0a8, opacity: 0.35, life: 0.25 });
+    if (Math.random() < 0.25) this.vfx.ring(c.x - D.x, c.y, c.z - D.z, { r0: 0.2, r1: 1.2, dur: 0.22, color: 0xffe8c0, opacity: 0.5 });
+  }
   dispose() {
     this.restoreCam();
     if (this.p.fly && this.p.fly.kind === this.def.id) this.p.fly = null;

@@ -90,6 +90,15 @@ export const SPEED2 = {
     const tr = trails(this, '_cometTr', 0xff3a08, 0xffb020, 22, 0.34);
     const C = this._comets || (this._comets = [0, 1].map(() => ({ d: cometDisc(this.g.scene, { disc: 0xff6a14, core: 0xffe08a, ring: 0xff8a20 }), flash: 0, prevY: null, k: 0 })));
     const gy0 = p.pos.y;
+    this.burstCd = (this.burstCd ?? 0.4) - dt;
+    this.burstGlow = Math.max(0, (this.burstGlow || 0) - dt * 2.2);
+    // CHORRO DE COMBUSTIÓN continuo en la parte baja de la espalda (siempre por detrás: nunca tapa el cuerpo)
+    if (on && sp > 3) {
+      const bkX = p.pos.x + bx * p.R * 0.9, bkZ = p.pos.z + bz * p.R * 0.9, bkY = gy0 + p.H * 0.38;
+      const nj = 1 + Math.round(2 * k + 3 * this.burstGlow);
+      for (let j = 0; j < nj; j++) fx.fire.emit(bkX + rnd(-0.06, 0.06), bkY + rnd(-0.06, 0.06), bkZ + rnd(-0.06, 0.06), bx * rnd(3, 6) * (0.6 + k), rnd(-0.2, 0.5), bz * rnd(3, 6) * (0.6 + k), rnd(0.18, 0.3), rnd(0.18, 0.3) * (1 + this.burstGlow), 0.04, 0xffe080, 0xff3000, 0.85, 0, 0, 1.5);
+      if (Math.random() < 0.4 + 0.5 * k) fx.spark.emit(bkX, bkY, bkZ, bx * rnd(4, 8), rnd(0, 1.2), bz * rnd(4, 8), rnd(0.2, 0.4), 0.06, 0.01, 0xfff0b0, 0xff5a10, 0.95, 0, 3, 2);
+    }
     feet.forEach((f, i) => {
       const c = C[i];
       c.k = damp(c.k, on && sp > 1 ? Math.min(1, 0.5 + 0.6 * k) : 0, 10, dt);
@@ -97,6 +106,9 @@ export const SPEED2 = {
       // APOYO: el pie baja y toca el suelo → destello intenso y explosión de chispas
       if (c.prevY !== null && on && lift < 0.1 && c.prevY >= 0.1) {
         c.flash = 1;
+        // CARRERA DE COMBUSTIÓN: a gran velocidad, cada pocas zancadas el apoyo del pie dispara una explosión de
+        // propulsión por detrás que lo lanza hacia delante (sincronizada con la pisada, no es un efecto suelto)
+        if (this.burstCd <= 0 && sp > 4 && k > 0.35) this.kairoBurst(bx, bz, k);
         for (let j = 0; j < 7; j++) { const a = rnd(0, TAU), v = rnd(1.5, 3.5); fx.spark.emit(f.x, gy0 + 0.05, f.z, Math.cos(a) * v + bx * 2, rnd(0.6, 2), Math.sin(a) * v + bz * 2, rnd(0.18, 0.35), 0.07, 0.015, 0xfff0b0, 0xff4a10, 1, 0, 6, 1); }
         if (this.vfx.ring) this.vfx.ring(f.x, gy0 + 0.04, f.z, { r0: 0.1, r1: 0.7, dur: 0.18, color: 0xff8a20, opacity: 0.8 });
       }
@@ -118,6 +130,28 @@ export const SPEED2 = {
     });
     // líneas de velocidad (y sensación de desenfoque en los bordes) según lo rápido que va
     speedLines(on ? clamp((sp - 3) / 9, 0, 1) : 0);
+  },
+
+  // explosión de propulsión flamígera por detrás de Kairo: bola de fuego, onda, chispas, humo y empujón real
+  kairoBurst(bx, bz, k) {
+    const p = this.p, fx = this.g.fx, gy = p.pos.y;
+    this.burstCd = 0.75 - 0.3 * k;     // cada vez más seguidas cuanto más rápido va
+    this.burstGlow = 1;
+    // la explosión nace DETRÁS de Kairo y sale hacia atrás: nunca tapa su cuerpo
+    const x = p.pos.x + bx * p.R * 1.8, z = p.pos.z + bz * p.R * 1.8, y = gy + p.H * 0.3;
+    // bola de fuego que se expande hacia atrás (cono de llamas)
+    for (let j = 0; j < 22; j++) {
+      const a = rnd(0, TAU), sp = rnd(0.5, 2.2);
+      fx.fire.emit(x, y, z, bx * rnd(6, 11) + Math.cos(a) * sp, rnd(0.2, 1.6), bz * rnd(6, 11) + Math.sin(a) * sp, rnd(0.22, 0.4), rnd(0.25, 0.42), 0.05, 0xfff0a0, 0xff2a00, 0.95, 0, 0, 1.5);
+    }
+    for (let j = 0; j < 16; j++) { const a = rnd(0, TAU), v = rnd(2, 6); fx.spark.emit(x, y, z, bx * rnd(6, 11) + Math.cos(a) * v * 0.4, rnd(0.5, 3.5), bz * rnd(6, 11) + Math.sin(a) * v * 0.4, rnd(0.25, 0.5), 0.07, 0.015, 0xfff4c0, 0xff4a10, 1, 0, 6, 1); }
+    for (let j = 0; j < 4; j++) fx.dust.emit(x + bx * 0.6, y, z + bz * 0.6, bx * rnd(1, 2.5), rnd(0.4, 1.2), bz * rnd(1, 2.5), rnd(0.6, 1.0), 0.3, 0.9, 0x5a4a42, 0x2a2420, 0.45, 0, 0, 1);
+    if (this.vfx.ring) this.vfx.ring(x + bx * 0.6, gy + 0.05, z + bz * 0.6, { r0: 0.2, r1: 1.6 + k, dur: 0.28, color: 0xff7a20, opacity: 0.85 });
+    // EMPUJÓN hacia delante: la explosión lo impulsa de verdad (luego vuelve a su velocidad de carrera)
+    const f = 4 + 4 * k;
+    p.vx -= bx * f; p.vz -= bz * f;
+    this.g.chase.shake(0.04 + 0.04 * k);
+    if (this.sfx) this.sfx('land');
   },
 
   // ---------------- KIRA: BRAZOS DE PATINADORA ----------------
@@ -250,32 +284,47 @@ export const SPEED2 = {
     return U;
   },
 
-  // ---------------- ÁMBAR: RAYOS AZULES Y ESTELA ELÉCTRICA ----------------
+  // ---------------- ÁMBAR: TORNADO ELÉCTRICO ----------------
+  // Al activar la velocidad, Ámbar se convierte en un TORNADO ELÉCTRICO DE AIRE: un embudo de viento que gira sobre
+  // su propio eje a su alrededor (dos capas en sentidos opuestos), recorrido por arcos eléctricos, con corrientes
+  // de aire en espiral y polvo levantado del suelo. Ella gira dentro, en el centro, y el tornado la sigue a donde
+  // la dirija el jugador (se inclina hacia donde avanza). Al terminar, el embudo se deshace poco a poco.
   ambar(dt, k, bx, bz, sp) {
     const pose = this.pose, p = this.p, fx = this.g.fx, on = this.active ? 1 : 0;
-    pose.rx = Math.max(pose.rx, 0.38 * k);
-    const feet = feetPos(this);
-    const tr = trails(this, '_voltTr', 0x2a6bff, 0x9fd8ff, 22, 0.42);
-    feet.forEach((f, i) => {
-      tpush(tr[i], this, V(f.x + bx * 0.1, f.y + 0.03, f.z + bz * 0.1), V(f.x + bx * 0.14, f.y + 0.2, f.z + bz * 0.14));
-      tr[i].update(dt, on && sp > 1.5);
-    });
-    if (!on) return;
-    // pequeños rayos que saltan alrededor de los pies (más en cada zancada)
+    const T = this._funnel || (this._funnel = ambarFunnel(this.g.scene));
+    T.k = damp(T.k, on ? 0.55 + 0.45 * Math.min(1, k) : 0, on ? 5 : 2.5, dt);
+    T.spin += dt * (6 + 10 * T.k);
+    const H = p.H * 1.55, lean = clamp(sp / 18, 0, 0.35);
+    T.group.position.set(p.pos.x, p.pos.y, p.pos.z);
+    T.group.rotation.set(-bz * lean, 0, bx * lean); // el embudo se inclina hacia donde avanza
+    T.group.scale.set(p.H * 0.62, H, p.H * 0.62);
+    T.inner.rotation.y = T.spin; T.outer.rotation.y = -T.spin * 0.7;
+    T.U.uT.value = this.t; T.U.uK.value = T.k;
+    T.group.visible = T.k > 0.02;
+    if (T.k < 0.02) return;
+    // ella gira dentro del tornado (es quien lo controla): giro continuo y ligera inclinación
+    pose.spin = (pose.spin || 0) + T.spin * 0.55 * T.k;
+    pose.rx = Math.max(pose.rx, 0.12 * k);
+    pose.dy = (pose.dy || 0) + 0.12 * T.k + Math.sin(this.t * 6) * 0.04 * T.k; // flota un poco dentro del remolino
+    // ARCOS ELÉCTRICOS que recorren el embudo (de una vuelta a otra) y alguno que salta al suelo
     this.boltT = (this.boltT || 0) - dt;
-    if (this.boltT <= 0) {
-      this.boltT = 0.05 + Math.random() * 0.05;
-      const f = feet[Math.random() < 0.5 ? 0 : 1], a = rnd(0, TAU), r = rnd(0.25, 0.5);
-      this.vfx.bolt(V(f.x, f.y + 0.05, f.z), V(f.x + Math.cos(a) * r + bx * 0.3, f.y + rnd(-0.02, 0.25), f.z + Math.sin(a) * r + bz * 0.3), { color: 0x3a8cff, life: 0.07, jag: 0.12, segs: 6 });
+    if (on && this.boltT <= 0) {
+      this.boltT = 0.04 + Math.random() * 0.05;
+      const ring = (u) => { const a = T.spin * (u < 0.5 ? 1 : -0.7) + rnd(0, TAU), r = p.H * 0.62 * (0.35 + 0.75 * u); return V(p.pos.x + Math.cos(a) * r, p.pos.y + H * u, p.pos.z + Math.sin(a) * r); };
+      const u0 = rnd(0.05, 0.8);
+      this.vfx.bolt(ring(u0), ring(Math.min(1, u0 + rnd(0.15, 0.35))), { color: Math.random() < 0.5 ? 0x5ab0ff : 0xbfe4ff, life: 0.08, jag: 0.22, segs: 8 });
+      if (Math.random() < 0.25) { const a = rnd(0, TAU), r = rnd(0.6, 1.6); this.vfx.bolt(ring(rnd(0.05, 0.3)), V(p.pos.x + Math.cos(a) * r, p.pos.y + 0.03, p.pos.z + Math.sin(a) * r), { color: 0x7ac4ff, life: 0.07, jag: 0.25, segs: 6 }); }
     }
-    // partículas eléctricas que se desprenden de los pies
-    for (const f of feet) if (Math.random() < 0.7) fx.spark.emit(f.x, f.y + 0.05, f.z, bx * rnd(1, 3) + rnd(-1, 1), rnd(0.3, 1.6), bz * rnd(1, 3) + rnd(-1, 1), rnd(0.15, 0.3), 0.07, 0.02, 0xbfe4ff, 0x2a6bff, 0.9, 0, -2, 1);
-    // un arco a lo largo de la estela de vez en cuando
-    if (k > 0.5 && Math.random() < 0.12) { const a = this.path[2], b = this.path[Math.min(this.path.length - 1, 9)]; if (a && b) this.vfx.bolt(V(a.x, a.y + 0.1, a.z), V(b.x, b.y + 0.1, b.z), { color: 0x4a9cff, life: 0.08, jag: 0.3, segs: 8 }); }
-    // estela de viento de siempre, más suave para que destaque la electricidad
-    if (Math.random() < 0.5) { const f = this.feet(0.25, bx, bz); fx.mist(f.x + rnd(-0.2, 0.2), f.y + 0.15, f.z + rnd(-0.2, 0.2), 0xe8f2ff, 0.45 + 0.4 * k); }
+    // CORRIENTES DE AIRE en espiral y polvo que el tornado levanta del suelo
+    const nW = 2 + Math.round(3 * T.k);
+    for (let i = 0; i < nW; i++) {
+      const a = rnd(0, TAU), u = rnd(0, 1), r = p.H * 0.62 * (0.4 + 0.8 * u), tg = 4 + 6 * T.k;
+      fx.mist(p.pos.x + Math.cos(a) * r, p.pos.y + H * u, p.pos.z + Math.sin(a) * r, 0xeaf4ff, 0.35 + 0.3 * T.k);
+      if (Math.random() < 0.5) fx.spark.emit(p.pos.x + Math.cos(a) * r, p.pos.y + H * u, p.pos.z + Math.sin(a) * r, -Math.sin(a) * tg - bx * sp * 0.5, rnd(1, 3), Math.cos(a) * tg - bz * sp * 0.5, rnd(0.2, 0.35), 0.06, 0.02, 0xdff0ff, 0x4a9cff, 0.85, 0, -2, 1);
+    }
+    if (Math.random() < 0.6 * T.k) { const a = rnd(0, TAU), r = rnd(0.5, 1.3); fx.dust.emit(p.pos.x + Math.cos(a) * r, p.pos.y + 0.05, p.pos.z + Math.sin(a) * r, -Math.sin(a) * 3, rnd(0.6, 1.6), Math.cos(a) * 3, rnd(0.5, 0.8), 0.18, 0.6, 0xd8d0c0, 0xb8b0a0, 0.35, 0, 0, 1); }
     this.trailT -= dt;
-    if (this.trailT <= 0 && sp > 3) { this.trailT = 0.22; const f = this.feet(1, bx, bz); this.vfx.ring(f.x, f.y + 0.3 + Math.random() * 0.5, f.z, { r0: 0.2, r1: 1 + k, dur: 0.35, color: 0x9fd0ff, opacity: 0.35 }); }
+    if (this.trailT <= 0 && sp > 3) { this.trailT = 0.2; this.vfx.ring(p.pos.x + bx * 0.8, p.pos.y + 0.15, p.pos.z + bz * 0.8, { r0: 0.3, r1: 1.4 + k, dur: 0.35, color: 0x9fd0ff, opacity: 0.4 }); }
   },
 
   // ---------------- NILO: SKYBOARD (capa añadida a sus botas de agua) ----------------
@@ -331,6 +380,7 @@ export const SPEED2 = {
       this._blades = null;
     }
     if (this._comets) { for (const c of this._comets) c.d.dispose(); this._comets = null; }
+    if (this._funnel) { this._funnel.dispose(); this._funnel = null; }
     if (this._wHid) { for (const pt of this._wHid.parts) pt.w.group.visible = true; this._wHid = null; }
     if (this.hero === 'kairo') { speedLines(0); this.p.animMul = 1; }
     for (const t of this._trails || []) t.dispose();
@@ -340,6 +390,45 @@ export const SPEED2 = {
     if (this._origCleanup) this._origCleanup();
   },
 };
+
+// EMBUDO DEL TORNADO ELÉCTRICO DE ÁMBAR: dos conos abiertos (radio 1 abajo → más ancho arriba, altura 1) con
+// vetas de viento en espiral y destellos eléctricos; se escalan al tamaño de la heroína
+let _funGeo = null;
+function ambarFunnel(scene) {
+  if (!_funGeo) { _funGeo = new THREE.CylinderGeometry(1.25, 0.32, 1, 28, 8, true); _funGeo.translate(0, 0.5, 0); }
+  const U = { uT: { value: 0 }, uK: { value: 0 } };
+  const mk = (dir, tint) => new THREE.ShaderMaterial({
+    uniforms: { ...U, uDir: { value: dir }, uTint: { value: new THREE.Color(tint) } },
+    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform float uT; uniform float uK; uniform float uDir; uniform vec3 uTint; varying vec2 vUv;
+      float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+      float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+      void main(){
+        float a = vUv.x * 6.2831, y = vUv.y;
+        // vetas de viento en espiral que suben girando
+        float s1 = n(vec2(vUv.x * 9.0 + y * 4.0 * uDir - uT * 2.5 * uDir, y * 3.0 - uT * 1.2));
+        float s2 = n(vec2(vUv.x * 17.0 - y * 6.0 * uDir + uT * 3.5 * uDir, y * 5.0));
+        float streak = smoothstep(0.55, 0.95, s1 * 0.7 + s2 * 0.5);
+        // chispazos eléctricos que recorren el embudo
+        float zap = step(0.985, n(vec2(vUv.x * 40.0 + floor(uT * 18.0) * 3.1, y * 20.0)));
+        float edge = smoothstep(0.0, 0.12, y) * smoothstep(1.0, 0.7, y);
+        vec3 col = mix(uTint, vec3(1.0), streak * 0.6) + vec3(0.5, 0.8, 1.0) * zap * 2.0;
+        gl_FragColor = vec4(col, (streak * 0.8 + 0.1 + zap) * edge * uK);
+      }`,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+  });
+  const group = new THREE.Group();
+  const inner = new THREE.Mesh(_funGeo, mk(1, 0x4a90ff)); inner.scale.set(0.85, 1, 0.85);
+  const outer = new THREE.Mesh(_funGeo, mk(-1, 0x9cc8ff));
+  inner.renderOrder = outer.renderOrder = 5;
+  group.add(inner, outer);
+  group.visible = false;
+  scene.add(group);
+  return {
+    group, inner, outer, U, k: 0, spin: 0,
+    dispose() { scene.remove(group); inner.material.dispose(); outer.material.dispose(); },
+  };
+}
 
 // burbuja: borde brillante (Fresnel), irisaciones de película fina, reflejo de luz y centro casi transparente
 let _bubGeo = null;

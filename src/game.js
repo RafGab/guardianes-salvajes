@@ -306,7 +306,9 @@ export class Game {
     const a = this.abilities[this.abIndex];
     if (!a) return false;
     if (a.hs && this.skills.canRecast(a.key)) return this.skills.recast(a.key); // la 2.ª pulsación vale aunque el poder guíe al héroe (picado de Ámbar)
-    if (this.player.scripted) return false; // segunda pulsación (espejismo, aterrizar, salir de la roca)
+    // segunda pulsación (espejismo, aterrizar, salir de la roca); colgado de la cola o la lengua sí se puede
+    // lanzar la otra herramienta (encadenar balanceos)
+    if (this.player.scripted && !(a.hs && this.skills.swinging)) return false;
     if (a.id === 'power') {
       const p = this.player;
       if (p.fly) { ui.banner('find', a.icon, 'No disponible mientras vuelas'); return false; }
@@ -1251,6 +1253,9 @@ export class Game {
     // MAELSTROM de Nilo: la cúpula de agua recibe el golpe y una onda la recorre desde el impacto
     const wg = this.player.waterGuard;
     if (wg && wg.absorb(from)) { this.floatAt(p, H + 0.4, '🌀 ¡BLOQUEADO!', 'block'); ui.hpBlock(); return; }
+    // SOBRECARGA ELÉCTRICA de Ámbar: el escudo responde al golpe con una descarga más intensa
+    const eg = this.player.elecGuard;
+    if (eg) { eg.hit(from); this.floatAt(p, H + 0.4, '⚡ ¡DESCARGA!', 'block'); ui.hpBlock(); return; }
     let x = p.x, z = p.z;
     if (from) { const dx = from.x - p.x, dz = from.z - p.z, l = Math.hypot(dx, dz) || 1; x += (dx / l) * 0.8; z += (dz / l) * 0.8; }
     this.vfx.ring(p.x, null, p.z, { r0: 0.6, r1: 2.4, dur: 0.4, color: 0x8ad8ff });

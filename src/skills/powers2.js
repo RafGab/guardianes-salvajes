@@ -570,7 +570,7 @@ export class SpeedFxSkill extends Skill {
 // mejoras del botón de velocidad (speedfx2.js): Kairo, Kira (brazos), Bada, Ámbar y Nilo
 {
   const P = SpeedFxSkill.prototype, kyra0 = P.kyra, nilo0 = P.nilo;
-  Object.assign(P, { kairo: SPEED2.kairo, halley: SPEED2.halley, ambar: SPEED2.ambar, sandBody: SPEED2.sandBody, bubble2: SPEED2.bubble2, kyraArms: SPEED2.kyraArms, niloPlus: SPEED2.niloPlus, cleanup: SPEED2.cleanup });
+  Object.assign(P, { kairo: SPEED2.kairo, kairoBurst: SPEED2.kairoBurst, halley: SPEED2.halley, ambar: SPEED2.ambar, sandBody: SPEED2.sandBody, bubble2: SPEED2.bubble2, kyraArms: SPEED2.kyraArms, niloPlus: SPEED2.niloPlus, cleanup: SPEED2.cleanup });
   P.kyra = function (dt, k, bx, bz, sp, step, turn) { kyra0.call(this, dt, k, bx, bz, sp, step, turn); this.kyraArms(dt, k, sp); };
   P.nilo = function (dt, k, bx, bz, sp, step, turn) { nilo0.call(this, dt, k, bx, bz, sp, step, turn); this.niloPlus(dt, k, bx, bz, sp); };
   // las burbujas de la estela de Nilo usan el nuevo diseño (reflejos, irisaciones y trayectorias variadas)

@@ -76,7 +76,7 @@ export const HEROES = [
   },
   {
     id: 'ambar', name: 'Ámbar', species: 'Águila', element: 'aire',
-    power: { type: 'rocket', icon: '🚀', name: 'Carrera Supersónica', cd: 10, desc: 'Ráfagas de aire salen de sus pies como propulsores de cohete: acelera de golpe con zancadas rapidísimas y una estela de viento, nubes y remolinos. Doble salto en el aire para volar.' },
+    power: { type: 'rocket', icon: '🌪️', name: 'Tornado Eléctrico', cd: 10, desc: 'Se convierte en un tornado eléctrico de aire que gira sobre su propio eje y recorre el escenario a toda velocidad siguiendo sus órdenes, con arcos eléctricos y corrientes de viento. Doble salto en el aire para volar.' },
     stats: { speed: 7.2, jump: 9.4, swim: 3.4, carry: 1 },
     bio: 'Águila valiente, curiosa, ágil, estratégica y libre. Sus discos de viento y su módulo de alas le permiten volar a grandes alturas. "El viento no me detiene… me lleva más alto."',
   },
