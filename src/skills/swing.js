@@ -5,15 +5,15 @@ import { ui } from '../ui.js';
 import { Audio3D as audio } from '../audio.js';
 
 /* ======================================================================
-   BALANCEO AL ESTILO ARAÑA (Jaglion: cola y lengua)
-   La cola o la lengua salen disparadas hacia un punto de anclaje alto del escenario (la parte de arriba de un
+   BALANCEO AL ESTILO ARAÑA (cola de Jaglion y lengua de Kairo)
+   La cola (Jaglion) o la lengua (Kairo) salen disparadas hacia un punto de anclaje alto del escenario (la parte de arriba de un
    edificio, un muro, una roca o un árbol, por delante del héroe), se enganchan y el héroe queda colgado de
    ellas como un péndulo REAL: cae, gana velocidad, pasa por debajo del anclaje y sube por el otro lado.
    · La cuerda tira un poco al engancharse (tensión elástica) y se va recogiendo durante el balanceo (gana altura).
    · El jugador dirige el balanceo con el movimiento; la cuerda se suelta sola al subir por delante, al pulsar
      otra vez el mismo botón o al saltar, y el héroe sale despedido con la velocidad del péndulo.
-   · Encadenable: en pleno balanceo (o en el aire tras soltarse) se puede lanzar la otra herramienta (cola ↔
-     lengua) o la misma en cuanto se recarga, y se engancha a un nuevo punto sin perder el impulso.
+   · Encadenable: en pleno balanceo (o en el aire tras soltarse) se puede volver a lanzar en cuanto se recarga,
+     y se engancha a un nuevo punto sin perder el impulso.
    · Si choca con una pared o llega al suelo, se suelta de inmediato (nunca atraviesa el escenario).
    ====================================================================== */
 const G = 24;                       // gravedad del héroe (player.js)
@@ -135,7 +135,7 @@ export class Swinger {
   }
 }
 
-/* Fases del balanceo comunes a la cola y a la lengua. La habilidad aporta:
+/* Fases del balanceo comunes a la cola de Jaglion y a la lengua de Kairo. La habilidad aporta:
    origin() (de dónde sale la cuerda), this.rope (makeElastic), this.anchor y su color de impacto. */
 export function swingStages(sk, { color = 0xffd080, shoot = 40, label = 'balanceo' } = {}) {
   const pose = sk.pose;
@@ -180,7 +180,7 @@ export function swingStages(sk, { color = 0xffd080, shoot = 40, label = 'balance
   ];
 }
 
-// Mezcla para las habilidades de balanceo (cola y lengua): soltar a mitad del balanceo y encadenar
+// Mezcla para las habilidades de balanceo (cola de Jaglion y lengua de Kairo): soltar a mitad del balanceo y encadenar
 export const SwingMixin = {
   get canRecast() { return !!this.swinging; },
   recast() { if (!this.swinging) return false; this.letGoReq = true; return true; },
@@ -201,31 +201,3 @@ export const SwingMixin = {
     return true;
   },
 };
-
-/* ======================================================================
-   JAGLION — LENGUA DE BALANCEO
-   Lengua elástica que sale de su boca hacia un anclaje alto y lo balancea como la cola (herramienta propia,
-   independiente de la cola: se pueden encadenar cola → lengua → cola …). Sin anclaje no se gasta la recarga.
-   ====================================================================== */
-export class JagTongueSkill extends Skill {
-  begin() {
-    const d = this.def;
-    this.anchor = findSwingAnchor(this, d.range, d.coneDeg);
-    if (!this.anchor) { ui.banner('find', d.icon, 'No hay ningún punto alto donde enganchar la lengua'); return false; }
-    this.swingColor = 0xff7a9a;
-    this.rope = makeElastic(this, { n: d.segments || 30, r0: 0.06, r1: 0.045, color: 0xff5a7c, rough: 0.22, emissive: 0x3a0010, tipR: 0.1 });
-    this.cdFactor = 1;
-    this.start();
-    return true;
-  }
-  // boca: delante de la cabeza (sigue a la cabeza en todas las animaciones)
-  origin() {
-    const f = this.fwd, h = boneWorld(this, 'head');
-    if (h) return h.add(V(f.x * 0.22 * (this.p.H / 1.9), -0.04, f.z * 0.22 * (this.p.H / 1.9)));
-    return V(this.p.pos.x + f.x * this.p.R, this.p.pos.y + this.p.H * 0.85, this.p.pos.z + f.z * this.p.R);
-  }
-  build() {
-    return [...swingStages(this, { color: 0xff7a9a, shoot: 46 }), { name: 'recuperacion', dur: 0.15, enter: () => this.rope.kill(), tick: () => {} }];
-  }
-}
-Object.defineProperties(JagTongueSkill.prototype, Object.getOwnPropertyDescriptors(SwingMixin));

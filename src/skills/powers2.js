@@ -134,7 +134,7 @@ export class SpeedFxSkill extends Skill {
   get active() { const p = this.p; return p.boostT > 0 || p.dashT > 0 || (p.surfT > 0 && p.surfing); }
   tick(dt) {
     const p = this.p;
-    if (!this.active) { this.idle += dt; if (this.idle > (this.hero === 'kyra' ? 0.9 : this.hero === 'halley' ? 2.2 : 0.4)) { this.endStage(); return; } } else this.idle = 0; // la nieve de Kyra se disipa poco a poco
+    if (!this.active) { this.idle += dt; if (this.idle > (this.hero === 'kyra' ? 0.9 : this.hero === 'halley' ? 2.2 : this.hero === 'ambar' ? 0.95 : 0.4)) { this.endStage(); return; } } else this.idle = 0; // la nieve de Kyra se disipa poco a poco
     const sp = Math.hypot(p.vx, p.vz), ref = p.stats.speed * 1.6;
     const k = clamp(sp / ref, 0, 1.3) * (this.active ? 1 : 0.4); // intensidad según lo rápido que va
     const bx = sp > 0.1 ? -p.vx / sp : -Math.sin(p.facing), bz = sp > 0.1 ? -p.vz / sp : -Math.cos(p.facing); // hacia atrás
@@ -570,7 +570,7 @@ export class SpeedFxSkill extends Skill {
 // mejoras del botón de velocidad (speedfx2.js): Kairo, Kira (brazos), Bada, Ámbar y Nilo
 {
   const P = SpeedFxSkill.prototype, kyra0 = P.kyra, nilo0 = P.nilo;
-  Object.assign(P, { kairo: SPEED2.kairo, kairoBurst: SPEED2.kairoBurst, halley: SPEED2.halley, ambar: SPEED2.ambar, sandBody: SPEED2.sandBody, bubble2: SPEED2.bubble2, kyraArms: SPEED2.kyraArms, niloPlus: SPEED2.niloPlus, cleanup: SPEED2.cleanup });
+  Object.assign(P, { kairo: SPEED2.kairo, kairoBurst: SPEED2.kairoBurst, halley: SPEED2.halley, ambar: SPEED2.ambar, ambarWings: SPEED2.ambarWings, sandBody: SPEED2.sandBody, bubble2: SPEED2.bubble2, kyraArms: SPEED2.kyraArms, niloPlus: SPEED2.niloPlus, cleanup: SPEED2.cleanup });
   P.kyra = function (dt, k, bx, bz, sp, step, turn) { kyra0.call(this, dt, k, bx, bz, sp, step, turn); this.kyraArms(dt, k, sp); };
   P.nilo = function (dt, k, bx, bz, sp, step, turn) { nilo0.call(this, dt, k, bx, bz, sp, step, turn); this.niloPlus(dt, k, bx, bz, sp); };
   // las burbujas de la estela de Nilo usan el nuevo diseño (reflejos, irisaciones y trayectorias variadas)
@@ -1497,7 +1497,11 @@ export class WindClawsSkill extends WeaponSkill {
   }
   update(dt) {
     const done = super.update(dt);
-    // garras y estelas pegadas a las manos (siguen cualquier animación)
+    this.tickClaws(dt);
+    return done;
+  }
+  // garras y estelas pegadas a las manos (siguen cualquier animación); también la usa la fusión de Ámbar
+  tickClaws(dt) {
     if (this.claws) for (const [i, S] of ['L', 'R'].entries()) {
       const h = boneWorld(this, `hand_${S}`), g = this.claws[S];
       if (!h) { g.visible = false; continue; }
@@ -1512,7 +1516,6 @@ export class WindClawsSkill extends WeaponSkill {
       this.trails[i].update(dt, on || this.phase === 'sigue' && s && (s.arm === S || s.arm === 'B'));
     }
     if (this.clawMat) this.clawMat.opacity = 0.9 * (this.clawK ?? 1);
-    return done;
   }
   // la patada también golpea: un pequeño impacto de aire delante de la pata (mismo daño de su zarpazo, no más)
   kickHit(s) {
@@ -1523,25 +1526,26 @@ export class WindClawsSkill extends WeaponSkill {
     for (const t of this.combat.inCircle(x, z, 0.9)) this.combat.push(t, f.x, f.z, 3);
   }
   // en el instante del corte: cuchillas de viento comprimido que salen en la dirección de la garra
+  // (la fusión de Ámbar pasa clawDef: cuchillas electrificadas, s.angs = ángulos propios, sin volver a apuntar)
   slash(s, i) {
-    const d = this.def, p = this.p, combat = this.combat, vfx = this.vfx;
+    const d = this.clawDef || this.def, p = this.p, combat = this.combat, vfx = this.vfx, elec = !!d.electric;
     this.sfx('snap'); this.shake(0.08 + 0.05 * i);
-    const t = this.combat.aimTarget(p.pos.x, p.pos.z, p.facing, 30 * DEG, d.range);
-    if (t) this.face(t.pos.x, t.pos.z);
-    for (let j = 0; j < s.n; j++) {
-      const off = s.n > 1 ? (j - 0.5) : 0, ang = p.facing + off * d.spreadDeg * DEG * 0.5;
+    if (!s.angs) { const t = this.combat.aimTarget(p.pos.x, p.pos.z, p.facing, 30 * DEG, d.range); if (t) this.face(t.pos.x, t.pos.z); }
+    const angs = s.angs || Array.from({ length: s.n }, (_, j) => p.facing + (s.n > 1 ? (j - 0.5) : 0) * d.spreadDeg * DEG * 0.5);
+    for (let j = 0; j < angs.length; j++) {
+      const off = s.angs ? 0 : s.n > 1 ? (j - 0.5) : 0, ang = angs[j];
       const dir = V(Math.sin(ang), 0, Math.cos(ang)), side = V(-dir.z, 0, dir.x);
       const g = new THREE.Group();
       // filo: media luna estrecha y nítida + halo de aire más ancho y suave (sin deslumbrar)
       const edgeG = new THREE.RingGeometry(0.92, 1.0, 32, 1, -1.0, 2.0), airG = new THREE.RingGeometry(0.62, 1.0, 32, 1, -1.0, 2.0);
-      const edge = new THREE.MeshBasicMaterial({ color: 0xf2fbff, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
-      const air = new THREE.MeshBasicMaterial({ color: 0x9fd8f8, transparent: true, opacity: 0.28, depthWrite: false, side: THREE.DoubleSide });
+      const edge = new THREE.MeshBasicMaterial({ color: elec ? 0xdff0ff : 0xf2fbff, transparent: true, opacity: 0.85, depthWrite: false, side: THREE.DoubleSide, toneMapped: false });
+      const air = new THREE.MeshBasicMaterial({ color: elec ? 0x5aa8ff : 0x9fd8f8, transparent: true, opacity: elec ? 0.4 : 0.28, depthWrite: false, side: THREE.DoubleSide, blending: elec ? THREE.AdditiveBlending : THREE.NormalBlending });
       edge.userData.own = air.userData.own = true;
       const m1 = new THREE.Mesh(edgeG, edge), m2 = new THREE.Mesh(airG, air);
       for (const m of [m1, m2]) { m.rotation.y = Math.PI / 2; m.rotation.z = -0.4; }
       const tiltG = new THREE.Group(); tiltG.rotation.z = s.tilt + off * 0.4; // inclinado como el zarpazo
       tiltG.add(m1, m2); g.add(tiltG);
-      const sx = s.arm === 'R' ? -0.25 : s.arm === 'L' ? 0.25 : off * 0.5;
+      const sx = s.angs ? 0 : s.arm === 'R' ? -0.25 : s.arm === 'L' ? 0.25 : off * 0.5;
       g.position.set(p.pos.x + side.x * sx + dir.x * 0.9, p.pos.y + p.H * 0.6, p.pos.z + side.z * sx + dir.z * 0.9);
       g.rotation.y = ang;
       const hits = new Set(), life = d.range / d.speed;
@@ -1552,12 +1556,21 @@ export class WindClawsSkill extends WeaponSkill {
         g.scale.setScalar(1 + 0.5 * k);
         tiltG.rotation.x += dt * 2; // gira un poco sobre sí misma (aire en movimiento)
         if (Math.random() < 0.35) this.g.fx.mist(g.position.x - dir.x * 0.5, g.position.y, g.position.z - dir.z * 0.5, 0xeef8ff, 0.35);
+        // FUSIÓN: el rayo viaja dentro de la cuchilla (pequeños arcos a lo largo del filo)
+        if (elec && Math.random() < 0.55) { const q = g.position, a1 = rnd(-0.9, 0.9), a2 = a1 + rnd(0.3, 0.7), R = g.scale.x; vfx.bolt(V(q.x + side.x * Math.sin(a1) * R, q.y + Math.cos(a1) * R * 0.5, q.z + side.z * Math.sin(a1) * R), V(q.x + side.x * Math.sin(a2) * R, q.y + Math.cos(a2) * R * 0.5, q.z + side.z * Math.sin(a2) * R), { color: 0x9fd0ff, life: 0.05, jag: 0.15, segs: 4 }); }
         for (const tg of combat.inCircle(g.position.x, g.position.z, d.width * 0.5)) {
           if (hits.has(tg)) continue;
           hits.add(tg);
           combat.damage(tg, d.damage);
           combat.push(tg, dir.x, dir.z, d.force);
           vfx.sparks(g.position.x, g.position.y, g.position.z, 0xffffff, 6, 2.4);
+          if (elec) { // y cada enemigo alcanzado recibe un rayo del cielo
+            const at = V(tg.pos.x, tg.pos.y + 0.3, tg.pos.z);
+            vfx.bolt(V(at.x + rnd(-0.6, 0.6), at.y + 7, at.z + rnd(-0.6, 0.6)), at, { color: 0xcfe6ff, life: 0.14, jag: 0.8, segs: 12 });
+            vfx.ring(at.x, null, at.z, { r0: 0.2, r1: 1.4, dur: 0.25, color: 0x9fd0ff });
+            combat.damage(tg, d.boltDamage || 0);
+            this.sfx('crack');
+          }
         }
         if (it.t >= life - 0.02) { edgeG.dispose(); airG.dispose(); }
       });

@@ -15,8 +15,8 @@ import { ui } from '../ui.js';
 
 import { Skill, DEG, ease, lerp, clamp, V, NEUTRAL, SKIP_TAGS, makeElastic, boneWorld, powerTail } from './base.js';
 import { POWER_CLASSES, AIM_MAX, aimPoint, aimShow, aimHide } from './powers.js';
-import { POWER2_CLASSES } from './powers2.js';
-import { findSwingAnchor, swingStages, SwingMixin, JagTongueSkill } from './swing.js';
+import { POWER2_CLASSES, WindClawsSkill } from './powers2.js';
+import { findSwingAnchor, swingStages, SwingMixin } from './swing.js';
 import { POWER3_CLASSES } from './powers3.js';
 import { SandStorm, WaterGate, SpringWard, puddle, takeGate, returnGate } from './fx3.js';
 import { smotherFires } from './envreact.js';
@@ -762,6 +762,86 @@ class DiveSkill extends Skill {
 }
 
 /* ====================================================================== */
+/*  ÁGUILA — PICADO DE GARRAS DEL TRUENO (botón 5, especial)               */
+/*  FUSIÓN REAL del Picado del Trueno y las Garras de Viento: un solo      */
+/*  ataque en el que las garras de energía se cargan con el rayo del       */
+/*  ascenso, van por delante en el picado y, al impactar, los tres         */
+/*  zarpazos lanzan cuchillas de viento ELECTRIFICADAS (cada enemigo que   */
+/*  tocan recibe un rayo); el zarpazo doble final las lanza en círculo.    */
+/*  Conserva del picado: ascenso, descenso dirigido con confirmación,      */
+/*  onda y rayos del impacto. De las garras: garras en las manos, estelas, */
+/*  patadas, zarpazos y cuchillas.                                         */
+/* ====================================================================== */
+const clawEase = (k) => 1 - Math.pow(1 - k, 3);
+class FusionDiveSkill extends DiveSkill {
+  begin() {
+    if (!super.begin()) return false;
+    this.clawDef = { ...this.def.claws, electric: true };
+    return true;
+  }
+  build() {
+    const d = this.def, pose = this.pose, base = super.build();
+    const by = (n) => base.find((s) => s.name === n);
+    const wrap = (s, extra) => { const tk = s.tick; s.tick = (dt, k) => { if (tk) tk.call(this, dt, k); extra(dt, k); }; return s; };
+    // PREPARACIÓN: aparecen las garras de energía (azules: ya llevan el rayo)
+    const prep = by('preparacion'), pe = prep.enter;
+    prep.enter = () => { pe.call(this); this.enterClaws(); if (this.clawMat) this.clawMat.color.set(0xbfe4ff); this.wind = 0; };
+    wrap(prep, (dt, k) => { this.wind = ease(k) * 0.6; });
+    // ASCENSO Y DESCENSO DIRIGIDO: el rayo se acumula en las garras (chispas y arcos entre las dos manos)
+    const zapClaws = (I) => {
+      this.charge(I);
+      const L = boneWorld(this, 'hand_L'), R = boneWorld(this, 'hand_R');
+      if (L && R && Math.random() < 0.35 * I) this.vfx.bolt(L, R, { color: 0x9fd0ff, life: 0.06, jag: 0.15, segs: 6 });
+    };
+    wrap(by('ascenso'), (dt, k) => { this.wind = 0.6 + 0.4 * k; zapClaws(0.5 + 0.5 * k); });
+    wrap(by('descenso'), () => { this.wind = 1; zapClaws(1); });
+    // PICADO: cae con las garras por delante (brazos extendidos) y estelas en las dos manos
+    const dive = by('picado'), de = dive.enter;
+    dive.enter = () => { de.call(this); if (!this.cancelled) { this.sw = { arm: 'B', tilt: 0, n: 2 }; this.phase = 'corte'; } };
+    wrap(dive, () => { if (!this.cancelled) this.swK = 0.55; });
+    // IMPACTO: la onda y los rayos del picado; las garras se preparan para el primer zarpazo
+    const imp = by('impacto'), ie = imp.enter;
+    imp.enter = () => { ie.call(this); this.phase = 'sigue'; if (!this.cancelled) { const L = this.land; this.vfx.orb(V(L.x, L.y + 0.8, L.z), { r: 1.1, color: 0xbfe4ff, opacity: 0.55, life: 0.18 }); } };
+    // ZARPAZOS ELECTRIFICADOS (derecha → abanico, izquierda → abanico, doble → círculo completo)
+    const C = d.claws, spread = C.spreadDeg * DEG;
+    const SW = [
+      { arm: 'R', tilt: 0.75, fan: [-1, 0, 1] },
+      { arm: 'L', tilt: -0.75, fan: [-1, 0, 1] },
+      { arm: 'B', tilt: 0, ring: C.ring || 8 },
+    ];
+    const combo = [];
+    const skip = () => { if (this.cancelled) this.stages[this.i].dur = 0.001; };
+    SW.forEach((s, i) => {
+      const wind = i === 0 ? 0.08 : 0.11, cut = 0.09, follow = i === SW.length - 1 ? 0.2 : 0.06;
+      combo.push({ name: `garra-carga${i}`, dur: wind, enter: () => { skip(); this.sw = s; this.phase = 'carga'; }, tick: (dt, k) => { if (this.cancelled) return; this.swK = -ease(k); pose.spin = (s.arm === 'R' ? -0.35 : s.arm === 'L' ? 0.35 : 0) * ease(k); pose.rx = 0.1; } });
+      combo.push({ name: `garra-corte${i}`, dur: cut, enter: () => {
+        skip(); if (this.cancelled) return;
+        this.phase = 'corte';
+        const f = this.p.facing;
+        const angs = s.ring ? Array.from({ length: s.ring }, (_, j) => f + (j / s.ring) * TAU) : s.fan.map((o) => f + o * spread);
+        this.slash({ ...s, angs }, i);
+        this.kickHit(s);
+        // el rayo acompaña cada zarpazo: arco desde la garra hacia delante y, en el último, una descarga en círculo
+        const h = boneWorld(this, s.arm === 'L' ? 'hand_L' : 'hand_R') || this.center(0.6);
+        this.vfx.bolt(h, V(h.x + Math.sin(f) * 2.4, h.y - 0.2, h.z + Math.cos(f) * 2.4), { color: 0xcfe6ff, life: 0.1, jag: 0.4, segs: 8 });
+        if (s.ring) { const p = this.p; this.vfx.ring(p.pos.x, null, p.pos.z, { r0: 0.5, r1: C.range * 0.45, dur: 0.4, color: 0x9fd0ff }); this.shake(0.18); }
+      }, tick: (dt, k) => { if (this.cancelled) return; this.swK = -1 + 2 * clawEase(k); pose.spin = (s.arm === 'R' ? lerp(-0.35, 0.45, clawEase(k)) : s.arm === 'L' ? lerp(0.35, -0.45, clawEase(k)) : 0); pose.rx = 0.18 + (s.arm === 'B' ? 0.12 * k : 0); pose.dy = s.arm === 'B' ? 0.35 * Math.sin(k * Math.PI * 0.5) : 0; } });
+      combo.push({ name: `garra-sigue${i}`, dur: follow, enter: () => { skip(); this.phase = 'sigue'; }, tick: (dt, k) => { if (this.cancelled) return; this.swK = 1 - 0.4 * ease(k); pose.dy = s.arm === 'B' ? 0.35 * (1 - ease(k)) : 0; } });
+    });
+    const rec = by('recuperacion');
+    const out = base.filter((s) => s !== rec);
+    out.push(...combo, { name: 'recuperacion', dur: d.recover, enter: () => { this.phase = 'fin'; }, tick: (dt, k) => { this.swK = 0.6 * (1 - ease(k)); this.wind = 1 - ease(k); pose.spin = lerp(pose.spin || 0, 0, k); pose.rx = lerp(0.15, 0, k); pose.sy = 1; this.clawK = 1 - ease(k); } });
+    return out;
+  }
+  update(dt) {
+    const done = super.update(dt);
+    if (this.claws) this.tickClaws(dt);
+    return done;
+  }
+}
+for (const m of ['enterClaws', 'charge', 'slash', 'kickHit', 'tickClaws']) FusionDiveSkill.prototype[m] = WindClawsSkill.prototype[m];
+
+/* ====================================================================== */
 /*  DRAGÓN DE KOMODO — Lengua Camaleónica                                  */
 /*  Lengua elástica de muchas articulaciones: sale, se pasa y rebota,      */
 /*  se pega al objetivo y se recoge ondulando.                             */
@@ -779,15 +859,43 @@ class TongueSkill extends Skill {
         this.mode = 'propel';
       } else this.mode = 'pull';
     } else {
-      const s = this.findSurface();
-      if (s) { this.dest = s; this.mode = 'propel'; } else this.mode = 'whiff';
+      // BALANCEO: sin enemigo delante, la lengua prefiere engancharse a un punto alto y balancear a Kairo
+      const a = findSwingAnchor(this, d.swingRange || 22, d.swingConeDeg || 65);
+      if (a) { this.anchor = a; this.mode = 'swing'; this.cdFactor = d.swingCdFactor || 0.35; this.swingColor = 0xff7aa0; }
+      else {
+        const s = this.findSurface();
+        if (s) { this.dest = s; this.mode = 'propel'; } else this.mode = 'whiff';
+      }
     }
     if (this.mode === 'whiff') { this.cdFactor = 0.45; ui.banner('find', '👅', 'No hay nada al alcance de la lengua'); }
     this.tongue = makeElastic(this, { n: d.segments || 32, r0: 0.07, r1: 0.05, color: 0xff5a7c, rough: 0.22, emissive: 0x3a0010, tipR: 0.11 });
+    this.rope = this.tongue; // el balanceo (swing.js) mueve la misma lengua
+    { const set = this.tongue.set; this._tipNow = V(); this.tongue.set = (a, b, o) => { this._tipNow.copy(b); set(a, b, o); }; } // recuerda la punta
     this.mouthOff = this.measureMouth();
+    if (this.mode === 'swing') this.fork = this.makeFork();
     this.start();
     return true;
   }
+  // PUNTA BÍFIDA del Komodo: dos puntas finas que se abren al final de la lengua (solo en el balanceo,
+  // donde la lengua se ve larga y tensa)
+  makeFork() {
+    const mat = new THREE.MeshStandardMaterial({ color: 0xff5a7c, roughness: 0.25, emissive: 0x3a0010 });
+    const geo = new THREE.ConeGeometry(0.035, 0.26, 6); geo.translate(0, 0.13, 0); geo.rotateX(Math.PI / 2);
+    const grp = new THREE.Group();
+    for (const s of [-1, 1]) { const m = new THREE.Mesh(geo, mat); m.rotation.y = s * 0.38; grp.add(m); }
+    grp.visible = false;
+    this.g.scene.add(grp);
+    this.track({ kill: () => { this.g.scene.remove(grp); geo.dispose(); mat.dispose(); } });
+    return grp;
+  }
+  // coloca la punta bífida en el extremo de la lengua, apuntando en su dirección
+  placeFork(from, to) {
+    const f = this.fork; if (!f) return;
+    if (this.tongue.dead) { f.visible = false; return; }
+    f.visible = true; f.position.copy(to);
+    f.lookAt(to.x * 2 - from.x, to.y * 2 - from.y, to.z * 2 - from.z);
+  }
+  origin() { return this.mouth(); }
   // Superficie válida delante: avanza por el rayo hasta chocar con un sólido y propone dónde aterrizar
   findSurface() {
     const d = this.def, p = this.p, f = this.fwd, w = this.g.world, ym = p.pos.y + p.H * 0.5;
@@ -835,6 +943,7 @@ class TongueSkill extends Skill {
   }
   build() {
     const d = this.def, pose = this.pose, ov = d.overshoot || 0.12, wob = d.wobble || 0.45;
+    if (this.mode === 'swing') return this.buildSwing();
     const st = [
       { name: 'espera', dur: d.delay || 0 }, // espera de activación (0,5 s, igual que la cola de Jaglion)
       { name: 'preparacion', dur: d.prep, enter: () => { if (this.target && !this.target.dead) this.face(this.target.pos.x, this.target.pos.z); }, tick: (dt, k) => { pose.rx = -0.18 * k; pose.sy = 1 - 0.05 * k; } },
@@ -854,6 +963,24 @@ class TongueSkill extends Skill {
     st.push({ name: 'recuperacion', dur: d.recover, tick: (dt, k) => { this.tongue.kill(); pose.spin = 0; pose.rx = lerp(pose.rx, 0, k); pose.sy = lerp(pose.sy, 1, k); } });
     return st;
   }
+  /* MODO BALANCEO (lengua del Komodo): breve preparación (estira el cuello y abre la boca), la lengua sale de la
+     boca hacia el punto alto, se clava con su punta bífida y Kairo se balancea como un péndulo (swing.js).
+     Al soltarse remata con su giro de cola si cae cerca de enemigos. */
+  buildSwing() {
+    const d = this.def, pose = this.pose;
+    const sw = swingStages(this, { color: 0xff7aa0, shoot: 46 });
+    for (const s of sw) { // la punta bífida sigue a la lengua en cada fase
+      const tk = s.tick;
+      s.tick = (dt, k) => { tk(dt, k); const o = this.mouth(); this.placeFork(o, this._forkTip(o)); };
+    }
+    return [
+      { name: 'preparacion', dur: d.prep, enter: () => this.face(this.anchor.x, this.anchor.z), tick: (dt, k) => { pose.rx = -0.25 * k; pose.sy = 1 - 0.05 * k; } },
+      ...sw,
+      { name: 'recuperacion', dur: d.recover, enter: () => { this.tongue.kill(); if (this.fork) this.fork.visible = false; }, tick: (dt, k) => { pose.rx = lerp(pose.rx, 0, k); pose.sy = lerp(pose.sy, 1, k); } },
+    ];
+  }
+  // punta visible de la lengua mientras sale o se recoge (último punto del tubo)
+  _forkTip(o) { return this._tipNow || this.anchor || o; }
   // la punta se pega al objetivo: salpicadura rosa y chasquido
   stick() {
     if (this.mode === 'whiff') return;
@@ -1034,7 +1161,8 @@ class BlinkSkill extends Skill {
 }
 
 Object.defineProperties(TailSkill.prototype, Object.getOwnPropertyDescriptors(SwingMixin));
-const SKILLS = { tail: TailSkill, jtongue: JagTongueSkill, haboob: HaboobSkill, seasons: SeasonsSkill, wheel: WheelSkill, dive: DiveSkill, tongue: TongueSkill, blink: BlinkSkill, ...POWER_CLASSES, ...POWER2_CLASSES, ...POWER3_CLASSES };
+Object.defineProperties(TongueSkill.prototype, Object.getOwnPropertyDescriptors(SwingMixin));
+const SKILLS = { tail: TailSkill, haboob: HaboobSkill, seasons: SeasonsSkill, wheel: WheelSkill, dive: DiveSkill, fusiondive: FusionDiveSkill, tongue: TongueSkill, blink: BlinkSkill, ...POWER_CLASSES, ...POWER2_CLASSES, ...POWER3_CLASSES };
 
 /* ====================================================================== */
 /*  Gestor: una habilidad principal a la vez + poderes de fondo (vuelo,    */
@@ -1180,8 +1308,8 @@ export class HeroSkills {
       // las habilidades NO se bloquean entre sí: la que estaba en curso sigue en segundo plano y empieza la nueva
       else { this.bg.push(this.cur); this.cur = null; }
     }
-    // ENCADENAR BALANCEOS (Jaglion): si cuelga de la cola o de la lengua y lanza la otra herramienta, se suelta
-    // con el impulso del péndulo y la nueva se engancha a otro punto sin perder la velocidad
+    // ENCADENAR BALANCEOS (cola de Jaglion, lengua de Kairo): si cuelga de la cuerda y lanza otra habilidad de
+    // balanceo, se suelta con el impulso del péndulo y la nueva se engancha a otro punto sin perder la velocidad
     if (Cls.prototype.letGo) this.letGoSwing();
     const p = this.g.player, wasScripted = p.scripted;
     const sk = new Cls(this, def);

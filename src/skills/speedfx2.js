@@ -10,7 +10,7 @@ import { cometDisc, speedLines } from './magicfx.js';
 //  · KIRA — brazos de patinadora (equilibrio, compensación en las curvas, codos flexionados), sobre su animación de patinaje
 //  · BADA — cuerpo de arena viva: granos que se desprenden y se recomponen, y textura granulada mientras corre
 //    (se conserva el remolino de arena de los pies)
-//  · ÁMBAR — rayos azules en los pies y estela eléctrica azul
+//  · ÁMBAR — transformación en tornado eléctrico (alas, bandas de viento, base de turbulencia, estela y disipación)
 //  · NILO — skyboard: burbujas con reflejos e irisaciones, de tamaños y trayectorias variadas, y estela de energía bajo las botas
 const damp = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
 const FOOT = ['foot_L', 'foot_R'];
@@ -284,47 +284,122 @@ export const SPEED2 = {
     return U;
   },
 
-  // ---------------- ÁMBAR: TORNADO ELÉCTRICO ----------------
-  // Al activar la velocidad, Ámbar se convierte en un TORNADO ELÉCTRICO DE AIRE: un embudo de viento que gira sobre
-  // su propio eje a su alrededor (dos capas en sentidos opuestos), recorrido por arcos eléctricos, con corrientes
-  // de aire en espiral y polvo levantado del suelo. Ella gira dentro, en el centro, y el tornado la sigue a donde
-  // la dirija el jugador (se inclina hacia donde avanza). Al terminar, el embudo se deshace poco a poco.
+  // ---------------- ÁMBAR: TORNADO ELÉCTRICO (transformación completa) ----------------
+  // FASES (estado propio en this._tw; se basan en el tiempo, no en la velocidad, para que siempre sean fluidas):
+  //  · TRANSFORMACIÓN (0,55 s): recoge las alas hacia el cuerpo, se encoge y empieza a girar despacio; el giro
+  //    acelera y las bandas de viento nacen desde el suelo hacia arriba (el torbellino lo generan sus alas)
+  //  · TORNADO: Ámbar gira rápido en el centro con las alas medio abiertas y barridas hacia atrás (forman parte
+  //    del remolino); cuatro bandas de aire semitransparentes giran a distintas velocidades y sentidos, la parte de
+  //    arriba se mueve de forma orgánica e irregular, base de turbulencia pegada al suelo, plumas de su color,
+  //    arcos eléctricos, polvo y estela de viento detrás. El embudo se inclina hacia donde avanza.
+  //  · FINAL (0,8 s): pierde intensidad, las bandas se separan y se dispersan, las partículas se apagan, el giro
+  //    frena hasta mirar al frente y despliega las alas con naturalidad. Se puede seguir jugando desde el primer instante.
+  // Cómodo de jugar: la cámara NO gira (solo gira el modelo), sin sacudidas continuas y con efectos transparentes
+  // que dejan ver el escenario, los obstáculos y la dirección de avance.
   ambar(dt, k, bx, bz, sp) {
-    const pose = this.pose, p = this.p, fx = this.g.fx, on = this.active ? 1 : 0;
+    const pose = this.pose, p = this.p, fx = this.g.fx, on = this.active;
     const T = this._funnel || (this._funnel = ambarFunnel(this.g.scene));
-    T.k = damp(T.k, on ? 0.55 + 0.45 * Math.min(1, k) : 0, on ? 5 : 2.5, dt);
-    T.spin += dt * (6 + 10 * T.k);
-    const H = p.H * 1.55, lean = clamp(sp / 18, 0, 0.35);
+    const W = this._tw || (this._tw = { ph: 'form', t: 0, rate: 0, ang: 0, k: 0, out: 0, featherCol: ambarFeatherColor(p) });
+    if (on && W.ph === 'out') { W.ph = 'tornado'; W.t = 0; } // vuelve a activarla mientras se deshacía
+    if (!on && W.ph !== 'out') { W.ph = 'out'; W.t = 0; W.burst = false; }
+    W.t += dt;
+    const FORM = 0.55, OUT = 0.8;
+    let grow, spread = 0, wingFold, wingOpen;
+    if (W.ph === 'form') {
+      const u = Math.min(1, W.t / FORM);
+      grow = u * u * (3 - 2 * u);                         // las bandas nacen del suelo hacia arriba
+      W.rate = lerp(1.5, 22, u * u);                      // el giro acelera progresivamente
+      wingFold = Math.min(1, u * 2.2); wingOpen = Math.max(0, (u - 0.5) * 2) * 0.55; // primero recoge, luego abre barridas
+      pose.sy = 1 - 0.08 * Math.sin(u * Math.PI);
+      if (u >= 1) { W.ph = 'tornado'; W.t = 0; }
+    } else if (W.ph === 'tornado') {
+      grow = 1;
+      W.rate = damp(W.rate, 20 + 6 * Math.min(1, k), 4, dt);
+      wingFold = 1; wingOpen = 0.55;
+    } else {
+      const u = Math.min(1, W.t / OUT);
+      grow = 1; spread = u;                               // las corrientes se separan y se dispersan
+      W.rate = lerp(W.rate, 0, Math.min(1, dt * 4.5));    // el giro frena
+      wingFold = 1 - u; wingOpen = 0.55 + 0.6 * Math.sin(u * Math.PI) * (1 - u * 0.4); // despliega las alas
+    }
+    const target = W.ph === 'out' ? 0 : W.ph === 'form' ? grow : 0.6 + 0.4 * Math.min(1, k);
+    if (W.ph === 'out') { if (W.k0 == null) W.k0 = W.k; W.k = W.k0 * (1 - spread) * (1 - spread); } else { W.k0 = null; W.k = damp(W.k, target, 8, dt); }
+    // GIRO DEL CUERPO (solo el modelo: la cámara no gira). Al final busca la vuelta completa más cercana: mira al frente
+    W.ang += W.rate * dt;
+    if (W.ph === 'out' && W.rate < 3) W.ang = damp(W.ang, Math.round(W.ang / TAU) * TAU, 6, dt);
+    pose.spin = (pose.spin || 0) + W.ang;
+    pose.rx = Math.max(pose.rx, 0.1 * W.k);
+    pose.dy = (pose.dy || 0) + 0.14 * W.k + Math.sin(this.t * 6) * 0.04 * W.k; // flota dentro del remolino
+    this.ambarWings(wingFold, wingOpen, W);
+    // EMBUDO: posición, inclinación hacia la marcha (suavizada) y tamaño de la heroína
+    const H = p.H * 1.6, R = p.H * 0.62;
+    T.lx = damp(T.lx || 0, -bx * clamp(sp / 18, 0, 0.32), 6, dt); T.lz = damp(T.lz || 0, -bz * clamp(sp / 18, 0, 0.32), 6, dt);
     T.group.position.set(p.pos.x, p.pos.y, p.pos.z);
-    T.group.rotation.set(-bz * lean, 0, bx * lean); // el embudo se inclina hacia donde avanza
-    T.group.scale.set(p.H * 0.62, H, p.H * 0.62);
-    T.inner.rotation.y = T.spin; T.outer.rotation.y = -T.spin * 0.7;
-    T.U.uT.value = this.t; T.U.uK.value = T.k;
-    T.group.visible = T.k > 0.02;
-    if (T.k < 0.02) return;
-    // ella gira dentro del tornado (es quien lo controla): giro continuo y ligera inclinación
-    pose.spin = (pose.spin || 0) + T.spin * 0.55 * T.k;
-    pose.rx = Math.max(pose.rx, 0.12 * k);
-    pose.dy = (pose.dy || 0) + 0.12 * T.k + Math.sin(this.t * 6) * 0.04 * T.k; // flota un poco dentro del remolino
-    // ARCOS ELÉCTRICOS que recorren el embudo (de una vuelta a otra) y alguno que salta al suelo
+    T.group.rotation.set(T.lz, 0, -T.lx);
+    T.group.scale.set(R, H, R);
+    T.spin += dt * W.rate * 0.5;
+    T.bands.forEach((b, i) => { b.rotation.y = T.spin * b.userData.sp; });
+    T.base.rotation.z = -T.spin * 0.6;
+    T.base.scale.setScalar(1 + spread * 0.9);
+    T.U.uT.value = this.t; T.U.uK.value = W.k; T.U.uGrow.value = grow; T.U.uSpread.value = spread;
+    T.group.visible = W.k > 0.01;
+    if (W.ph === 'out' && W.t > OUT) { T.group.visible = false; return; }
+    if (W.k < 0.02) return;
+    const I = W.k * (W.ph === 'out' ? 0.6 : 1); // menos partículas al deshacerse
+    // ARCOS ELÉCTRICOS que recorren el embudo (de una banda a otra) y alguno que salta al suelo
     this.boltT = (this.boltT || 0) - dt;
-    if (on && this.boltT <= 0) {
-      this.boltT = 0.04 + Math.random() * 0.05;
-      const ring = (u) => { const a = T.spin * (u < 0.5 ? 1 : -0.7) + rnd(0, TAU), r = p.H * 0.62 * (0.35 + 0.75 * u); return V(p.pos.x + Math.cos(a) * r, p.pos.y + H * u, p.pos.z + Math.sin(a) * r); };
+    if (W.ph !== 'out' && this.boltT <= 0) {
+      this.boltT = 0.05 + Math.random() * 0.06;
+      const ring = (u) => { const a = T.spin * (u < 0.5 ? 1 : -0.7) + rnd(0, TAU), r = R * (0.35 + 0.75 * u); return V(p.pos.x + Math.cos(a) * r, p.pos.y + H * u * grow, p.pos.z + Math.sin(a) * r); };
       const u0 = rnd(0.05, 0.8);
       this.vfx.bolt(ring(u0), ring(Math.min(1, u0 + rnd(0.15, 0.35))), { color: Math.random() < 0.5 ? 0x5ab0ff : 0xbfe4ff, life: 0.08, jag: 0.22, segs: 8 });
-      if (Math.random() < 0.25) { const a = rnd(0, TAU), r = rnd(0.6, 1.6); this.vfx.bolt(ring(rnd(0.05, 0.3)), V(p.pos.x + Math.cos(a) * r, p.pos.y + 0.03, p.pos.z + Math.sin(a) * r), { color: 0x7ac4ff, life: 0.07, jag: 0.25, segs: 6 }); }
+      if (Math.random() < 0.2) { const a = rnd(0, TAU), r = rnd(0.6, 1.6); this.vfx.bolt(ring(rnd(0.05, 0.3)), V(p.pos.x + Math.cos(a) * r, p.pos.y + 0.03, p.pos.z + Math.sin(a) * r), { color: 0x7ac4ff, life: 0.07, jag: 0.25, segs: 6 }); }
     }
-    // CORRIENTES DE AIRE en espiral y polvo que el tornado levanta del suelo
-    const nW = 2 + Math.round(3 * T.k);
+    // RÁFAGAS DE VIENTO en espiral (pocas: no llenan la pantalla); al deshacerse salen despedidas hacia fuera
+    const nW = Math.round(1 + 2.5 * I);
     for (let i = 0; i < nW; i++) {
-      const a = rnd(0, TAU), u = rnd(0, 1), r = p.H * 0.62 * (0.4 + 0.8 * u), tg = 4 + 6 * T.k;
-      fx.mist(p.pos.x + Math.cos(a) * r, p.pos.y + H * u, p.pos.z + Math.sin(a) * r, 0xeaf4ff, 0.35 + 0.3 * T.k);
-      if (Math.random() < 0.5) fx.spark.emit(p.pos.x + Math.cos(a) * r, p.pos.y + H * u, p.pos.z + Math.sin(a) * r, -Math.sin(a) * tg - bx * sp * 0.5, rnd(1, 3), Math.cos(a) * tg - bz * sp * 0.5, rnd(0.2, 0.35), 0.06, 0.02, 0xdff0ff, 0x4a9cff, 0.85, 0, -2, 1);
+      const a = rnd(0, TAU), u = rnd(0, grow), r = R * (0.4 + 0.8 * u) * (1 + spread), tg = 4 + 6 * W.k, outV = spread * 6;
+      if (Math.random() < 0.5) fx.mist(p.pos.x + Math.cos(a) * r, p.pos.y + H * u, p.pos.z + Math.sin(a) * r, 0xeaf4ff, 0.3 + 0.25 * W.k);
+      fx.spark.emit(p.pos.x + Math.cos(a) * r, p.pos.y + H * u, p.pos.z + Math.sin(a) * r, -Math.sin(a) * tg + Math.cos(a) * outV - bx * sp * 0.4, rnd(1, 3), Math.cos(a) * tg + Math.sin(a) * outV - bz * sp * 0.4, rnd(0.2, 0.35), 0.06, 0.02, 0xdff0ff, 0x4a9cff, 0.85, 0, -2, 1);
     }
-    if (Math.random() < 0.6 * T.k) { const a = rnd(0, TAU), r = rnd(0.5, 1.3); fx.dust.emit(p.pos.x + Math.cos(a) * r, p.pos.y + 0.05, p.pos.z + Math.sin(a) * r, -Math.sin(a) * 3, rnd(0.6, 1.6), Math.cos(a) * 3, rnd(0.5, 0.8), 0.18, 0.6, 0xd8d0c0, 0xb8b0a0, 0.35, 0, 0, 1); }
+    // PLUMAS del color de Ámbar arrastradas por el remolino (identidad del águila)
+    if (Math.random() < 0.35 * I) {
+      const a = rnd(0, TAU), u = rnd(0.2, 0.8) * grow, r = R * (0.5 + 0.6 * u), tg = 5 + 5 * W.k;
+      fx.spark.emit(p.pos.x + Math.cos(a) * r, p.pos.y + H * u, p.pos.z + Math.sin(a) * r, -Math.sin(a) * tg - bx * sp * 0.3, rnd(0.5, 1.8), Math.cos(a) * tg - bz * sp * 0.3, rnd(0.5, 0.8), 0.09, 0.05, W.featherCol, W.featherCol, 0.9, 0, -1.5, 0);
+    }
+    // TURBULENCIA EN LA BASE: polvo que el remolino levanta y arrastra a ras de suelo
+    if (Math.random() < 0.55 * I) { const a = rnd(0, TAU), r = rnd(0.5, 1.4) * (1 + spread); fx.dust.emit(p.pos.x + Math.cos(a) * r, p.pos.y + 0.05, p.pos.z + Math.sin(a) * r, -Math.sin(a) * 3.2 + Math.cos(a) * spread * 3, rnd(0.5, 1.4), Math.cos(a) * 3.2 + Math.sin(a) * spread * 3, rnd(0.5, 0.8), 0.18, 0.6, 0xd8d0c0, 0xb8b0a0, 0.35, 0, 0, 1); }
+    // ESTELA DE VIENTO detrás del tornado: dos corrientes a los lados y anillos de aire que se quedan atrás
+    const tr = trails(this, '_windTr', 0xcfe6ff, 0xffffff, 18, 0.32);
+    const sx = -bz, sz = bx; // lateral
+    [-1, 1].forEach((sd, i) => {
+      const h = p.pos.y + H * (i ? 0.62 : 0.32) * grow, rr = R * (i ? 0.95 : 0.7) * (1 + spread * 0.5);
+      tpush(tr[i], this, V(p.pos.x + sx * rr * sd, h - 0.06, p.pos.z + sz * rr * sd), V(p.pos.x + sx * rr * sd, h + 0.06, p.pos.z + sz * rr * sd));
+      tr[i].update(dt, W.ph !== 'out' && sp > 2);
+    });
     this.trailT -= dt;
-    if (this.trailT <= 0 && sp > 3) { this.trailT = 0.2; this.vfx.ring(p.pos.x + bx * 0.8, p.pos.y + 0.15, p.pos.z + bz * 0.8, { r0: 0.3, r1: 1.4 + k, dur: 0.35, color: 0x9fd0ff, opacity: 0.4 }); }
+    if (this.trailT <= 0 && sp > 3 && W.ph !== 'out') { this.trailT = 0.22; this.vfx.ring(p.pos.x + bx * 0.9, p.pos.y + 0.15, p.pos.z + bz * 0.9, { r0: 0.3, r1: 1.3 + 0.6 * k, dur: 0.35, color: 0x9fd0ff, opacity: 0.35 }); }
+    if (W.ph === 'out' && !W.burst) { // al soltar el torbellino: un último anillo de aire que se abre
+      W.burst = true;
+      this.vfx.ring(p.pos.x, null, p.pos.z, { r0: R, r1: R * 3.2, dur: 0.6, color: 0xcfe6ff, opacity: 0.45 });
+    }
+  },
+  // ALAS DE ÁMBAR durante el tornado: fold = recogidas hacia el cuerpo (0..1); open = abiertas y barridas hacia atrás
+  ambarWings(fold, open, W) {
+    const m = this.p.model;
+    if (!m || !m.bones) return;
+    if (!W.wings) { const L = [], R = []; for (let i = 1; i <= 12; i++) { if (m.bones['wing_L_' + i]) L.push(m.bones['wing_L_' + i]); if (m.bones['wing_R_' + i]) R.push(m.bones['wing_R_' + i]); } W.wings = { L, R }; }
+    if (!W.wings.L.length) return;
+    // capa de huesos propia; solo se instala si ninguna otra habilidad está moviendo los huesos en ese momento
+    if (!W.fx) {
+      W.fx = (bones, dt, t, tools) => {
+        const f = W.fold || 0, o = W.open || 0, flut = Math.sin(t * 38) * 0.05 * o; // vibración de las plumas con el viento
+        W.wings.L.forEach((b, i) => { tools.rot(b, 0, 0, 1, (-0.5 * f + 0.25 * o) * (i ? 0.5 : 1) + flut); tools.rot(b, 0, 1, 0, (0.55 * f - 0.25 * o) * (i ? 0.6 : 1)); });
+        W.wings.R.forEach((b, i) => { tools.rot(b, 0, 0, 1, -((-0.5 * f + 0.25 * o) * (i ? 0.5 : 1) + flut)); tools.rot(b, 0, 1, 0, -(0.55 * f - 0.25 * o) * (i ? 0.6 : 1)); });
+      };
+    }
+    W.fold = fold; W.open = open;
+    if (!m.boneFx) m.boneFx = W.fx;
   },
 
   // ---------------- NILO: SKYBOARD (capa añadida a sus botas de agua) ----------------
@@ -381,52 +456,102 @@ export const SPEED2 = {
     }
     if (this._comets) { for (const c of this._comets) c.d.dispose(); this._comets = null; }
     if (this._funnel) { this._funnel.dispose(); this._funnel = null; }
+    if (this._tw) { if (this.p.model && this.p.model.boneFx === this._tw.fx) this.p.model.boneFx = null; this._tw = null; } // alas de Ámbar
     if (this._wHid) { for (const pt of this._wHid.parts) pt.w.group.visible = true; this._wHid = null; }
     if (this.hero === 'kairo') { speedLines(0); this.p.animMul = 1; }
     for (const t of this._trails || []) t.dispose();
-    this._trails = null; this._cometTr = this._voltTr = this._boardTr = null;
+    this._trails = null; this._cometTr = this._voltTr = this._boardTr = this._windTr = null;
     if (this._sandSwaps) { for (const s of this._sandSwaps) s.o.material = s.mat; this._sandSwaps = null; }
     if (this._sandMats) { for (const m of this._sandMats) m.dispose(); this._sandMats = null; }
     if (this._origCleanup) this._origCleanup();
   },
 };
 
-// EMBUDO DEL TORNADO ELÉCTRICO DE ÁMBAR: dos conos abiertos (radio 1 abajo → más ancho arriba, altura 1) con
-// vetas de viento en espiral y destellos eléctricos; se escalan al tamaño de la heroína
-let _funGeo = null;
+// COLOR DE LAS PLUMAS de Ámbar: el color medio de los materiales de su propio modelo (no se inventa ningún color)
+function ambarFeatherColor(p) {
+  const c = new THREE.Color(0, 0, 0); let n = 0;
+  if (p.model && p.model.root) p.model.root.traverse((o) => { const ms = o.isMesh && o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : []; for (const m of ms) if (m.color && !m.transparent) { c.add(m.color); n++; } });
+  if (!n) return 0xd8b080;
+  c.multiplyScalar(1 / n);
+  return c.getHex();
+}
+
+// TORNADO DE ÁMBAR: cuatro bandas de aire (embudos abiertos de distinto radio) que giran a distintas velocidades y
+// en sentidos alternos, con vetas de viento en espiral, chispazos eléctricos y una parte de arriba orgánica (el
+// borde superior se ondula con ruido). Debajo, un disco de turbulencia pegado al suelo. Un solo juego de uniformes:
+// uGrow (0..1) hace nacer las bandas del suelo hacia arriba, uSpread (0..1) las separa y dispersa al final.
+let _funGeo = null, _baseGeo = null;
 function ambarFunnel(scene) {
-  if (!_funGeo) { _funGeo = new THREE.CylinderGeometry(1.25, 0.32, 1, 28, 8, true); _funGeo.translate(0, 0.5, 0); }
-  const U = { uT: { value: 0 }, uK: { value: 0 } };
-  const mk = (dir, tint) => new THREE.ShaderMaterial({
-    uniforms: { ...U, uDir: { value: dir }, uTint: { value: new THREE.Color(tint) } },
-    vertexShader: `varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
-    fragmentShader: `uniform float uT; uniform float uK; uniform float uDir; uniform vec3 uTint; varying vec2 vUv;
-      float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
-      float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }
+  if (!_funGeo) { _funGeo = new THREE.CylinderGeometry(1.25, 0.32, 1, 40, 14, true); _funGeo.translate(0, 0.5, 0); }
+  if (!_baseGeo) _baseGeo = new THREE.RingGeometry(0.25, 1.7, 48, 3);
+  const U = { uT: { value: 0 }, uK: { value: 0 }, uGrow: { value: 0 }, uSpread: { value: 0 } };
+  const NOISE = `float h(vec2 p){ return fract(sin(dot(p, vec2(12.9898, 78.233))) * 43758.5453); }
+      float n(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h(i), h(i + vec2(1, 0)), f.x), mix(h(i + vec2(0, 1)), h(i + vec2(1, 1)), f.x), f.y); }`;
+  const mk = (dir, tint, seed, alpha) => new THREE.ShaderMaterial({
+    uniforms: { ...U, uDir: { value: dir }, uTint: { value: new THREE.Color(tint) }, uSeed: { value: seed }, uA: { value: alpha } },
+    vertexShader: `uniform float uT; uniform float uSpread; uniform float uSeed; varying vec2 vUv; ${NOISE}
       void main(){
-        float a = vUv.x * 6.2831, y = vUv.y;
+        vUv = uv; vec3 p = position; float y = uv.y, a = uv.x * 6.2831;
+        // la parte de arriba se ondula de forma orgánica (más cuanto más arriba) y cada banda a su ritmo
+        float wob = (n(vec2(a * 1.5 + uT * 1.7 + uSeed * 7.0, y * 2.0 - uT * 0.8)) - 0.5) * 0.45 * y * y;
+        float sway = sin(uT * 2.3 + uSeed * 5.0 + y * 3.0) * 0.08 * y;
+        p.xz *= 1.0 + wob + uSpread * (0.7 + uSeed * 0.9);                 // al final se separan hacia fuera
+        p.x += sway; p.y *= 1.0 + uSpread * 0.35 * uSeed;
+        gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+      }`,
+    fragmentShader: `uniform float uT; uniform float uK; uniform float uDir; uniform float uGrow; uniform float uSpread; uniform float uSeed; uniform float uA; uniform vec3 uTint; varying vec2 vUv; ${NOISE}
+      void main(){
+        float y = vUv.y;
         // vetas de viento en espiral que suben girando
-        float s1 = n(vec2(vUv.x * 9.0 + y * 4.0 * uDir - uT * 2.5 * uDir, y * 3.0 - uT * 1.2));
-        float s2 = n(vec2(vUv.x * 17.0 - y * 6.0 * uDir + uT * 3.5 * uDir, y * 5.0));
+        float s1 = n(vec2(vUv.x * 9.0 + y * 4.0 * uDir - uT * 2.5 * uDir + uSeed * 3.0, y * 3.0 - uT * 1.2));
+        float s2 = n(vec2(vUv.x * 17.0 - y * 6.0 * uDir + uT * 3.5 * uDir, y * 5.0 + uSeed));
         float streak = smoothstep(0.55, 0.95, s1 * 0.7 + s2 * 0.5);
-        // chispazos eléctricos que recorren el embudo
-        float zap = step(0.985, n(vec2(vUv.x * 40.0 + floor(uT * 18.0) * 3.1, y * 20.0)));
-        float edge = smoothstep(0.0, 0.12, y) * smoothstep(1.0, 0.7, y);
-        vec3 col = mix(uTint, vec3(1.0), streak * 0.6) + vec3(0.5, 0.8, 1.0) * zap * 2.0;
-        gl_FragColor = vec4(col, (streak * 0.8 + 0.1 + zap) * edge * uK);
+        // chispazos eléctricos que recorren las bandas
+        float zap = step(0.988, n(vec2(vUv.x * 40.0 + floor(uT * 16.0) * 3.1 + uSeed * 11.0, y * 20.0)));
+        // nace del suelo hacia arriba; borde superior irregular (no un corte limpio)
+        float top = 0.78 + 0.2 * n(vec2(vUv.x * 7.0 + uT * 0.9, uSeed * 4.0));
+        float edge = smoothstep(0.0, 0.1, y) * (1.0 - smoothstep(top - 0.22, top, y));
+        float grow = 1.0 - smoothstep(uGrow * 1.05 - 0.12, uGrow * 1.05, y);
+        // al dispersarse, la banda se rompe en jirones antes de desaparecer
+        float tear = uSpread > 0.0 ? smoothstep(uSpread * 1.1 - 0.25, uSpread * 1.1, n(vec2(vUv.x * 6.0, y * 4.0 + uSeed * 9.0))) : 1.0;
+        vec3 col = mix(uTint, vec3(1.0), streak * 0.6) + vec3(0.5, 0.8, 1.0) * zap * 1.6;
+        gl_FragColor = vec4(col, (streak * 0.8 + 0.08 + zap * 0.8) * edge * grow * tear * uK * uA);
       }`,
     transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
   });
   const group = new THREE.Group();
-  const inner = new THREE.Mesh(_funGeo, mk(1, 0x4a90ff)); inner.scale.set(0.85, 1, 0.85);
-  const outer = new THREE.Mesh(_funGeo, mk(-1, 0x9cc8ff));
-  inner.renderOrder = outer.renderOrder = 5;
-  group.add(inner, outer);
+  // [radio, velocidad de giro (signo = sentido), color, transparencia] — de dentro a fuera
+  const SPEC = [[0.62, 1.35, 0x4a90ff, 0.75], [0.85, -0.95, 0x7ab4ff, 0.8], [1.02, 0.7, 0x9cc8ff, 0.7], [1.2, -0.45, 0xdcecff, 0.45]];
+  const bands = SPEC.map(([r, spd, col, a], i) => {
+    const m = new THREE.Mesh(_funGeo, mk(Math.sign(spd), col, i / SPEC.length, a));
+    m.scale.set(r, 1 - i * 0.05, r);
+    m.userData.sp = spd; m.renderOrder = 5;
+    group.add(m);
+    return m;
+  });
+  // BASE DE TURBULENCIA: disco de aire y polvo que gira a ras de suelo
+  const baseMat = new THREE.ShaderMaterial({
+    uniforms: U,
+    vertexShader: `varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`,
+    fragmentShader: `uniform float uT; uniform float uK; uniform float uSpread; varying vec2 vP; ${NOISE}
+      void main(){
+        float r = length(vP), a = atan(vP.y, vP.x);
+        float sw = n(vec2(a * 3.0 + r * 4.0 - uT * 5.0, r * 3.0)) * 0.7 + n(vec2(a * 7.0 - r * 6.0 + uT * 3.0, r * 6.0)) * 0.4;
+        float ring = smoothstep(0.25, 0.6, r) * (1.0 - smoothstep(1.1, 1.7, r));
+        vec3 col = mix(vec3(0.85, 0.82, 0.76), vec3(0.75, 0.88, 1.0), 0.5);
+        gl_FragColor = vec4(col, smoothstep(0.45, 0.9, sw) * ring * uK * 0.55 * (1.0 - uSpread));
+      }`,
+    transparent: true, depthWrite: false, side: THREE.DoubleSide, blending: THREE.AdditiveBlending,
+  });
+  const base = new THREE.Mesh(_baseGeo, baseMat);
+  base.rotation.x = -Math.PI / 2; base.position.y = 0.04; base.renderOrder = 5;
+  const baseHolder = new THREE.Group(); baseHolder.add(base);
+  group.add(baseHolder);
   group.visible = false;
   scene.add(group);
   return {
-    group, inner, outer, U, k: 0, spin: 0,
-    dispose() { scene.remove(group); inner.material.dispose(); outer.material.dispose(); },
+    group, bands, base, U, k: 0, spin: 0,
+    dispose() { scene.remove(group); for (const b of bands) b.material.dispose(); baseMat.dispose(); },
   };
 }
 

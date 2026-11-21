@@ -695,8 +695,14 @@ export class MirageSkill extends Skill {
 /* ====================================================================== */
 /*  VUELO (Águila: alas · Fénec: orejas) — de fondo                        */
 /* ====================================================================== */
-// impulso aéreo de las orejas de Bada: ventana al final del vuelo (s), duración (s), velocidad y algo de elevación
-const EAR_DASH = { window: 4, dur: 0.55, speed: 26, lift: 3 };
+/* DASH AÉREO CON TURBO PROPULSIÓN (orejas de Bada) — segunda fase del vuelo. Cuando quedan `auto` s de vuelo se
+   lanza SOLO (o antes, si el jugador vuelve a pulsar el botón dentro de `window`):
+   · preparación (prep): recoge las orejas hacia atrás y concentra energía en las puntas; frena un poco
+   · propulsión (dur): las dos orejas, juntas y hacia atrás, vibran como turbinas y empujan con fuerza → sale
+     disparada hacia delante a `speed` (vuelo normal: 7 m/s), sin perder altura; se puede corregir la dirección
+   · frenada (decel): recupera poco a poco la velocidad normal, abre las orejas y termina el vuelo con su descenso
+     y aterrizaje de siempre. Las paredes la detienen (colisión normal del héroe: nunca atraviesa el escenario). */
+const EAR_DASH = { window: 4, auto: 2.1, prep: 0.38, dur: 0.95, decel: 0.7, speed: 30, lift: 2.2, steer: 2.2 };
 export class FlightSkill extends Skill {
   static background = true;
   begin() {
@@ -782,8 +788,8 @@ export class FlightSkill extends Skill {
     else if (Math.random() < 0.4) this.g.fx.mist(c.x - Math.sin(p.facing) * 0.8, c.y, c.z - Math.cos(p.facing) * 0.8, 0xe8f6ff, 0.5); // estela de aire
     if (this.ears && f.max - f.t < 1.2 && Math.random() < 0.2) ui.alert('👂 ¡Se cansan las orejas!', 700);
     // IMPULSO AÉREO DE LAS OREJAS (Bada): al final del vuelo puede soltar una ráfaga concentrada que la lanza hacia delante
-    if (this.ears && !this.dashed && !this.dashHint && f.max - f.t < EAR_DASH.window) { this.dashHint = true; ui.banner('find', '👂💨', 'Pulsa otra vez el botón de las orejas: ¡impulso final!'); }
-    if (this.dashT > 0) this.tickEarDash(dt);
+    if (this.ears && !this.dashed && !f.ending && f.max - f.t < EAR_DASH.auto) this.earDash(); // TURBO automático antes de bajar
+    if (this.dash) this.tickEarDash(dt);
     if (this.ears && this.camWas) { // la cámara acompaña la altura: se aleja y sube un poco en el nivel 2
       const ch = this.g.chase, want = this.camWas.dist + (f.lvl2 ? 4 : 1);
       ch.distTarget = lerp(ch.distTarget, want, Math.min(1, dt * 1.5));
@@ -800,6 +806,7 @@ export class FlightSkill extends Skill {
   }
   enterLand() {
     const p = this.p;
+    this.dash = null; // si aterriza en mitad del turbo, las orejas vuelven a su sitio
     this.sfx('land');
     if (this.ears) this.vfx.sand(p.pos.x, p.pos.y + 0.1, p.pos.z, 6);
     else this.vfx.dust(p.pos.x, p.pos.y + 0.1, p.pos.z, 10, 2);
@@ -833,10 +840,13 @@ export class FlightSkill extends Skill {
       this.wings.L.forEach((b, i) => fx.rot(b, 0, 0, 1, (s * amp - 0.1) * (i === 0 ? 1 : 0.45) + Math.sin(ph - i * 0.6) * 0.15 * i * 0.3));
       this.wings.R.forEach((b, i) => fx.rot(b, 0, 0, 1, -((s * amp - 0.1) * (i === 0 ? 1 : 0.45) + Math.sin(ph - i * 0.6) * 0.15 * i * 0.3)));
     }
-    if (this.earB && this.dashT > 0) { // dash: orejas recogidas hacia atrás (concentran y liberan la ráfaga)
-      const k = this.dashT / EAR_DASH.dur, back2 = k > 0.8 ? (1 - k) * 5 : 1;
-      this.earB.L.forEach((b, i) => fx.rot(b, 1, 0, 0, (i === 0 ? 1.2 : 0.35) * back2));
-      this.earB.R.forEach((b, i) => fx.rot(b, 1, 0, 0, (i === 0 ? 1.2 : 0.35) * back2));
+    if (this.earB && this.dash) { // TURBO: orejas recogidas hacia atrás, juntas, vibrando como dos turbinas
+      const D = this.dash, ph2 = D.st === 'prep' ? D.k : 1, open = D.st === 'decel' ? D.k : 0; // 0 → 1 en cada fase
+      const fold = (D.st === 'prep' ? ease(ph2) : 1) * (1 - ease(open));
+      const buzz = D.st === 'turbo' ? Math.sin(this.t * 70) * 0.06 * (0.4 + D.pow) : 0;
+      const spread = 0.85 * (1 - fold), flapK = 1 - fold;
+      this.earB.L.forEach((b, i) => { fx.rot(b, 1, 0, 0, (i === 0 ? 1.25 : 0.4) * fold + buzz); fx.rot(b, 0, 0, 1, i === 0 ? -(spread + s * 0.4 * flapK) : -s * 0.16 * flapK); });
+      this.earB.R.forEach((b, i) => { fx.rot(b, 1, 0, 0, (i === 0 ? 1.25 : 0.4) * fold + buzz); fx.rot(b, 0, 0, 1, i === 0 ? spread + s * 0.4 * flapK : s * 0.16 * flapK); });
     } else if (this.earB) { // orejas: se abren hacia los lados y baten como hélices
       const open = 0.85, amp = 0.4;
       this.earB.L.forEach((b, i) => { fx.rot(b, 0, 0, 1, i === 0 ? -(open + s * amp) : -s * amp * 0.4); fx.rot(b, 1, 0, 0, Math.cos(ph) * 0.25); });
@@ -844,43 +854,112 @@ export class FlightSkill extends Skill {
     }
   }
   // el águila aterriza con V (o Ctrl) desde el nivel 1; Bada, al final del vuelo, puede hacer su impulso aéreo
-  get canRecast() { const f = this.p.fly; return !!(this.ears && this.stageName === 'vuelo' && !this.dashed && f && f.max - f.t < EAR_DASH.window); }
+  get canRecast() { const f = this.p.fly; return !!(this.ears && this.stageName === 'vuelo' && !this.dashed && f && !f.ending && f.max - f.t < EAR_DASH.window); }
   recast() {
     if (this.ears) return this.earDash();
     if (this.p.fly) this.p.fly.ending = true; ui.banner('find', '🦅', 'Aterrizando…'); return true;
   }
-  // DASH AÉREO: las orejas se recogen hacia atrás concentrando el aire y lo liberan de golpe → impulso hacia delante
+  // DASH AÉREO CON TURBO PROPULSIÓN: empieza la preparación (las fases avanzan en tickEarDash)
   earDash() {
-    if (this.dashed) return false;
+    if (this.dashed || !this.p.fly) return false;
     const p = this.p;
     this.dashed = true;
-    this.dashT = EAR_DASH.dur;
     const hs = Math.hypot(p.vx, p.vz);
-    this.dashDir = hs > 1 ? { x: p.vx / hs, z: p.vz / hs } : { x: Math.sin(p.facing), z: Math.cos(p.facing) };
-    p.facing = Math.atan2(this.dashDir.x, this.dashDir.z);
-    const c = this.center(0.8);
-    // onda de presión que sale de las orejas hacia atrás
-    this.vfx.ring(c.x, c.y, c.z, { r0: 0.3, r1: 3.2, dur: 0.3, color: 0xffe4b0, opacity: 0.8 });
-    this.vfx.orb(c, { r: 0.7, color: 0xfff0d0, opacity: 0.6, life: 0.14 });
-    for (let i = 0; i < 18; i++) { const a = rnd(0, TAU), v = rnd(2, 5); this.g.fx.spark.emit(c.x, c.y + 0.3, c.z, -this.dashDir.x * rnd(6, 10) + Math.cos(a) * v * 0.4, rnd(-1, 1.5), -this.dashDir.z * rnd(6, 10) + Math.sin(a) * v * 0.4, rnd(0.3, 0.5), 0.06, 0.02, 0xfff4d8, 0xd6a84f, 0.9, 0, 0, 1); }
-    this.vfx.sand(p.pos.x, p.pos.y, p.pos.z, 3);
-    this.g.chase.fovKick = 10;
-    this.shake(0.1);
-    this.sfx('wind'); this.sfx('flap');
+    const alt = p.pos.y - (p.floorY ? p.floorY(p.pos.x, p.pos.z, p.pos.y) : terrainH(p.pos.x, p.pos.z));
+    this.dash = { st: 'prep', t: 0, k: 0, pow: 0, dir: hs > 1.5 ? { x: p.vx / hs, z: p.vz / hs } : { x: Math.sin(p.facing), z: Math.cos(p.facing) }, trail: 0, stuck: 0, alt: clamp(alt, 2.5, 9) };
+    p.fly.max = Math.max(p.fly.max, p.fly.t + EAR_DASH.prep + EAR_DASH.dur + EAR_DASH.decel + 0.1); // el vuelo no termina en mitad del turbo
+    ui.banner('find', '👂💨', '¡Turbo de orejas!');
+    this.sfx('wind');
     return true;
   }
+  // puntas de las orejas en el mundo (de ahí salen la energía y las estelas)
+  earTips() {
+    const out = [];
+    if (this.earB) {
+      this.p.model.root.updateMatrixWorld(true);
+      for (const side of ['L', 'R']) { const ch = this.earB[side], b = ch[ch.length - 1]; if (b) out.push(b.getWorldPosition(V())); }
+    }
+    if (!out.length) { const c = this.center(1), f = this.fwd; out.push(V(c.x - f.z * 0.4, c.y, c.z + f.x * 0.4), V(c.x + f.z * 0.4, c.y, c.z - f.x * 0.4)); }
+    return out;
+  }
+  // dirección que pide el jugador (relativa a la cámara) o null
+  inputDir() {
+    const g = this.g, ax = g.input && g.input.moveAxes ? g.input.moveAxes() : { x: 0, y: 0 };
+    if (Math.hypot(ax.x, ax.y) < 0.15) return null;
+    const yaw = g.chase.yaw, x = -Math.sin(yaw) * ax.y + Math.cos(yaw) * ax.x, z = -Math.cos(yaw) * ax.y - Math.sin(yaw) * ax.x, l = Math.hypot(x, z) || 1;
+    return { x: x / l, z: z / l };
+  }
   tickEarDash(dt) {
-    const p = this.p, D = this.dashDir, k = this.dashT / EAR_DASH.dur; // 1 → 0
-    this.dashT = Math.max(0, this.dashT - dt);
-    const sp = EAR_DASH.speed * (0.55 + 0.45 * k);
-    p.vx = D.x * sp; p.vz = D.z * sp;
-    p.vy = Math.max(p.vy, EAR_DASH.lift * k);
-    this.pose.rx = 0.45 * k; this.pose.sy = 1 - 0.08 * k;
-    // estela de viento y arena que acompaña el impulso
-    const c = this.center(0.6);
-    this.g.fx.mist(c.x - D.x * 0.8, c.y, c.z - D.z * 0.8, 0xfff2dc, 0.55);
-    if (Math.random() < 0.6) this.vfx.orb(V(c.x - D.x * 0.5, c.y, c.z - D.z * 0.5), { r: 0.18, color: 0xffe0a8, opacity: 0.35, life: 0.25 });
-    if (Math.random() < 0.25) this.vfx.ring(c.x - D.x, c.y, c.z - D.z, { r0: 0.2, r1: 1.2, dur: 0.22, color: 0xffe8c0, opacity: 0.5 });
+    const D = this.dash, p = this.p, f = p.fly, fx = this.g.fx, pose = this.pose;
+    if (!f) { this.dash = null; return; }
+    D.t += dt;
+    const dur = EAR_DASH[D.st === 'prep' ? 'prep' : D.st === 'turbo' ? 'dur' : 'decel'];
+    D.k = Math.min(1, D.t / dur);
+    // corrección suave de la dirección con el movimiento (nunca un giro brusco)
+    const want = this.inputDir();
+    if (want && D.st !== 'prep') {
+      const a0 = Math.atan2(D.dir.x, D.dir.z), a1 = Math.atan2(want.x, want.z);
+      const da = clamp(Math.atan2(Math.sin(a1 - a0), Math.cos(a1 - a0)), -EAR_DASH.steer * dt, EAR_DASH.steer * dt);
+      D.dir = { x: Math.sin(a0 + da), z: Math.cos(a0 + da) };
+    }
+    const tips = this.earTips(), c = this.center(0.6), bx = -D.dir.x, bz = -D.dir.z;
+    let sp;
+    if (D.st === 'prep') {
+      // PREPARACIÓN: frena un poco, se encoge y concentra energía en las puntas de las orejas
+      sp = f.speed * (1 - 0.45 * ease(D.k));
+      pose.sy = 1 - 0.1 * ease(D.k); pose.rx = -0.15 * D.k;
+      p.vy = Math.max(p.vy, 0);
+      if (Math.random() < 0.7) for (const q of tips) { this.vfx.orb(q, { r: 0.08 + 0.18 * D.k, color: 0xffe2a0, opacity: 0.35 + 0.35 * D.k, life: 0.12 }); if (Math.random() < 0.4) fx.sparkle(q.x + rnd(-0.3, 0.3), q.y + rnd(-0.2, 0.3), q.z + rnd(-0.3, 0.3), 0xfff0c8, 0.5); }
+      if (D.k >= 1) {
+        // PROPULSIÓN: estallido de aire detrás de las orejas y salida disparada
+        D.st = 'turbo'; D.t = 0; D.k = 0;
+        p.facing = Math.atan2(D.dir.x, D.dir.z);
+        for (const q of tips) {
+          this.vfx.ring(q.x + bx * 0.4, q.y, q.z + bz * 0.4, { r0: 0.2, r1: 2.2, dur: 0.3, color: 0xffe4b0, opacity: 0.8 });
+          this.vfx.orb(q, { r: 0.5, color: 0xfff0d0, opacity: 0.55, life: 0.14 });
+          for (let i = 0; i < 10; i++) fx.spark.emit(q.x, q.y, q.z, bx * rnd(8, 13) + rnd(-1.2, 1.2), rnd(-0.8, 1.2), bz * rnd(8, 13) + rnd(-1.2, 1.2), rnd(0.3, 0.5), 0.06, 0.02, 0xfff4d8, 0xd6a84f, 0.9, 0, 0, 1);
+        }
+        this.vfx.sand(p.pos.x, p.pos.y, p.pos.z, 3);
+        this.g.chase.fovKick = 9; this.shake(0.08);
+        this.sfx('wind'); this.sfx('flap');
+      }
+    } else if (D.st === 'turbo') {
+      // aceleración rápida (0,15 s) y velocidad punta sostenida con la vibración de las "turbinas"
+      D.pow = Math.min(1, D.t / 0.15);
+      sp = lerp(f.speed * 0.55, EAR_DASH.speed, ease(D.pow));
+      pose.rx = 0.42 * D.pow; pose.sy = 1.06; pose.rz = 0;
+      p.vy = Math.max(p.vy, EAR_DASH.lift * (1 - D.k)); // no pierde altura durante el turbo
+      // ESTELAS DE VELOCIDAD detrás de cada oreja + ráfagas de viento y energía (moderadas: no tapan la vista)
+      D.trail -= dt;
+      if (D.trail <= 0) {
+        D.trail = 0.03;
+        for (const q of tips) {
+          this.vfx.orb(V(q.x + bx * 0.35, q.y, q.z + bz * 0.35), { r: 0.16, color: 0xffe0a8, opacity: 0.45, life: 0.28 });
+          fx.spark.emit(q.x, q.y, q.z, bx * rnd(9, 14), rnd(-0.3, 0.3), bz * rnd(9, 14), rnd(0.18, 0.3), 0.05, 0.015, 0xffffff, 0xffc870, 0.8, 0, 0, 1);
+        }
+        fx.mist(c.x + bx * 1.1, c.y, c.z + bz * 1.1, 0xfff2dc, 0.5);
+      }
+      if (Math.random() < 0.18) this.vfx.ring(c.x + bx * 1.4, c.y + 0.3, c.z + bz * 1.4, { r0: 0.3, r1: 1.4, dur: 0.22, color: 0xffe8c0, opacity: 0.45 });
+      // pared delante: la colisión del héroe la detiene → pasa a la frenada (sin atravesar nada ni quedarse atascada)
+      const moved = D.last ? Math.hypot(p.pos.x - D.last.x, p.pos.z - D.last.z) : sp * dt;
+      D.stuck = moved < sp * dt * 0.3 && D.t > 0.1 ? D.stuck + dt : 0;
+      if (D.k >= 1 || D.stuck > 0.08) { D.st = 'decel'; D.t = 0; D.k = 0; D.from = D.stuck > 0.08 ? 2 : sp; }
+    } else {
+      // FRENADA: recupera la velocidad normal de vuelo y abre las orejas
+      sp = lerp(D.from, f.speed, ease(D.k));
+      pose.rx = 0.42 * (1 - ease(D.k));
+      if (Math.random() < 0.5 * (1 - D.k)) for (const q of tips) this.vfx.orb(V(q.x + bx * 0.3, q.y, q.z + bz * 0.3), { r: 0.12, color: 0xffe0a8, opacity: 0.3 * (1 - D.k), life: 0.22 });
+      if (D.k >= 1) { this.dash = null; f.max = Math.min(f.max, f.t + 0.05); return; } // termina el vuelo: descenso y aterrizaje normales
+    }
+    p.vx = D.dir.x * sp; p.vz = D.dir.z * sp;
+    if (D.st !== 'prep') p.facing = Math.atan2(D.dir.x, D.dir.z);
+    // mantiene su altura sobre el terreno que tiene DELANTE (dunas, cuestas): el impulso no la estampa contra el suelo
+    if (D.st !== 'prep') {
+      const ax = p.pos.x + D.dir.x * Math.max(2, sp * 0.25), az = p.pos.z + D.dir.z * Math.max(2, sp * 0.25);
+      const gyA = Math.max(terrainH(ax, az), terrainH(p.pos.x, p.pos.z)), want = gyA + D.alt * (D.st === 'decel' ? 1 - 0.3 * D.k : 1);
+      p.vy = Math.max(p.vy, clamp((want - p.pos.y) * 4, -2, 14));
+    }
+    D.last = { x: p.pos.x, z: p.pos.z };
   }
   dispose() {
     this.restoreCam();

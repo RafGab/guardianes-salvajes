@@ -31,9 +31,6 @@ export const HERO_SKILLS = {
       wobble: 0.55,                 // ondulación elástica al salir disparada
       climbT: 0.35,                 // trepar el último tramo tras el balanceo
     },
-    // LENGUA DE BALANCEO (skills/swing.js): se engancha a un punto alto y lo balancea como un péndulo;
-    // independiente de la cola (se encadenan: cola → lengua → cola …)
-    tongue: { id: 'jtongue', name: 'Lengua de Balanceo', icon: '👅', cd: 2.5, range: 22, coneDeg: 65, segments: 30 },
     // OBSIDIANA — AVALANCHA: oleada de fragmentos de obsidiana que avanza por el escenario
     obsidian: {
       id: 'obsidian', name: 'Obsidiana: Avalancha', icon: '🖤', cd: 18,
@@ -137,19 +134,25 @@ export const HERO_SKILLS = {
     axe: { id: 'axe', name: 'Hacha', icon: '🪓', cd: 1.5, prep: 0.22, chop: 0.16, recover: 0.25, range: 3.2, arcDeg: 80, damage: 9, slowF: 0.6, slowT: 1.5, force: 4 },
   },
 
-  // ÁGUILA — PICADO DEL TRUENO: asciende cargando electricidad y cae en picado; onda de viento y rayo al impactar
+  // ÁGUILA — botones: 1 Velocidad (Tornado Eléctrico, poder base) · 2 Tormenta Eléctrica · 3 Aegis del Trueno ·
+  // 4 Dos Discos · 5 Picado de Garras del Trueno (fusión del Picado del Trueno y las Garras de Viento)
   ambar: {
-    skill: {
-      id: 'dive', name: 'Picado del Trueno', icon: '⚡', cd: 9,
-      prep: 0.4, charge: 0.55, recover: 0.4,
+    // ESPECIAL — PICADO DE GARRAS DEL TRUENO (skills/hero.js, FusionDiveSkill): FUSIÓN de los antiguos Picado del
+    // Trueno y Garras de Viento en un solo ataque. Asciende con las garras de energía cargándose de electricidad,
+    // desciende dirigida (se orienta con las teclas y se CONFIRMA volviendo a pulsar), cae en picado con las garras
+    // por delante y al impactar encadena los tres zarpazos: las cuchillas de viento salen ELECTRIFICADAS (cada
+    // enemigo que tocan recibe además un rayo) y el zarpazo doble final las lanza en círculo alrededor del impacto.
+    fusion: {
+      id: 'fusiondive', name: 'Picado de Garras del Trueno', icon: '🦅', cd: 14,
+      prep: 0.4, charge: 0.55, recover: 0.45,
       ascendHeight: 9.5,            // altura a la que asciende
       range: 20,                    // distancia máxima del objetivo
       diveSpeed: 38,
       waveRadius: 6.8, damage: 22, force: 14,
       shake: 0.5,                   // sacudida de cámara al impactar
-      // DESCENSO DIRIGIDO: tras el ascenso baja despacio con rayos; el jugador orienta el ataque con las teclas de
-      // dirección y lo CONFIRMA volviendo a pulsar el botón. Nunca se lanza solo: si no se confirma, aterriza sin atacar.
       descendSpeed: 1.6, hoverH: 2.4, steerSpeed: 9, waitMax: 9,
+      // cuchillas de las garras (fusionadas con el rayo): alcance, velocidad, anchura, daño y empuje; rayo al tocar
+      claws: { cuts: 3, speed: 22, range: 11, spreadDeg: 22, width: 1.4, damage: 6, force: 7, ring: 8, boltDamage: 4 },
     },
     // VUELO LIBRE (sin botón): DOBLE SALTO en el aire para despegar; aterriza al tocar el suelo
     flight: {
@@ -160,19 +163,18 @@ export const HERO_SKILLS = {
       camDists: [11, 15, 22], camPitches: [0.42, 0.6, 0.8], // la cámara se aleja y sube con cada nivel
       camDist: 15, camPitch: 0.62,  // cámara aérea
     },
-    // ESCUDO — SOBRECARGA ELÉCTRICA (skills/powers3.js): arcos eléctricos que recorren su silueta y la protegen;
-    // al recibir un golpe responde con una descarga más intensa; chispazos a los enemigos que se acercan
-    overload: { id: 'overload', name: 'Sobrecarga Eléctrica', icon: '⚡', cd: 15, ownShield: true, prep: 0.3, exec: 3.7, recover: 0.4, radius: 2.6, push: 7, damage: 2 },
-    // ESPECIAL — TORMENTA ELÉCTRICA (skills/powers3.js): nube negra que se carga y descarga lluvia y rayos sobre la
-    // zona; la lluvia apaga el fuego (poder de Ámbar contra el fuego)
+    // ESCUDO — AEGIS DEL TRUENO (skills/powers3.js): abre las alas y la electricidad que recorre sus plumas forma un
+    // ARCO SEMICIRCULAR de energía delante de ella (barrera frontal, no una esfera). Bloquea los proyectiles que
+    // tocan su superficie (onda eléctrica desde el punto de impacto) y responde a los golpes con una descarga.
+    overload: { id: 'overload', name: 'Aegis del Trueno', icon: '🛡️', cd: 15, ownShield: true, prep: 0.55, exec: 3.45, recover: 0.6, radius: 2.6, push: 7, damage: 2, arcR: 2.0, arcDeg: 160, arcH: 1.05 },
+    // PODER (botón 2) — TORMENTA ELÉCTRICA (skills/powers3.js): nube negra que se carga y descarga lluvia y rayos
+    // sobre la zona; la lluvia apaga el fuego (poder de Ámbar contra el fuego)
     storm: { id: 'estorm', name: 'Tormenta Eléctrica', icon: '⛈️', cd: 20, prep: 1.8, exec: 3.4, recover: 0.6, ahead: 4, radius: 8, height: 9, boltsPerSec: 5, boltDamage: 6, strikeR: 1.8 },
     // ARMA — DOS DISCOS: lanza uno de sus dos discos de fuego; rebota entre enemigos y vuelve a su mano
     disc: { id: 'disc', name: 'Dos Discos', icon: '🥏', cd: 1.6, prep: 0.15, recover: 0.2, range: 16, speed: 30, bounces: 2, bounceRange: 8, damage: 6 },
-    // GARRAS DE VIENTO: zarpazo que lanza tres cortes de aire con forma de garra
-    claws: { id: 'claws', name: 'Garras de Viento', icon: '🦅', cd: 6, prep: 0.3, recover: 0.35, cuts: 3, speed: 20, range: 10, spreadDeg: 16, width: 1.3, damage: 4, force: 6 },
   },
 
-  // DRAGÓN DE KOMODO — LENGUA CAMALEÓNICA: atrae enemigos ligeros o se impulsa hacia pesados y superficies; remata con giro de cola
+  // DRAGÓN DE KOMODO — LENGUA CAMALEÓNICA: atrae enemigos ligeros, se impulsa hacia pesados y superficies o se balancea de un punto alto; remata con giro de cola
   kairo: {
     // GÉISER: grietas de magma en el suelo y columnas volcánicas que golpean a los enemigos cercanos
     geyser: {
@@ -201,6 +203,9 @@ export const HERO_SKILLS = {
       segments: 32,                 // articulaciones de la lengua
       overshoot: 0.12,              // la lengua se pasa un poco y rebota (elasticidad)
       wobble: 0.3,                  // ondulación lateral al salir y al recogerse
+      // BALANCEO (skills/swing.js): sin enemigo delante, si hay un punto alto (edificio, roca, árbol) la lengua se
+      // engancha a él y Kairo se balancea como un péndulo; se suelta en lo alto del arco, con SALTAR o con el botón
+      swingRange: 22, swingConeDeg: 65, swingCdFactor: 0.35, // la recarga tras un balanceo es menor para encadenar
     },
     // ARMA — MARTILLO: salto corto y martillazo que hace temblar el suelo
     hammer: { id: 'hammer', name: 'Martillo', icon: '🔨', cd: 1.8, prep: 0.3, slam: 0.18, recover: 0.3, range: 2.2, radius: 3.4, damage: 10, force: 8 },
@@ -304,13 +309,13 @@ export const POWER_BUFF = 1.25;
 // tenga una habilidad con papel 'velocidad': Jaglion usa su Transformación en Roca).
 // 1 Velocidad · 2 Poder principal · 3 Escudo · 4 Arma · 5 Especial. Kyra tiene dos ataques y Lira dos escudos (6 botones).
 export const HERO_BUTTONS = {
-  jago: [['rock', 'velocidad'], ['obsidian', 'poder'], ['giant', 'escudo'], ['katana', 'arma'], ['skill', 'especial'], ['tongue', 'especial']],
+  jago: [['rock', 'velocidad'], ['obsidian', 'poder'], ['giant', 'escudo'], ['katana', 'arma'], ['skill', 'especial']],
   kairo: [['lava', 'poder'], ['geyser', 'escudo'], ['hammer', 'arma'], ['skill', 'especial']],
   halley: [['skill', 'poder'], ['mirage', 'escudo'], ['spear', 'arma'], ['ears', 'especial']],
   nilo: [['tsunami', 'poder'], ['maelstrom', 'escudo'], ['boomerang', 'arma'], ['skill', 'especial']],
   kyra: [['special', 'poder'], ['solstice', 'escudo'], ['skill', 'poder'], ['axe', 'arma'], ['aurora', 'especial']],
   lira: [['blood', 'poder'], ['umbra', 'escudo'], ['penumbra', 'escudo'], ['scythe', 'arma'], ['vision', 'especial']],
-  ambar: [['skill', 'poder'], ['overload', 'escudo'], ['disc', 'arma'], ['claws', 'especial'], ['storm', 'especial']],
+  ambar: [['storm', 'poder'], ['overload', 'escudo'], ['disc', 'arma'], ['fusion', 'especial']],
 };
 export const ROLE_LABEL = { velocidad: 'VEL', poder: 'PODER', escudo: 'ESCUDO', arma: 'ARMA', especial: 'ESPECIAL' };
 
