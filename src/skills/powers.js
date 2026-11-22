@@ -9,6 +9,7 @@ import { auroraShield, frostArea } from './magicfx.js';
 import { MirageWard, TsunamiWave, WaterVortex, FoamPool, WaterShield, MagmaGeyser, ObsidianSpikes, CrystalDebris } from './fx4.js';
 import { envSpeedMul } from './config.js';
 import { crackDecal } from './powers3.js';
+import { CLONE_ROLES, openSelect, cycleSelect, confirmSelect, closeSelect, tickSelect, tickJobs, copyPower, disposeJobs } from './fenecclones.js';
 
 // PODERES ESPECIALES NUEVOS (3 por héroe; la Zorra Ártica tiene 4).
 // Cada poder es una lista de etapas PREPARACIÓN → EJECUCIÓN → RECUPERACIÓN (como skills/hero.js).
@@ -603,7 +604,10 @@ BloodMoonSkill.prototype.waveFront = function (dt, k) {
 };
 
 /* ====================================================================== */
-/*  FÉNEC — ESPEJISMOS (de fondo: no bloquea los demás poderes)            */
+/*  FÉNEC — ESPEJISMOS CON CLONES ESPECIALIZADOS (de fondo)               */
+/*  Tres clones de colores (azul = poder, rojo = rastreador, amarillo =   */
+/*  escudo) orbitan alrededor de Bada y absorben golpes. Con la tecla de  */
+/*  escudo se elige uno y hace su especialidad (skills/fenecclones.js).   */
 /* ====================================================================== */
 export class MirageSkill extends Skill {
   static background = true;
@@ -615,16 +619,18 @@ export class MirageSkill extends Skill {
   build() {
     const d = this.def, pose = this.pose;
     return [
-      // ACTIVACIÓN: Halley vibra con el calor, el aire se distorsiona y la arena gira hacia ella
+      // ACTIVACIÓN: Bada vibra con el calor, el aire se distorsiona y la arena gira hacia ella
       { name: 'calor', dur: d.prep, enter: this.enterHeat, tick: (dt, k) => {
         pose.sy = 1 + 0.06 * Math.sin(this.t * 40) * k; pose.rz = 0.05 * Math.sin(this.t * 33) * k; // tiembla con el calor
         const p = this.p.pos, a = this.t * 14, r = 2.4 * (1 - k) + 0.4;
-        for (let i = 0; i < 2; i++) { const b = a + i * Math.PI; this.g.fx.sparkle(p.x + Math.sin(b) * r, p.y + 0.3 + k * this.p.H * 0.6, p.z + Math.cos(b) * r, i ? 0xc89aff : 0xffd890, 0.6); }
+        for (let i = 0; i < 3; i++) { const b = a + i * TAU / 3; this.g.fx.sparkle(p.x + Math.sin(b) * r, p.y + 0.3 + k * this.p.H * 0.6, p.z + Math.cos(b) * r, CLONE_ROLES[i].color, 0.6); }
       }, exit: this.spawn },
-      // PROTECCIÓN: los espejismos orbitan a su alrededor y absorben los golpes
+      // PROTECCIÓN: los clones orbitan a su alrededor, absorben golpes y se pueden elegir
       { name: 'espejismos', dur: d.life, tick: this.tickLive },
-      // DESACTIVACIÓN: los espejismos vuelven a ella y se desvanecen
-      { name: 'disipar', dur: 0.5, enter: () => { if (this.ward) this.ward.end(); this.sfx('shimmer'); }, tick: (dt) => { if (this.ward) this.ward.update(dt); }, exit: this.fadeOut },
+      // DESACTIVACIÓN: los clones que no trabajan vuelven a ella y se desvanecen
+      { name: 'disipar', dur: 0.5, enter: () => { closeSelect(this); if (this.ward) this.ward.end(); this.sfx('shimmer'); }, tick: (dt) => { if (this.ward) this.ward.update(dt); tickJobs(this, dt); }, exit: this.fadeOut },
+      // CLONES TRABAJANDO: el escudo ya terminó, pero el clon rojo (o el azul) acaba su especialidad
+      { name: 'clones', dur: 9999, enter: this.enterJobs, tick: this.tickJobsOnly },
     ];
   }
   enterHeat() {
@@ -635,8 +641,8 @@ export class MirageSkill extends Skill {
   }
   spawn() {
     const d = this.def, p = this.p;
-    this.ward = new MirageWard(this.g, p, { n: d.copies, radius: d.radius, life: d.life });
-    this.track({ kill: () => { if (this.ward) { this.ward.dispose(); this.ward = null; } } });
+    this.ward = new MirageWard(this.g, p, { n: CLONE_ROLES.length, radius: d.radius, life: d.life, roles: CLONE_ROLES });
+    this.track({ kill: () => { disposeJobs(this); if (this.ward) { this.ward.dispose(); this.ward = null; } } });
     p.mirageGuard = this;
     const q = p.pos;
     this.sfx('warp');
@@ -644,16 +650,19 @@ export class MirageSkill extends Skill {
     this.vfx.ring(q.x, null, q.z, { r0: 0.4, r1: d.radius + 1.2, dur: 0.5, color: 0xffd890 });
     this.vfx.ring(q.x, null, q.z, { r0: 0.3, r1: d.radius + 0.6, dur: 0.4, color: 0xc89aff });
     if (this.v2) this.v2.shell(new THREE.Vector3(q.x, q.y + p.H * 0.5, q.z), { r: d.radius, color: 0xc89aff, rim: 0xffe6b0, opacity: 0.5, life: 0.35 });
-    ui.banner('find', '🪞', `Los espejismos absorben ${d.copies} golpes · vuelve a pulsar para saltar a uno`);
+    ui.banner('find', '🪞 🔵 Poder · 🔴 Rastreador · 🟡 Escudo', 'Vuelve a pulsar ESCUDO para elegir un clon');
   }
   tickLive(dt) {
     const w = this.ward;
     if (!w) { this.endStage(); return; }
     w.update(dt);
-    if (w.alive.length) this.p.evadeT = Math.max(this.p.evadeT, 0.15); // ESCUDO: mientras quede un espejismo, Halley no recibe daño
-    else this.endStage();
+    tickSelect(this, dt);
+    tickJobs(this, dt);
+    if (w.done) { this.endStage(); return; }
+    if (w.alive.length) this.p.evadeT = Math.max(this.p.evadeT, 0.15); // ESCUDO: mientras quede un clon guardián, Bada no recibe daño
+    else if (!this.doubled) this.endStage(); // (con el escudo duplicado, la protección del botón sigue hasta el final)
   }
-  // El juego avisa de un golpe bloqueado: un espejismo se interpone, lo absorbe y estalla
+  // El juego avisa de un golpe bloqueado: un clon guardián se interpone, lo absorbe y estalla
   absorb(from) {
     if (this.stageName !== 'espejismos' || !this.ward) return false;
     if (!this.ward.absorb(from)) return false;
@@ -665,29 +674,32 @@ export class MirageSkill extends Skill {
     this.vfx.ring(q.x, null, q.z, { r0: 0.3, r1: 2.2, dur: 0.4, color: 0xffd890, opacity: 0.6 });
     this.vfx.sparks(q.x, q.y + this.p.H * 0.5, q.z, 0xe8c8ff, 10, 2);
   }
-  get canRecast() { return this.stageName === 'espejismos' && this.ward && this.ward.alive.length > 0; }
-  // teletransporte: el héroe desaparece en una distorsión y aparece en el espejismo, que estalla en arena
-  recast() {
-    const d = this.def, p = this.p;
-    const tgt = this.ward && this.ward.takeForBlink();
-    if (!tgt) return false;
-    const from = p.pos.clone();
-    this.vfx.sand(from.x, from.y + 0.3, from.z, 4);
-    this.vfx.ring(from.x, null, from.z, { r0: 0.3, r1: 2.4, dur: 0.4, color: 0xffd890 });
-    this.vfx.strip(from, tgt.pos, { width: 0.6, color: 0xffe0a0, opacity: 0.35, life: 0.5 });
-    p.pos.copy(tgt.pos);
-    p.facing = tgt.facing;
-    p.vx = p.vz = 0; p.vy = 0;
-    p.evadeT = Math.max(p.evadeT, 0.8); // ESCUDO: al saltar al espejismo esquiva los golpes
-    this.sfx('warp');
-    const q = p.pos;
-    this.vfx.sand(q.x, q.y + 0.3, q.z, 8);
-    this.vfx.ring(q.x, null, q.z, { r0: 0.4, r1: d.burstRadius, dur: 0.5, color: 0xffc870 });
-    this.vfx.sparks(q.x, q.y + 0.5, q.z, 0xfff0c0, 14, 3);
-    for (const t of this.combat.inCircle(q.x, q.z, d.burstRadius)) { this.combat.blind(t, d.blindT); this.hit(t, d.damage); }
-    return true;
+  // el escudo terminó: si algún clon sigue con su especialidad, la habilidad deja libre el botón de escudo
+  // (se puede volver a lanzar) y solo sigue moviendo a esos clones hasta que terminen
+  enterJobs() {
+    if (!this.ward || !this.ward.jobs.length) { this.endStage(); return; }
+    if (this.p.mirageGuard === this) this.p.mirageGuard = null;
+    this.key = '_clones';
   }
+  tickJobsOnly(dt) {
+    const w = this.ward;
+    if (!w || w.done) { this.endStage(); return; }
+    w.update(dt);
+    tickJobs(this, dt);
+    if (!w.jobs.length) this.endStage();
+  }
+  // segunda pulsación → abre la selección; tercera → confirma (o cancela)
+  get canRecast() { return this.stageName === 'espejismos' && !!this.ward && this.ward.alive.length > 0; }
+  recast() {
+    if (!this.canRecast) return false;
+    if (!this.selecting) { openSelect(this); return true; }
+    return confirmSelect(this);
+  }
+  cycle(dir) { return cycleSelect(this, dir); }
+  // Bada lanzó otro poder: el clon azul (si está elegido) lanza ese mismo poder a su lado
+  onHeroSkill(key, def, Cls, role) { if (this.ward) copyPower(this, key, def, Cls, role); }
   cleanup() {
+    closeSelect(this);
     if (this.p.mirageGuard === this) this.p.mirageGuard = null;
   }
 }

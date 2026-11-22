@@ -10,6 +10,8 @@ import * as THREE from 'three';
      mueve con un muelle amortiguado: sin tirones ni vibraciones. Con varias burbujas, van en fila.
    · Al entregar en el Centro de Vida la burbuja se expande, se desvanece y suelta a la víctima.
    La lista lógica de rescatados sigue siendo player.carrying (contador, capacidad, portal y entrega igual).
+   · Una burbuja puede tener otro DUEÑO (owner = { pos, facing }): el clon rastreador de Bada lleva así a su
+     propia víctima; la burbuja le sigue a él (no cuenta en player.carrying).
    ====================================================================== */
 
 const TAU = Math.PI * 2;
@@ -90,7 +92,7 @@ export class RescueBubbles {
   }
 
   // F junto a una víctima: la burbuja nace alrededor de ella
-  add(v) {
+  add(v, owner = null) {
     if (this.has(v)) return null;
     const { h, r } = this.measure(v);
     const mat = bubbleMat();
@@ -105,7 +107,7 @@ export class RescueBubbles {
     const pos = base.clone(); pos.y += h * 0.5 + HOVER * 0.4;
     mesh.position.copy(pos); mesh.scale.setScalar(0.001);
     this.g.scene.add(mesh);
-    const b = { v, r, h, mesh, mat, pos, vel: new THREE.Vector3(), t: 0, yaw: v.root.rotation.y, ph: Math.random() * TAU, lift: 0 };
+    const b = { v, r, h, mesh, mat, pos, vel: new THREE.Vector3(), t: 0, yaw: v.root.rotation.y, ph: Math.random() * TAU, lift: 0, owner };
     this.list.push(b);
     // destello de energía al activarse
     const vfx = this.g.vfx, fx = this.g.fx;
@@ -139,6 +141,16 @@ export class RescueBubbles {
     });
   }
 
+  // quita la burbuja SIN entregar (el clon desaparece antes de llegar): la víctima queda libre donde estaba
+  drop(v) {
+    const i = this.list.findIndex((b) => b.v === v);
+    if (i < 0) return null;
+    const b = this.list[i];
+    this.list.splice(i, 1);
+    this.g.scene.remove(b.mesh); b.mat.dispose();
+    return b.mesh.position.clone();
+  }
+
   clear() {
     for (const b of this.list) { this.g.scene.remove(b.mesh); b.mat.dispose(); }
     this.list.length = 0;
@@ -163,13 +175,15 @@ export class RescueBubbles {
     const pl = this.g.player, p = pl.pos;
     // migas de pan: el camino real del héroe (solo mientras haya burbujas)
     if (!this.list.length) { this.path.length = 0; return; }
+    const mine = this.list.filter((b) => !b.owner);
     const last = this.path[this.path.length - 1];
-    if (!last || last.distanceTo(p) > 0.15) { this.path.push(p.clone()); if (this.path.length > 400) this.path.shift(); }
+    if (mine.length && (!last || last.distanceTo(p) > 0.15)) { this.path.push(p.clone()); if (this.path.length > 400) this.path.shift(); }
     let along = (pl.R || 0.35) + 0.45;
     const tgt = new THREE.Vector3();
-    this.list.forEach((b, i) => {
+    for (const b of this.list) if (b.owner) this.followOwner(b, dt, tgt);
+    mine.forEach((b, i) => {
       b.t += dt;
-      along += b.r + (i ? this.list[i - 1].r + GAP : 0);
+      along += b.r + (i ? mine[i - 1].r + GAP : 0);
       this.pointBack(along, tgt);
       const ground = pl.floorY ? pl.floorY(tgt.x, tgt.z, tgt.y + 1) : tgt.y;
       tgt.y = Math.max(ground, Math.min(tgt.y, ground + 30)) + HOVER + b.r; // flota sobre el suelo (o sobre el héroe si vuela)
@@ -203,5 +217,27 @@ export class RescueBubbles {
       v.root.position.set(b.pos.x, b.pos.y + bob - b.h * 0.5, b.pos.z);
       v.root.rotation.set(Math.sin(b.t * 1.7 + b.ph) * 0.06, b.yaw, Math.sin(b.t * 1.3 + b.ph) * 0.05);
     });
+  }
+  // burbuja de un clon: le sigue detrás (mismo muelle amortiguado, sin tirones)
+  followOwner(b, dt, tgt) {
+    const o = b.owner, pl = this.g.player;
+    b.t += dt;
+    const back = 0.9 + b.r;
+    tgt.set(o.pos.x - Math.sin(o.facing) * back, o.pos.y, o.pos.z - Math.cos(o.facing) * back);
+    const ground = pl.floorY ? pl.floorY(tgt.x, tgt.z, o.pos.y + 1.5) : o.pos.y;
+    tgt.y = Math.max(ground, o.pos.y - 1) + HOVER + b.r;
+    const ax = (tgt.x - b.pos.x) * STIFF - b.vel.x * DAMP, ay = (tgt.y - b.pos.y) * STIFF - b.vel.y * DAMP, az = (tgt.z - b.pos.z) * STIFF - b.vel.z * DAMP;
+    b.vel.x += ax * dt; b.vel.y += ay * dt; b.vel.z += az * dt;
+    b.pos.addScaledVector(b.vel, dt);
+    if (b.pos.distanceTo(tgt) > 6) { b.pos.copy(tgt); b.vel.set(0, 0, 0); } // el clon dio un salto de espejismo: la burbuja le acompaña
+    const k = Math.min(1, b.t / 0.35), grow = k < 1 ? 1 - Math.pow(1 - k, 3) * Math.cos(k * 4) : 1;
+    const bob = Math.sin(b.t * 2.2 + b.ph) * 0.05;
+    b.mesh.position.set(b.pos.x, b.pos.y + bob * 0.5, b.pos.z);
+    b.mesh.scale.setScalar(Math.max(0.001, b.r * grow));
+    b.mat.uniforms.uT.value = b.t; b.mat.uniforms.uA.value = Math.min(1, b.t / 0.3); b.mat.uniforms.uFlash.value = Math.max(0, 1 - b.t / 0.4);
+    const sp = Math.hypot(b.vel.x, b.vel.z);
+    if (sp > 0.4) { const want = Math.atan2(b.vel.x, b.vel.z); let d = want - b.yaw; d = Math.atan2(Math.sin(d), Math.cos(d)); b.yaw += d * Math.min(1, dt * 4); }
+    b.v.root.position.set(b.pos.x, b.pos.y + bob - b.h * 0.5, b.pos.z);
+    b.v.root.rotation.set(0, b.yaw, 0);
   }
 }

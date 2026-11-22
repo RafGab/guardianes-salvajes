@@ -298,6 +298,9 @@ export class Game {
     return this.useAbility();
   }
   cycleAbility(dir = 1) {
+    // SELECCIÓN DE CLON de Bada abierta: Tab / LB cambian de clon en lugar de cambiar de habilidad
+    const mg = this.player.mirageGuard;
+    if (mg && mg.selecting) { mg.cycle(dir); return; }
     if (this.abilities.length < 2) return;
     this.selectAbility((this.abIndex + dir + this.abilities.length) % this.abilities.length);
   }
@@ -845,10 +848,48 @@ export class Game {
     this.score += 10;
   }
 
+  /* CLON RASTREADOR DE BADA: recoge con el MISMO sistema de rescate (burbuja), pero la víctima va con el clon y
+     no ocupa la capacidad del héroe. Devuelve true si la ha recogido. */
+  pickupBy(v, owner) {
+    if (!v || v.state !== 'waiting' || v.hidden || this.bubbles.has(v) || this.isBlocked(v) || v.thirsty || this.state !== 'playing') return false;
+    v.state = 'carried';
+    v.setMode('carried');
+    v.marker.visible = false;
+    this.bubbles.add(v, owner);
+    v.parentBody = null;
+    audio.pick();
+    ui.banner('good', '🔴 ¡El clon rastreador rescata!', `${v.info.label} va con el clon rojo hacia el refugio`);
+    this.score += 10;
+    ui.setScore(this.score);
+    return true;
+  }
+  // el clon desaparece sin llegar: la víctima vuelve a esperar donde está (nadie la pierde)
+  releaseVictim(v) {
+    if (!v || v.state !== 'carried' || this.player.carrying.includes(v)) return;
+    const at = this.bubbles.drop(v) || v.root.position.clone();
+    const gy = this.player.floorY ? this.player.floorY(at.x, at.z, at.y + 1) : terrainH(at.x, at.z);
+    v.root.position.set(at.x, gy + 0.02, at.z);
+    v.root.rotation.set(0, v.root.rotation.y, 0);
+    v.baseY = gy + 0.02; v.parentBody = null;
+    v.state = 'waiting';
+    v.setMode('wave');
+    v.marker.visible = true;
+  }
+  // entrega del clon: queda registrada igual que la del héroe (contador, puntos, portal); true si se ha entregado
+  deliverByClone(v, at) {
+    if (!v || v.state !== 'carried' || this.player.carrying.includes(v) || this.state !== 'playing') return false;
+    this.deliverVictim(v, at, false);
+    return v.state === 'delivered';
+  }
+
   deliverOne() {
-    const { player, fx, scene } = this;
+    const { player } = this;
     const v = player.carrying.shift();
     if (!v) return;
+    this.deliverVictim(v, player.pos, true);
+  }
+  deliverVictim(v, at, byPlayer) {
+    const { player, fx, scene } = this;
     scene.attach(v.root);
     v.root.scale.set(1, 1, 1);
     this.bubbles.release(v, CFG.SAFE.y + 0.02); // la burbuja se expande, destella y la suelta en el suelo
@@ -868,14 +909,16 @@ export class Game {
     if (this.kindTotal) ui.setRescueKinds(this.stats.people, this.kindTotal.people, this.stats.animals, this.kindTotal.animals);
     ui.setScore(this.score);
     ui.setCarry(player.carrying, player.capacity);
-    ui.banner('good', '❤️ ¡Rescate completado!', `${v.info.label} está a salvo${urgentBonus ? ' · ¡bonus por urgencia!' : ''}`);
+    ui.banner('good', byPlayer ? '❤️ ¡Rescate completado!' : '❤️ ¡El clon rojo ha completado el rescate!', `${v.info.label} está a salvo${urgentBonus ? ' · ¡bonus por urgencia!' : ''}`);
     audio.success();
-    const p = player.pos;
+    const p = at || player.pos;
     fx.confetti(p.x, p.y + 1.6, p.z);
-    this.slowT = 0.5;
-    this.chase.shake(0.06);
-    player.celebrateTimer = 1.4;
-    player.celebrate = true;
+    if (byPlayer) {
+      this.slowT = 0.5;
+      this.chase.shake(0.06);
+      player.celebrateTimer = 1.4;
+      player.celebrate = true;
+    }
     if (this.delivered >= this.total) {
       if (this.mission.boss && !this.bossDone) this.prepareBoss();
       else this.end(true);
@@ -1559,6 +1602,8 @@ export class Game {
   update(dt) {
     if (this.state === 'idle' || this.state === 'done') return;
     const { world, player, chase, input, camera } = this;
+    // SELECCIÓN DE CLON de Bada abierta: la rueda del ratón cambia de clon (no acerca la cámara mientras tanto)
+    if (player.mirageGuard && player.mirageGuard.selecting && input.wheel) { player.mirageGuard.cycle(Math.sign(input.wheel)); input.wheel = 0; }
     const real = dt;
     this.slowT = Math.max(0, this.slowT - real);
     // DETENCIÓN DEL TIEMPO (visión del Lince): cuenta en tiempo REAL y dura exactamente 5 s.

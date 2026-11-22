@@ -68,13 +68,16 @@ export const HERO_SKILLS = {
       earShake: 0.22,               // exageración del movimiento de las orejas (rad)
       clearsObstacles: true,        // despeja obstáculos ligeros como el viento
     },
-    // ESPEJISMOS (escudo): copias ilusorias que orbitan alrededor de Halley; cada una absorbe un golpe y estalla.
-    // Vuelve a pulsar para teletransportarte a una (la copia estalla en arena y ciega)
+    // ESPEJISMOS (escudo): tres CLONES de colores orbitan alrededor de Bada y absorben golpes (skills/fenecclones.js).
+    // 2.ª pulsación: elegir clon (Tab / rueda / LB cambian; 3.ª pulsación confirma; «Cancelar» cierra sin gastar):
+    // 🔵 azul = copia el próximo poder · 🔴 rojo = rescata solo a otra víctima · 🟡 amarillo = escudo ×2. Un solo uso.
     mirage: {
       id: 'mirage', name: 'Espejismos', icon: '🪞', cd: 11,
       ownShield: true,
-      prep: 0.3, copies: 3, radius: 2.3, life: 4, // número de copias (= golpes que absorbe), radio de la órbita y duración (escudo: 4 s)
-      burstRadius: 3.6, blindT: 2.6, damage: 6,                // estallido de arena al usar una copia
+      prep: 0.3, copies: 3, radius: 2.3, life: 4, // clones, radio de la órbita y duración (escudo: 4 s; 8 s con el clon amarillo)
+      powerWait: 18,                // el clon azul espera hasta 18 s a que Bada lance un poder
+      searchWait: 20,               // el clon rojo espera hasta 20 s si no queda nadie que rescatar
+      rescueMax: 150,               // tiempo máximo del rescate del clon rojo
     },
     // VUELO DE OREJAS: despega con sus enormes orejas, vuela un tiempo limitado
     ears: {

@@ -45,14 +45,14 @@ function illusionize(m0, U) {
   m.opacity = 1;
   if (m.emissive) { m.emissive = new THREE.Color(0x6a2aa8); m.emissiveIntensity = 0.35; }
   m.onBeforeCompile = (sh) => {
-    sh.uniforms.uMT = U.uMT; sh.uniforms.uMCol = U.uMCol; sh.uniforms.uMOp = U.uMOp; sh.uniforms.uMFlash = U.uMFlash;
+    sh.uniforms.uMT = U.uMT; sh.uniforms.uMCol = U.uMCol; sh.uniforms.uMOp = U.uMOp; sh.uniforms.uMFlash = U.uMFlash; sh.uniforms.uMMix = U.uMMix;
     const lit = sh.fragmentShader.includes('vViewPosition') && sh.fragmentShader.includes('#include <normal_fragment_begin>');
-    sh.fragmentShader = 'uniform float uMT; uniform vec3 uMCol; uniform float uMOp; uniform float uMFlash;\n' + sh.fragmentShader.replace('#include <dithering_fragment>', `
+    sh.fragmentShader = 'uniform float uMT; uniform vec3 uMCol; uniform float uMOp; uniform float uMFlash; uniform float uMMix;\n' + sh.fragmentShader.replace('#include <dithering_fragment>', `
       #include <dithering_fragment>
       float rimF = ${lit ? '1.0 - abs(dot(normalize(normal), normalize(vViewPosition)))' : '0.5'};
       float scan = 0.82 + 0.18 * sin(gl_FragCoord.y * 0.85 - uMT * 38.0);
       float band = smoothstep(0.92, 1.0, sin(gl_FragCoord.y * 0.045 + uMT * 6.0)); // franja de interferencia que recorre la figura
-      vec3 col = mix(gl_FragColor.rgb, uMCol, 0.38) * scan + uMCol * (pow(rimF, 2.2) * 1.7 + band * 0.55);
+      vec3 col = mix(gl_FragColor.rgb, uMCol, uMMix) * scan + uMCol * (pow(rimF, 2.2) * 1.7 + band * 0.55);
       col = mix(col, vec3(1.0), uMFlash);
       gl_FragColor = vec4(col, gl_FragColor.a * uMOp * (0.42 + 0.58 * pow(rimF, 0.9) + band * 0.3 + uMFlash));`);
   };
@@ -63,8 +63,8 @@ function illusionize(m0, U) {
 // Copia animada del héroe: un clon del esqueleto que copia la pose del original
 // (con un retraso propio, para que cada espejismo se mueva como un eco).
 class Echo {
-  constructor(src, tint, opacity) {
-    this.U = { uMT: { value: 0 }, uMCol: { value: new THREE.Color(tint) }, uMOp: { value: opacity }, uMFlash: { value: 0 } };
+  constructor(src, tint, opacity, mix = 0.38) {
+    this.U = { uMT: { value: 0 }, uMCol: { value: new THREE.Color(tint) }, uMOp: { value: opacity }, uMFlash: { value: 0 }, uMMix: { value: mix } };
     this.copy = SkeletonUtils.clone(src);
     this.mats = [];
     this.bones = [];
@@ -97,7 +97,8 @@ class Echo {
 
 export class MirageWard {
   // g: juego · p: jugador · n: número de espejismos · radius: radio de la órbita · life: duración
-  constructor(g, p, { n = 3, radius = 2.3, life = 6.5, tint = 0xc89aff, gold = 0xffd890 } = {}) {
+  // roles: [{ id, color, trail }] → cada copia tiene su color propio (clones de Bada: azul, rojo y amarillo)
+  constructor(g, p, { n = 3, radius = 2.3, life = 6.5, tint = 0xc89aff, gold = 0xffd890, roles = null } = {}) {
     this.g = g; this.p = p; this.n = n; this.R = radius; this.life = life;
     this.tint = tint; this.gold = gold;
     this.t = 0; this.rot = p.facing; this.ending = 0; this.done = false;
@@ -111,14 +112,50 @@ export class MirageWard {
     this.record();
     this.mirrors = [];
     for (let i = 0; i < n; i++) {
-      const main = new Echo(this.src, tint, 0.9), trail = new Echo(this.src, gold, 0.32);
+      const role = roles && roles[i];
+      const main = new Echo(this.src, role ? role.color : tint, 0.9, role ? 0.74 : 0.38), trail = new Echo(this.src, role ? role.trail : gold, 0.32, role ? 0.55 : 0.38);
       this.group.add(main.group, trail.group);
       const a = this.rot + (i / n) * TAU;
-      this.mirrors.push({ i, main, trail, ang: a, tAng: a, trailAng: a, alive: true, state: 'spawn', st: 0, r: 0, blinkT: rnd(1.2, 2.2) + i * 0.4, delay: 3 + i * 4, x: p.pos.x, y: p.pos.y, z: p.pos.z, from: null });
+      this.mirrors.push({ i, role, main, trail, ang: a, tAng: a, trailAng: a, alive: true, state: 'spawn', st: 0, r: 0, blinkT: rnd(1.2, 2.2) + i * 0.4, delay: 3 + i * 4, x: p.pos.x, y: p.pos.y, z: p.pos.z, from: null, job: null, face: 0 });
     }
+    this.sel = null;     // copia resaltada durante la selección (o 'cancel')
     this.buildDome();
+    this.buildSelect();
   }
-  get alive() { return this.mirrors.filter((m) => m.alive && m.state !== 'shatter'); }
+  get alive() { return this.mirrors.filter((m) => m.alive && m.state !== 'shatter' && m.state !== 'vanish' && !m.job); }
+  // copias que están haciendo su especialidad (se mueven por su cuenta)
+  get jobs() { return this.mirrors.filter((m) => m.alive && m.job); }
+  // desaparición de una copia (una sola vez): destello, se estira hacia arriba y se deshace en arena de su color
+  vanish(m) {
+    if (!m || !m.alive || m.state === 'vanish') return false;
+    m.state = 'vanish'; m.st = 0; m.vanishJob = m.job; m.job = m.job || 'vanish';
+    this.puff(m.x, m.y, m.z, 1.1, m.role ? m.role.color : this.tint);
+    this.g.vfx.ring(m.x, null, m.z, { r0: 0.2, r1: 1.8, dur: 0.45, color: m.role ? m.role.color : this.tint, opacity: 0.8 });
+    return true;
+  }
+  // SELECCIÓN: aro de color bajo la copia elegida y cartel con su especialidad
+  buildSelect() {
+    this.selRingGeo = new THREE.RingGeometry(0.55, 0.8, 40); this.selRingGeo.rotateX(-Math.PI / 2);
+    this.selRingMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.85, depthWrite: false, depthTest: false, side: THREE.DoubleSide, toneMapped: false });
+    this.selRing = new THREE.Mesh(this.selRingGeo, this.selRingMat); this.selRing.renderOrder = 59; this.selRing.visible = false;
+    this.labelCanvas = document.createElement('canvas'); this.labelCanvas.width = 512; this.labelCanvas.height = 128;
+    this.labelTex = new THREE.CanvasTexture(this.labelCanvas); this.labelTex.colorSpace = THREE.SRGBColorSpace;
+    this.labelMat = new THREE.SpriteMaterial({ map: this.labelTex, depthTest: false, depthWrite: false, transparent: true });
+    this.label = new THREE.Sprite(this.labelMat); this.label.renderOrder = 61; this.label.scale.set(2.6, 0.65, 1); this.label.visible = false;
+    this.group.add(this.selRing, this.label);
+    this.labelText = '';
+  }
+  setLabel(text, color) {
+    if (this.labelText === text) return;
+    this.labelText = text;
+    const c = this.labelCanvas, x = c.getContext('2d');
+    x.clearRect(0, 0, c.width, c.height);
+    x.fillStyle = 'rgba(10,8,20,0.72)'; x.beginPath(); x.roundRect ? x.roundRect(8, 14, 496, 100, 40) : x.rect(8, 14, 496, 100); x.fill();
+    x.lineWidth = 8; x.strokeStyle = '#' + new THREE.Color(color).getHexString(); x.stroke();
+    x.fillStyle = '#ffffff'; x.font = 'bold 52px "Segoe UI","Segoe UI Emoji",sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.fillText(text, 256, 66);
+    this.labelTex.needsUpdate = true;
+  }
 
   record() {
     const B = this.srcBones, f = new Float32Array(B.length * 7);
@@ -181,10 +218,10 @@ export class MirageWard {
   }
 
   fx() { return this.g.fx; }
-  puff(x, y, z, big = 1) {
+  puff(x, y, z, big = 1, col = null) {
     const fx = this.g.fx;
-    for (let i = 0; i < Math.round(5 * big); i++) fx.mist(x + rnd(-0.5, 0.5), y + rnd(0.2, 1.5), z + rnd(-0.5, 0.5), Math.random() < 0.5 ? 0xe8c8ff : 0xffe6b0, 1.1 * big);
-    for (let i = 0; i < Math.round(8 * big); i++) fx.sparkle(x + rnd(-0.4, 0.4), y + rnd(0.2, 1.4), z + rnd(-0.4, 0.4), Math.random() < 0.5 ? this.tint : this.gold, 2.2 * big);
+    for (let i = 0; i < Math.round(5 * big); i++) fx.mist(x + rnd(-0.5, 0.5), y + rnd(0.2, 1.5), z + rnd(-0.5, 0.5), col || (Math.random() < 0.5 ? 0xe8c8ff : 0xffe6b0), 1.1 * big);
+    for (let i = 0; i < Math.round(8 * big); i++) fx.sparkle(x + rnd(-0.4, 0.4), y + rnd(0.2, 1.4), z + rnd(-0.4, 0.4), col || (Math.random() < 0.5 ? this.tint : this.gold), 2.2 * big);
   }
 
   // Un golpe llega desde `from`: el espejismo más cercano a esa dirección se interpone y lo absorbe.
@@ -228,7 +265,7 @@ export class MirageWard {
     const fadeIn = clamp01(t / 0.35);
     let endK = 0;
     if (this.ending) { this.ending += dt; endK = clamp01(this.ending / 0.45); }
-    const domeOp = fadeIn * (1 - endK) * (live.length ? 1 : 0.4);
+    const domeOp = fadeIn * (1 - endK) * (live.length || !this.ending ? 1 : 0.4);
     const du = this.domeMat.uniforms, ru = this.runeMat.uniforms;
     du.uT.value = t; ru.uT.value = t;
     du.uOp.value = lerp(du.uOp.value, domeOp * 0.55, Math.min(1, dt * 8));
@@ -246,6 +283,26 @@ export class MirageWard {
       m.st += dt;
       const E = m.main, T = m.trail;
       E.U.uMT.value = t + m.i * 1.7; T.U.uMT.value = t + m.i * 1.7 + 0.5;
+      // COPIA CON ESPECIALIDAD (o desapareciendo): la mueve su controlador (m.x/y/z, m.face); no orbita
+      if (m.job) {
+        let op = 0.95, flash = 0.08 + 0.06 * Math.sin(t * 6 + m.i), sy = 1;
+        if (m.state === 'vanish') {
+          const k = clamp01(m.st / 0.55);
+          op = 0.95 * (1 - k); flash = k < 0.3 ? 1 : 1 - (k - 0.3) / 0.7; sy = 1 + k * 0.8;
+          if (Math.random() < 0.6) this.g.fx.sparkle(m.x + rnd(-0.4, 0.4), m.y + rnd(0.2, p.H * 1.4), m.z + rnd(-0.4, 0.4), m.role ? m.role.color : this.tint, 1.2);
+          if (k >= 1) { m.alive = false; E.group.visible = false; T.group.visible = false; continue; }
+        } else if (m.st < 0.3 && !m.jobStarted) flash = 0.8 * (1 - m.st / 0.3);
+        m.jobStarted = true;
+        E.group.visible = true;
+        E.group.position.set(m.x, m.y, m.z);
+        E.group.rotation.y = m.face;
+        E.copy.scale.set(E.base.x * (1 - (sy - 1) * 0.3), E.base.y * sy * (1 + 0.03 * Math.sin(t * 17 + m.i)), E.base.z);
+        E.U.uMOp.value = op; E.U.uMFlash.value = flash + (m.glow || 0);
+        if (m.mixer) m.mixer.update(dt); else E.pose(this.frame(m.poseDelay || 0));
+        T.group.visible = false;
+        if (op > 0.2 && Math.random() < dt * 6) this.g.fx.sparkle(m.x + rnd(-0.3, 0.3), m.y + rnd(0.1, p.H), m.z + rnd(-0.3, 0.3), m.role ? m.role.color : this.tint, 0.6);
+        continue;
+      }
       // ángulo, radio y altura
       if (m.state !== 'shatter') m.ang += angDiff(m.ang, m.tAng) * Math.min(1, dt * 6);
       let r = this.R * (1 + 0.07 * Math.sin(t * 2.3 + m.i * 2.1)), op = 0.9, flash = 0, stretch = 1;
@@ -295,6 +352,8 @@ export class MirageWard {
       E.group.position.set(m.x + rnd(-jit, jit) * 0.5, m.y, m.z + rnd(-jit, jit) * 0.5);
       E.group.rotation.y = m.ang; // mira hacia fuera: guarda a Halley desde su lado
       E.copy.scale.set(E.base.x * (1 + 0.035 * Math.sin(t * 23 + m.i) - (stretch - 1) * 0.35), E.base.y * (1 + 0.05 * Math.sin(t * 17 + m.i * 3)) * stretch, E.base.z * (1 + 0.035 * Math.cos(t * 21)));
+      if (this.sel === m) { flash = Math.max(flash, 0.35 + 0.25 * Math.sin(t * 9)); E.copy.scale.multiplyScalar(1.14); op = Math.max(op, 0.95); }
+      else if (this.sel) op *= 0.55; // las demás se atenúan: se ve claramente cuál está elegida
       E.U.uMOp.value = op; E.U.uMFlash.value = flash;
       E.pose(this.frame(m.delay));
       // rastro: un eco dorado más tenue que llega con retraso
@@ -309,7 +368,19 @@ export class MirageWard {
       // granos de arena brillante que se desprenden
       if (op > 0.2 && Math.random() < dt * 9) this.g.fx.sparkle(m.x + rnd(-0.3, 0.3), m.y + rnd(0.1, p.H), m.z + rnd(-0.3, 0.3), Math.random() < 0.5 ? this.tint : this.gold, 0.7);
     }
-    if (endK >= 1) { this.done = true; return true; }
+    // aro y cartel de la selección
+    const S = this.sel;
+    if (S && !this.ending) {
+      const tgt = S === 'cancel' ? { x: P.x, y: P.y, z: P.z, col: 0xffffff, txt: '✖ CANCELAR' } : { x: S.x, y: S.y, z: S.z, col: S.role ? S.role.color : this.tint, txt: S.role ? S.role.icon + ' ' + S.role.label : '' };
+      this.selRing.visible = this.label.visible = true;
+      this.selRing.position.set(tgt.x, tgt.y + 0.06, tgt.z);
+      this.selRing.scale.setScalar((S === 'cancel' ? 1.6 : 1) * (1 + 0.08 * Math.sin(t * 8)));
+      this.selRing.rotation.y = t;
+      this.selRingMat.color.setHex(tgt.col);
+      this.label.position.set(tgt.x, tgt.y + p.H * 1.45 + 0.35, tgt.z);
+      this.setLabel(tgt.txt, tgt.col);
+    } else { this.selRing.visible = this.label.visible = false; }
+    if (endK >= 1 && !this.jobs.length) { this.done = true; return true; }
     return false;
   }
 
@@ -317,6 +388,8 @@ export class MirageWard {
     this.g.vfx.group.remove(this.group);
     for (const m of this.mirrors) { m.main.dispose(); m.trail.dispose(); }
     this.domeGeo.dispose(); this.domeMat.dispose(); this.runeGeo.dispose(); this.runeMat.dispose();
+    if (this.selRingGeo) { this.selRingGeo.dispose(); this.selRingMat.dispose(); this.labelTex.dispose(); this.labelMat.dispose(); }
+    for (const m of this.mirrors) if (m.mixer) { m.mixer.stopAllAction(); m.mixer = null; }
     this.done = true;
   }
 }

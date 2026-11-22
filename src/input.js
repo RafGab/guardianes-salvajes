@@ -215,6 +215,7 @@ export class Input {
       edge(1, () => this.emit('rescue'));
       edge(3, () => this.emit('interact'));
       edge(9, () => this.emit('pause'));
+      edge(4, () => this.emit('abilityNext')); // LB: siguiente habilidad (o siguiente clon en la selección de Bada)
     }
     for (let i = 0; i < gp.buttons.length; i++) prev[i] = b(i);
   }

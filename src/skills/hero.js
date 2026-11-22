@@ -1324,6 +1324,8 @@ export class HeroSkills {
     }
     sk.role = (HERO_BUTTONS[hero] || []).find(([k]) => k === key)?.[1] || null; // papel del botón (solo para animar al héroe)
     if (Cls.background) this.bg.push(sk); else this.cur = sk;
+    // CLON AZUL de Bada: los poderes de fondo pueden reaccionar a un poder recién lanzado (lo copia a su lado)
+    for (const b of this.bg) if (b !== sk && b.onHeroSkill) b.onHeroSkill(key, def, Cls, sk.role);
     // con el arma fuera, las demás habilidades también hacen estallar su energía
     const role = (HERO_BUTTONS[hero] || []).find(([k]) => k === key);
     if (g.weapons && !(role && role[1] === 'arma')) g.weapons.skillBurst();
