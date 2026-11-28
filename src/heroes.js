@@ -90,9 +90,9 @@ export const HEROES = [
   },
   {
     id: 'voya', name: 'Voya', species: 'León blanco', element: 'eter',
-    power: { type: 'ether', icon: '🪐', name: 'Impulso Etéreo', cd: 10, desc: 'Se impulsa con energía del Éter: un anillo orbital bajo sus pies lo lanza hacia delante y corre a gran velocidad dejando una estela de partículas cósmicas y fragmentos de luz.' },
+    power: { type: 'ether', icon: '✨', name: 'Desfase Éter', cd: 10, desc: 'Su cuerpo se descompone en partículas de energía etérea: desaparece, viaja convertido en luz y reaparece unos metros más allá con una onda expansiva dimensional; después sigue corriendo a gran velocidad.' },
     stats: { speed: 7.4, jump: 9.0, swim: 3.6, carry: 2 },
-    bio: 'León blanco majestuoso, sereno y legendario. Guardián del Éter, la energía que mantiene unidos los mundos: invoca los anillos de Saturno para atacar, proteger y desatar descargas de luz cósmica. "Hasta la estrella más lejana gira alrededor de algo… yo protejo ese centro."',
+    bio: 'León blanco majestuoso, sereno y legendario. Guardián del Éter, la energía que mantiene unidos los mundos: se desfasa en energía, dobla el espacio y la gravedad, regenera su vida con el Éter y desata los anillos de Saturno. "Hasta la estrella más lejana gira alrededor de algo… yo protejo ese centro."',
   },
 ];
 

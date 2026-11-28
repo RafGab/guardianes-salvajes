@@ -265,6 +265,24 @@ export const HERO_SKILLS = {
       radius: 1.6,                            // radio de la órbita (m, para un héroe de 1,85 m)
       zapEvery: 0.45, damage: 4, push: 9,     // descarga y empuje a los enemigos que tocan los anillos
     },
+    // DISTORSIÓN DIMENSIONAL (poder): dobla el espacio sobre el objetivo, eleva y hace girar a los enemigos y las
+    // rocas cercanas con su gravedad, lo comprime todo y lo libera en una onda dimensional
+    rift: {
+      id: 'gravityrift', name: 'Distorsión Dimensional', icon: '🌀', cd: 9,
+      prep: 0.55, exec: 1.6, compressT: 0.35, recover: 0.5, // extender la mano · gravedad · comprimir · onda
+      range: 14, ahead: 7, lift: 1.3,         // alcance para buscar objetivo, distancia sin objetivo, altura de la distorsión
+      radius: 5.5, liftMax: 1.6, rocks: 12,   // radio de la gravedad, altura a la que eleva, fragmentos de roca
+      tickEvery: 0.4, tickDamage: 3,          // daño continuo mientras levitan
+      damage: 18, force: 14,                  // onda dimensional final
+    },
+    // REGENERACIÓN LEGENDARIA (escudo): campo protector que absorbe energía del ambiente y la convierte en vida
+    // hasta el 100 % (4 s de protección, como todos los escudos; el campo lo dibuja la propia habilidad)
+    regen: {
+      id: 'legendaryregen', name: 'Regeneración Legendaria', icon: '💠', cd: 12,
+      ownShield: true,
+      prep: 0.5, exec: 2.8, recover: 0.7,     // activar · regenerar (la vida sube hasta el 100 %) · destello final
+      radius: 1.5,                            // tamaño del campo (m, para un héroe de 1,85 m)
+    },
     // CETRO DE SATURNO (arma): barrido → giro completo → golpe al suelo con onda anular
     staff: { id: 'saturnstaff', name: 'Cetro de Saturno', icon: '🔱', cd: 1.3, prep: 0.16, swing: 0.22, recover: 0.22, reach: 3.2, arcDeg: 150, ringR: 4.2, damage: 8, force: 5 },
     // CORONA DE SATURNO (especial): levita, una gran estructura de anillos gira, se expande y estalla en Éter
@@ -351,7 +369,7 @@ export const HERO_BUTTONS = {
   kyra: [['special', 'poder'], ['solstice', 'escudo'], ['skill', 'poder'], ['axe', 'arma'], ['aurora', 'especial']],
   lira: [['blood', 'poder'], ['umbra', 'escudo'], ['penumbra', 'escudo'], ['scythe', 'arma'], ['vision', 'especial']],
   ambar: [['storm', 'poder'], ['overload', 'escudo'], ['disc', 'arma'], ['fusion', 'especial']],
-  voya: [['ring', 'poder'], ['orbit', 'escudo'], ['staff', 'arma'], ['saturn', 'especial']],
+  voya: [['rift', 'poder'], ['regen', 'escudo'], ['staff', 'arma'], ['saturn', 'especial']], // el Anillo Astral y la Órbita de Saturno siguen definidos arriba
 };
 export const ROLE_LABEL = { velocidad: 'VEL', poder: 'PODER', escudo: 'ESCUDO', arma: 'ARMA', especial: 'ESPECIAL' };
 

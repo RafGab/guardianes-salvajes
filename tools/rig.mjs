@@ -74,6 +74,8 @@ for (let v = 0; v < NV; v++) {
     if (group[b] === 'leg' && py > hipY + 0.02) d *= 1 + (py - hipY) * 14;  // las piernas no capturan la barriga
     if (group[b] === 'arm' && sd !== 0 && py < (spec.armMinY ?? 0.2)) d *= 3; // los brazos no capturan los pies
     if (group[b] === 'arm' && spec.armMinZ !== undefined && pz < spec.armMinZ) d *= 20; // ni lo que queda detrás de la espalda (colas)
+    // alas: el plumaje interior (junto a piernas y cuerpo) no se va con el ala al abrirla (spec.wingMinX)
+    if (group[b] === 'wing' && spec.wingMinX !== undefined) { const ax = Math.abs(px - midX); if (ax < spec.wingMinX && py < (spec.wingMaxY ?? 0.6)) d *= 1 + (spec.wingMinX - ax) * 40; }
     raw[b] = 1 / (Math.pow(d, power) + 1e-3);
   }
   // ZONAS FORZADAS (spec.force = [{ box: [x0, x1, y0, y1, z0, z1], bone }]): accesorios rígidos (arma a la espalda,

@@ -157,6 +157,9 @@ export class Soldier {
     this.facing += d * Math.min(1, dt * 8);
     this.group.position.copy(this.pos);
     this.group.rotation.y = this.facing;
+    // GRAVEDAD de Voya (Distorsión Dimensional): el poder lo eleva y lo hace girar en el aire (solo visual)
+    if (this.liftY > 0.01) { this.group.position.y += this.liftY; this.group.rotation.y += this.liftSpin || 0; }
+    else if (this.liftSpin) this.liftSpin = 0;
     // REACCIÓN AL IMPACTO (skills/impactfx.js): sacudida hacia atrás y se encoge un instante
     if (this.punch > 0) {
       this.punch = Math.max(0, this.punch - dt * 6);

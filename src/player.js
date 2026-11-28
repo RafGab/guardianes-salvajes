@@ -222,9 +222,13 @@ export class Player {
       this.support = null;
       this.facing = Math.atan2(dx, dz);
     } else if (type === 'ether') {
-      // VOYA: IMPULSO ETÉREO — un anillo de energía bajo los pies lo lanza hacia delante (sin salto) y corre ×1,9
+      // VOYA: DESFASE ÉTER — se convierte en energía y recorre ~10 m en un instante (0,24 s a 40 m/s, con las
+      // colisiones normales: no atraviesa paredes), reaparece y sigue corriendo ×1,9 el resto del impulso.
+      // Los efectos (cuerpo invisible, partículas, onda al reaparecer) los hace skills/voya.js (speedVoya).
       this.speedBoost(sdur, 1.9, 0.5);
-      this.vx += (dx / len) * 7; this.vz += (dz / len) * 7;
+      this.dashT = 0.24;
+      this.vx = (dx / len) * 40; this.vz = (dz / len) * 40;
+      this.vy = Math.max(this.vy, 0);
       this.facing = Math.atan2(dx, dz);
     } else if (type === 'glide') {
       this.vy = 13.5;
