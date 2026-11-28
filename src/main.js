@@ -433,8 +433,18 @@ function updateMenu(dt) {
     const y = terrainH(SHOW.x, SHOW.z) + 0.8;
     const sway = Math.sin(clockT * 0.4) * 0.35;
     const hh = showcase.height || 1.8; // encuadre a la medida de cada héroe (el pequeño no se pierde, el grande cabe)
-    camera.position.set(3.3 + sway * 0.6, y + 0.5 + hh * 0.45, SHOW.z + 3.2 + hh * 1.1);
-    camera.lookAt(SHOW.x - 0.9, y + hh * 0.67, SHOW.z);
+    if (curH > curW) {
+      // MÓVIL EN VERTICAL: el héroe entero, centrado en el hueco libre entre el panel de arriba y las tarjetas de abajo
+      const band = menuBand(), t = Math.tan((camera.fov * Math.PI) / 360);
+      const bh = Math.max(0.18, band.bot - band.top), yc = (band.top + band.bot) / 2;
+      const dist = (hh * 1.2) / (bh * 2 * t), cy = y + hh * 0.5;
+      camera.position.set(SHOW.x + sway * 0.4, cy + 0.15, SHOW.z + dist);
+      camera.lookAt(SHOW.x, cy + 0.15 + dist * (yc - 0.5) * 2 * t, SHOW.z);
+    } else {
+      // (la cámara va referida al pedestal: en los mundos donde el inicio no está en x = 0 el héroe ya no sale lejísimos)
+      camera.position.set(SHOW.x + 3.3 + sway * 0.6, y + 0.5 + hh * 0.45, SHOW.z + 3.2 + hh * 1.1);
+      camera.lookAt(SHOW.x - 0.9, y + hh * 0.67, SHOW.z);
+    }
     if (!dragSel.active) showcase.root.rotation.y += dt * 0.35;
     showcase.update(dt, { speed: 0, grounded: true });
     const def = HEROES[selected];
@@ -450,6 +460,15 @@ function updateMenu(dt) {
 }
 
 const dragSel = { active: false, x: 0 };
+// hueco visible de la selección de héroe (fracciones de la altura de la pantalla): entre el panel y las tarjetas
+const _band = { top: 0.3, bot: 0.72, t: -1 };
+function menuBand() {
+  if (clockT - _band.t < 0.3) return _band;
+  _band.t = clockT;
+  const H = window.innerHeight || 1, a = document.querySelector('#select .sel-left'), b = document.querySelector('#select .sel-bottom');
+  if (a && b) { const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(); if (rb.top > ra.bottom) { _band.top = ra.bottom / H; _band.bot = rb.top / H; } }
+  return _band;
+}
 
 /* ---------- arranque ---------- */
 const nextFrame = () => new Promise((r) => setTimeout(r, 16));
