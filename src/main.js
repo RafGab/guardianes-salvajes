@@ -481,7 +481,7 @@ async function buildGame(scenario) {
   for (const o of scene.children) if (!preSys.has(o)) o.userData.arenaKeep = true; // efectos y sistemas del juego: siguen visibles en la arena del jefe
   game.getMainRT = () => (composer ? composer.renderTarget1 : null); // destino real del dibujo (para precompilar sombreadores con las mismas opciones)
   game.onBossPrep = enterTeam;
-  window.__g = { game, world, player, chase, input, camera, scene, renderer, get mode() { return mode; }, setMode: (m) => (mode = m), enterSelect, beginMission, showHero, HEROES, fx, LEVELS, Save, ITEMS, pickMission, enterMissions, buildGame, loadLevel, startNextLevel, get level() { return currentLevel; } };
+  window.__g = { game, world, player, chase, input, camera, scene, renderer, get mode() { return mode; }, setMode: (m) => (mode = m), enterSelect, beginMission, showHero, HEROES, fx, LEVELS, Save, ITEMS, pickMission, enterMissions, buildGame, loadLevel, startNextLevel, get level() { return currentLevel; }, get stage() { return heroStage; } };
 }
 
 async function boot() {

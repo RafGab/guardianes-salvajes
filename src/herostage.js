@@ -15,6 +15,8 @@ import { IS_TOUCH } from './platform.js';
    El héroe es SU MODELO 3D REAL del juego (getHeroModel): aquí solo se coloca, se ilumina y se anima.
    ====================================================================== */
 const WHITE = new THREE.Color(0xffffff);
+const _X = new THREE.Vector3(1, 0, 0), _Y = new THREE.Vector3(0, 1, 0), _Z = new THREE.Vector3(0, 0, 1), _q = new THREE.Quaternion();
+const rotAdd = (b, axis, ang) => { if (b && ang) b.quaternion.multiply(_q.setFromAxisAngle(axis, ang)); };
 const PLAT_R = 1.35;   // radio de la plataforma (m)
 const PLAT_H = 0.24;   // altura de la plataforma
 
@@ -238,15 +240,78 @@ export class HeroStage {
     model.root.rotation.set(0, this.yaw, 0);
     model.root.scale.setScalar(1);
     this.setColor(colorHex);
+    this.restPose(model);
     if (entrance) {
-      this.enterK = 0; this.presentT = 1.3; // entrada: sube de la plataforma y hace su animación de poder
+      this.enterK = 0; // entrada: sube de la plataforma (sin animar el cuerpo)
       this.pulseK = 1;
       this.yaw = this.baseYaw - 0.9; this.yawV = 0; this.idleT = 0;
     }
   }
+  /* --- VIDA SUTIL: el héroe conserva su pose original (la de reposo de su esqueleto) y solo se mueven la cola y
+     las orejas, con balanceos suaves y pequeñas sacudidas de vez en cuando. Brazos, tronco y cabeza quietos. --- */
+  restPose(m) {
+    // fuera las animaciones del juego: el esqueleto vuelve a su pose de reposo (la del modelo)
+    if (m.mixer) m.mixer.stopAllAction();
+    m.action = null; m.actionName = '';
+    m.boneFx = m.armFx = m.tailFx = null;
+    m.root.traverse((o) => { if (!o.isBone) return; const u = o.userData; if (u.q0) o.quaternion.copy(u.q0); if (u.s0) o.scale.copy(u.s0); if (u.p0) o.position.copy(u.p0); });
+    const B = m.bones || {};
+    const chain = (re) => Object.keys(B).filter((n) => re.test(n)).sort((a, b) => Number(a.match(/(\d+)$/)[1]) - Number(b.match(/(\d+)$/)[1])).map((n) => B[n]);
+    const tail = chain(/^tail_(?:[a-z]+_)?\d+$/);
+    const ears = { L: chain(/^ear_L_\d+$/), R: chain(/^ear_R_\d+$/) };
+    // Ámbar no tiene cola ni orejas: solo las puntas de las alas se mecen muy levemente (como plumas al aire)
+    const wings = tail.length || ears.L.length ? { L: [], R: [] } : { L: [B.wing_L_3, B.wing_L_4].filter(Boolean), R: [B.wing_R_3, B.wing_R_4].filter(Boolean) };
+    const all = [...tail, ...ears.L, ...ears.R, ...wings.L, ...wings.R];
+    this.life0 = { tail, ears, wings, q0: all.map((b) => b.quaternion.clone()), all, t: Math.random() * 10,
+      flick: 0, flickT: 2 + Math.random() * 3, flickDir: 1, twitch: { L: 0, R: 0 }, twitchT: 1.5 + Math.random() * 2.5 };
+  }
+  life(dt) {
+    const L = this.life0;
+    if (!L) return;
+    L.t += dt;
+    const t = L.t;
+    L.all.forEach((b, i) => b.quaternion.copy(L.q0[i]));
+    // COLA: balanceo lento y suave (la onda baja por la cola) y, de vez en cuando, un pequeño coletazo
+    L.flickT -= dt;
+    if (L.flickT <= 0) { L.flickT = 3 + Math.random() * 4.5; L.flick = 1; L.flickDir = Math.random() < 0.5 ? -1 : 1; }
+    L.flick = Math.max(0, L.flick - dt * 0.9);
+    const n = L.tail.length;
+    L.tail.forEach((b, i) => {
+      const k = (i + 1) / Math.max(1, n), lag = i * 0.55;
+      const sway = 0.045 * Math.sin(t * 0.9 - lag) * (0.5 + 0.5 * k);
+      const fl = L.flick > 0 ? 0.16 * L.flickDir * Math.sin((1 - L.flick) * Math.PI * 2.2 - lag) * L.flick * (0.4 + 0.6 * k) : 0;
+      rotAdd(b, _Y, sway + fl);
+      rotAdd(b, _X, 0.02 * Math.sin(t * 0.6 - lag));
+    });
+    // OREJAS: quietas casi siempre; de vez en cuando una (o las dos) da una sacudida corta hacia atrás
+    L.twitchT -= dt;
+    if (L.twitchT <= 0) {
+      L.twitchT = 2.2 + Math.random() * 4;
+      const r = Math.random();
+      if (r < 0.4) L.twitch.L = 1; else if (r < 0.8) L.twitch.R = 1; else { L.twitch.L = 1; L.twitch.R = 0.85; }
+    }
+    for (const side of ['L', 'R']) {
+      L.twitch[side] = Math.max(0, L.twitch[side] - dt * 3.2);
+      const w = L.twitch[side], e = w > 0 ? Math.sin((1 - w) * Math.PI) : 0; // sube y vuelve en ~0,3 s
+      const sg = side === 'L' ? 1 : -1;
+      L.ears[side].forEach((b, i) => {
+        const k = i === 0 ? 1 : 0.6;
+        rotAdd(b, _X, (0.22 * e + 0.012 * Math.sin(t * 1.3 + i)) * k);
+        rotAdd(b, _Z, sg * 0.1 * e * k);
+      });
+    }
+    // ÁMBAR: las puntas de las alas apenas se mecen
+    for (const side of ['L', 'R']) {
+      const sg = side === 'L' ? 1 : -1;
+      L.wings[side].forEach((b, i) => rotAdd(b, _Z, sg * 0.02 * Math.sin(t * 0.8 + i * 0.6 + (side === 'L' ? 0 : 1.3))));
+    }
+  }
+
   // al salir de la pantalla: el modelo vuelve al juego tal como estaba
   release() {
     const m = this.hero;
+    if (m && this.life0) this.life0.all.forEach((b, i) => b.quaternion.copy(this.life0.q0[i]));
+    this.life0 = null;
     if (m) { if (m.root.parent === this.scene) this.scene.remove(m.root); m.root.scale.setScalar(1); m.root.rotation.set(0, 0, 0); }
     this.hero = null;
   }
@@ -338,8 +403,7 @@ export class HeroStage {
       } else this.yawV *= 0.8;
       m.root.rotation.y = this.yaw;
       // animación de presentación (su animación de poder) y después reposo
-      this.presentT = Math.max(0, (this.presentT || 0) - dt);
-      m.update(dt, { speed: 0, grounded: true, power: this.presentT > 0.15 ? 1 : 0 });
+      this.life(dt);
     }
     this.frame();
   }

@@ -1439,7 +1439,7 @@ class GLBHero {
     }
     // Huesos por nombre (orejas, alas, colas...): los poderes pueden moverlos encima de la animación (boneFx)
     this.bones = {};
-    model.traverse((o) => { if (o.isBone) { this.bones[o.name] = o; o.userData.q0 = o.quaternion.clone(); o.userData.s0 = o.scale.clone(); } });
+    model.traverse((o) => { if (o.isBone) { this.bones[o.name] = o; o.userData.q0 = o.quaternion.clone(); o.userData.s0 = o.scale.clone(); o.userData.p0 = o.position.clone(); } });
     this.boneFx = null; // (bones, dt, t, fx) => void · lo fija una habilidad y lo quita al terminar
     this.armFx = null;  // capa del arma (guardia, golpes, combos): se aplica después de boneFx
     this.tailFx = null; // capa de la cola que usa un poder (se levanta, apunta y da el latigazo al lanzarlo)
