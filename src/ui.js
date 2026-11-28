@@ -12,7 +12,10 @@ import { hpTier } from './health.js';
 const $ = (id) => document.getElementById(id);
 export const HERO_ICON = { jago: '🐆', kairo: '🦎', lira: '🐈', halley: '🦊', nilo: '🦦', kyra: '❄️', ambar: '🦅', voya: '🦁' };
 const fmtH = (id) => `${HERO_SCALE[id].height.toFixed(2).replace('.', ',')} m`;
-export const HERO_ART = (id) => `/img/select/${id}.webp?v=s1`; // ilustración de cuerpo entero para la galería de selección
+export const HERO_ART = (id) => `/img/select/${id}.webp?v=s2`;
+// orden de la galería de selección (de izquierda a derecha y de arriba abajo)
+export const SELECT_ORDER = ['jago', 'lira', 'ambar', 'halley', 'kyra', 'kairo', 'nilo', 'voya'];
+export const selectOrder = () => [...SELECT_ORDER.map((id) => HEROES.findIndex((h) => h.id === id)).filter((i) => i >= 0), ...HEROES.map((h, i) => i).filter((i) => !SELECT_ORDER.includes(HEROES[i].id))]; // ilustración de cuerpo entero para la galería de selección
 export const HERO_FACE = (id) => `/img/heroes/${id}.jpg?v=h30`; // ?v: los retratos nuevos sustituyen a los guardados en caché
 
 const SCREENS = ['loading', 'title', 'missions', 'select', 'team', 'pause', 'how', 'end', 'reveal', 'inventory', 'levelintro'];
@@ -221,13 +224,15 @@ export const ui = {
     this.onPick = onPick;
     const box = $('hero-cards');
     box.innerHTML = '';
-    HEROES.forEach((h, i) => {
+    selectOrder().forEach((i, pos) => {
+      const h = HEROES[i];
       const el = ELEMENTS[h.element];
       const c = document.createElement('button');
+      c.dataset.idx = String(i);
       c.type = 'button';
       c.className = 'hs-card' + (h.locked ? ' locked' : '');
       c.style.setProperty('--cel', el.css);
-      c.style.setProperty('--i', i);
+      c.style.setProperty('--i', pos);
       c.innerHTML = `<span class="hs-art"><img src="${HERO_ART(h.id)}" alt="${h.name}" loading="lazy" decoding="async" /></span><span class="hs-shine"></span>${h.leader ? '<span class="hs-crown">👑</span>' : ''}<span class="hs-plate"><b>${h.name}</b><i>${el.icon} ${el.name}</i></span><span class="hs-rec">★ RECOMENDADO</span>${h.locked ? '<span class="hs-lock">🔒</span>' : ''}`;
       c.addEventListener('click', () => { if (!h.locked) onPick(i); });
       box.appendChild(c);
@@ -239,9 +244,7 @@ export const ui = {
     const h = HEROES[i];
     const el = ELEMENTS[h.element];
     this.setElementColor(el.css);
-    [...$('hero-cards').children].forEach((c, k) => c.classList.toggle('sel', k === i));
-    const cur = $('hero-cards').children[i];
-    if (cur && cur.scrollIntoView) try { cur.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' }); } catch (e) { /* */ }
+    [...$('hero-cards').children].forEach((c) => c.classList.toggle('sel', Number(c.dataset.idx) === i));
     $('sel-name').textContent = h.name;
     $('sel-species').textContent = h.species;
     $('sel-element').textContent = `${el.icon} ${el.name}`;
@@ -596,8 +599,8 @@ export const ui = {
     });
   },
   markRecommended(mission) {
-    [...$('hero-cards').children].forEach((c, k) => {
-      const h = HEROES[k];
+    [...$('hero-cards').children].forEach((c) => {
+      const h = HEROES[Number(c.dataset.idx)];
       c.classList.toggle('rec', !!mission && mission.best.includes(h.element));
     });
     $('sel-mission').textContent = mission ? `${mission.icon} ${mission.name}` : '';

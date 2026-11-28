@@ -247,8 +247,9 @@ export class HeroStage {
       this.yaw = this.baseYaw - 0.9; this.yawV = 0; this.idleT = 0;
     }
   }
-  /* --- VIDA SUTIL: el héroe conserva su pose original (la de reposo de su esqueleto) y solo se mueven la cola y
-     las orejas, con balanceos suaves y pequeñas sacudidas de vez en cuando. Brazos, tronco y cabeza quietos. --- */
+  /* --- VIDA SUTIL: el héroe conserva su pose original (la de reposo de su esqueleto). Se mueven la cola y las
+     orejas (balanceos y pequeñas sacudidas), la cabeza mira o se ladea de vez en cuando y el pecho respira;
+     los brazos apenas acompañan la respiración y manos y pies no se mueven. --- */
   restPose(m) {
     // fuera las animaciones del juego: el esqueleto vuelve a su pose de reposo (la del modelo)
     if (m.mixer) m.mixer.stopAllAction();
@@ -261,8 +262,10 @@ export class HeroStage {
     const ears = { L: chain(/^ear_L_\d+$/), R: chain(/^ear_R_\d+$/) };
     // Ámbar no tiene cola ni orejas: solo las puntas de las alas se mecen muy levemente (como plumas al aire)
     const wings = tail.length || ears.L.length ? { L: [], R: [] } : { L: [B.wing_L_3, B.wing_L_4].filter(Boolean), R: [B.wing_R_3, B.wing_R_4].filter(Boolean) };
-    const all = [...tail, ...ears.L, ...ears.R, ...wings.L, ...wings.R];
-    this.life0 = { tail, ears, wings, q0: all.map((b) => b.quaternion.clone()), all, t: Math.random() * 10,
+    // cabeza (miradas y ladeos suaves), respiración (pecho) y brazos casi quietos
+    const body = { head: B.head, neck: B.neck, chest: B.chest, spine: B.spine, armL: B.upper_arm_L, armR: B.upper_arm_R };
+    const all = [...tail, ...ears.L, ...ears.R, ...wings.L, ...wings.R, ...Object.values(body).filter(Boolean)];
+    this.life0 = { body, look: { y: 0, x: 0, z: 0, ty: 0, tx: 0, tz: 0, t: 1.5 + Math.random() * 2 }, tail, ears, wings, q0: all.map((b) => b.quaternion.clone()), all, t: Math.random() * 10,
       flick: 0, flickT: 2 + Math.random() * 3, flickDir: 1, twitch: { L: 0, R: 0 }, twitchT: 1.5 + Math.random() * 2.5 };
   }
   life(dt) {
@@ -278,15 +281,15 @@ export class HeroStage {
     const n = L.tail.length;
     L.tail.forEach((b, i) => {
       const k = (i + 1) / Math.max(1, n), lag = i * 0.55;
-      const sway = 0.045 * Math.sin(t * 0.9 - lag) * (0.5 + 0.5 * k);
-      const fl = L.flick > 0 ? 0.16 * L.flickDir * Math.sin((1 - L.flick) * Math.PI * 2.2 - lag) * L.flick * (0.4 + 0.6 * k) : 0;
+      const sway = 0.06 * Math.sin(t * 0.9 - lag) * (0.5 + 0.5 * k);
+      const fl = L.flick > 0 ? 0.2 * L.flickDir * Math.sin((1 - L.flick) * Math.PI * 2.2 - lag) * L.flick * (0.4 + 0.6 * k) : 0;
       rotAdd(b, _Y, sway + fl);
       rotAdd(b, _X, 0.02 * Math.sin(t * 0.6 - lag));
     });
     // OREJAS: quietas casi siempre; de vez en cuando una (o las dos) da una sacudida corta hacia atrás
     L.twitchT -= dt;
     if (L.twitchT <= 0) {
-      L.twitchT = 2.2 + Math.random() * 4;
+      L.twitchT = 1.8 + Math.random() * 3.5;
       const r = Math.random();
       if (r < 0.4) L.twitch.L = 1; else if (r < 0.8) L.twitch.R = 1; else { L.twitch.L = 1; L.twitch.R = 0.85; }
     }
@@ -298,8 +301,30 @@ export class HeroStage {
         const k = i === 0 ? 1 : 0.6;
         rotAdd(b, _X, (0.22 * e + 0.012 * Math.sin(t * 1.3 + i)) * k);
         rotAdd(b, _Z, sg * 0.1 * e * k);
+        rotAdd(b, _Y, sg * (0.03 * Math.sin(t * 0.7 + (side === 'L' ? 0 : 2)) + 0.12 * e) * k); // las orejas se orientan un poco
       });
     }
+    // CABEZA: de vez en cuando mira un poco a un lado, ladea la cabeza o vuelve al frente (giros pequeños y lentos)
+    const lk = L.look, bd = L.body;
+    lk.t -= dt;
+    if (lk.t <= 0) {
+      lk.t = 2.2 + Math.random() * 3.5;
+      const r = Math.random();
+      if (r < 0.35) { lk.ty = 0; lk.tx = 0; lk.tz = 0; }                                          // al frente
+      else if (r < 0.75) { lk.ty = (Math.random() < 0.5 ? -1 : 1) * (0.08 + Math.random() * 0.1); lk.tx = (Math.random() - 0.5) * 0.06; lk.tz = 0; } // mira a un lado
+      else { lk.ty = (Math.random() - 0.5) * 0.06; lk.tx = -0.03; lk.tz = (Math.random() < 0.5 ? -1 : 1) * (0.06 + Math.random() * 0.05); } // ladea la cabeza (curiosidad)
+    }
+    const kk = 1 - Math.exp(-dt * 2.2);
+    lk.y += (lk.ty - lk.y) * kk; lk.x += (lk.tx - lk.x) * kk; lk.z += (lk.tz - lk.z) * kk;
+    const breath = Math.sin(t * 1.7);
+    if (bd.neck) { rotAdd(bd.neck, _Y, lk.y * 0.35); rotAdd(bd.neck, _X, lk.x * 0.3); }
+    if (bd.head) { rotAdd(bd.head, _Y, lk.y * 0.65); rotAdd(bd.head, _X, lk.x * 0.7 + 0.008 * breath); rotAdd(bd.head, _Z, lk.z); }
+    // RESPIRACIÓN: el pecho sube y baja muy poco
+    if (bd.chest) rotAdd(bd.chest, _X, -0.012 * breath);
+    if (bd.spine) rotAdd(bd.spine, _X, -0.005 * breath);
+    // BRAZOS: prácticamente quietos (solo acompañan la respiración); manos y pies no se mueven
+    if (bd.armL) rotAdd(bd.armL, _Z, 0.006 * breath);
+    if (bd.armR) rotAdd(bd.armR, _Z, -0.006 * breath);
     // ÁMBAR: las puntas de las alas apenas se mecen
     for (const side of ['L', 'R']) {
       const sg = side === 'L' ? 1 : -1;

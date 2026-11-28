@@ -14,7 +14,7 @@ import { Player, ChaseCam } from './player.js';
 import { Input } from './input.js';
 import { FX } from './fx.js';
 import { Game } from './game.js';
-import { ui } from './ui.js';
+import { ui, selectOrder } from './ui.js';
 import { Audio3D as audio } from './audio.js';
 import { clamp, damp } from './utils.js';
 import { LEVELS } from './levels.js';
@@ -617,8 +617,10 @@ function bindUi() {
   $('btn-change2').onclick = () => enterSelect();
   $('btn-menu2').onclick = () => enterTitle();
 
-  input.on('selectPrev', () => mode === 'select' && showHero(selected - 1));
-  input.on('selectNext', () => mode === 'select' && showHero(selected + 1));
+  // ← → recorren a los héroes en el orden de la galería
+  const stepHero = (d) => { const o = selectOrder(), k = o.indexOf(selected); showHero(o[(k + d + o.length) % o.length]); };
+  input.on('selectPrev', () => mode === 'select' && stepHero(-1));
+  input.on('selectNext', () => mode === 'select' && stepHero(1));
   input.on('confirm', () => mode === 'select' && beginMission());
   input.on('mute', toggleSound);
   input.on('power', () => mode === 'playing' && game.state === 'playing' && game.primaryAttack()); // Q / clic: atacar (en el jefe, golpe con el arma)
