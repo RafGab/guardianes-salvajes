@@ -76,6 +76,12 @@ for (let v = 0; v < NV; v++) {
     if (group[b] === 'arm' && spec.armMinZ !== undefined && pz < spec.armMinZ) d *= 20; // ni lo que queda detrás de la espalda (colas)
     raw[b] = 1 / (Math.pow(d, power) + 1e-3);
   }
+  // ZONAS FORZADAS (spec.force = [{ box: [x0, x1, y0, y1, z0, z1], bone }]): accesorios rígidos (arma a la espalda,
+  // mochila) que por proximidad caerían en la cabeza o el tronco. Todo lo que está dentro de la caja va con ese hueso.
+  if (spec.force) for (const f of spec.force) {
+    const [x0, x1, y0, y1, z0, z1] = f.box, fb = order.indexOf(f.bone);
+    if (fb >= 0 && px >= x0 && px <= x1 && py >= y0 && py <= y1 && pz >= z0 && pz <= z1) { raw.fill(0); raw[fb] = 1; }
+  }
   // varias colas (tail_<color>_N): cada vértice se queda solo con la cola más cercana, para que no se mezclen al moverse
   if (tailKey.some(Boolean)) {
     let best = -1;

@@ -22,6 +22,9 @@ export const HERO_SCALE = {
   kyra:   { nombre: 'Zorra Ártica', tipo: 'Héroe · bípedo', height: 1.75, radius: 0.38, glb: 'kyra.glb', yaw: 0, notas: 'Las colas aumentan el volumen visual.' },
   jago:   { nombre: 'Jaglion', tipo: 'Héroe · felino', height: 1.80, radius: 0.40, glb: 'jago.glb', yaw: 0, notas: 'El héroe más imponente por constitución y postura, aunque no sea el más alto.' },
   kairo:  { nombre: 'Dragón de Komodo', tipo: 'Héroe · reptil', height: 1.90, radius: 0.42, glb: 'kairo.glb', yaw: 0, notas: 'El más alto, robusto y muy largo. El modelo entregado es erguido: su longitud es corta (ver tabla).' },
+  // VOYA (león blanco del Éter): majestuoso, entre Jaglion y el Komodo. Modelo propio voya_leon.glb (la aliada de
+  // Apocalia sigue usando voya.glb).
+  voya:   { nombre: 'León blanco', tipo: 'Héroe · felino', height: 1.85, radius: 0.41, glb: 'voya_leon.glb', yaw: 0, notas: 'Melena enorme: el volumen de la cabeza es mayor que el de los demás felinos.' },
 };
 
 // Jefes de zona. `radius` = media anchura del cuerpo sobre el suelo (para alcances, cargas y ondas).

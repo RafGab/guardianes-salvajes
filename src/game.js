@@ -771,6 +771,10 @@ export class Game {
       const dx = Math.sin(player.facing) * 3.6, dz = Math.cos(player.facing) * 3.6;
       for (let i = 0; i < 46; i++) fx.iceShard(p.x + dx, world.waterY + 0.2, p.z + dz, 1.4);
       for (let i = 0; i < 12; i++) fx.mist(p.x + dx, world.waterY + 0.3, p.z + dz, 0xd8f0ff, 1.6);
+    } else if (type === 'ether') {
+      // VOYA: destello del Éter al arrancar (partículas cósmicas azules y blancas a ras de suelo)
+      for (let i = 0; i < 26; i++) fx.sparkle(p.x + (Math.random() - 0.5) * 1.2, p.y + 0.2 + Math.random() * 1.2, p.z + (Math.random() - 0.5) * 1.2, i % 3 ? 0x9fc0ff : 0xffffff, 2.8);
+      chase.shake(0.08);
     } else if (type === 'surf') {
       fx.waterRing(p.x, world.waterY + 0.1, p.z, 34);
       world.ripples.spawn(p.x, world.waterY + 0.04, p.z, 4, 1.4);
@@ -1299,6 +1303,9 @@ export class Game {
     // AEGIS DEL TRUENO de Ámbar: la onda eléctrica nace en el arco y una descarga responde al atacante
     const eg = this.player.elecGuard;
     if (eg) { eg.hit(from); this.floatAt(p, H + 0.4, '🛡️ ¡AEGIS!', 'block'); ui.hpBlock(); return; }
+    // ÓRBITA DE SATURNO de Voya: los anillos destellan y apartan al atacante
+    const og = this.player.orbitGuard;
+    if (og && og.absorb(from)) { this.floatAt(p, H + 0.4, '🪐 ¡ÓRBITA!', 'block'); ui.hpBlock(); return; }
     let x = p.x, z = p.z;
     if (from) { const dx = from.x - p.x, dz = from.z - p.z, l = Math.hypot(dx, dz) || 1; x += (dx / l) * 0.8; z += (dz / l) * 0.8; }
     this.vfx.ring(p.x, null, p.z, { r0: 0.6, r1: 2.4, dur: 0.4, color: 0x8ad8ff });

@@ -37,10 +37,12 @@ export const ELEMENTS = {
   aire: { name: 'Aire', icon: '💨', color: 0xbfe6ff, css: '#c6e9ff' },
   roca: { name: 'Roca', icon: '🪨', color: 0xb08a5a, css: '#c29a68' },
   arena: { name: 'Arena', icon: '🏜️', color: 0xe0b870, css: '#e8c078' },
+  eter: { name: 'Éter', icon: '🪐', color: 0x8ab4ff, css: '#9fc0ff' }, // VOYA: energía cósmica (azul de las gemas de su armadura)
 };
 
 // Los 7 guardianes de CATAC 7 (canon: nombre, especie, elemento y poder fijados
-// por las fichas de personaje proporcionadas — no inventar ni reasignar sin indicación).
+// por las fichas de personaje proporcionadas — no inventar ni reasignar sin indicación) + VOYA, el león blanco del Éter
+// (octavo héroe jugable, añadido al final para no cambiar el orden de los siete).
 export const HEROES = [
 // ORDEN FIJO de la sala de selección (indicado por Viviana): Jaglion (líder), Komodo, Zorra ártica, Fénec, Lince, Águila, Nutria.
 // Toda la interfaz recorre esta lista tal cual: no reordenar.
@@ -85,6 +87,12 @@ export const HEROES = [
     power: { type: 'surf', icon: '💦', name: 'Botas Propulsoras', cd: 10, desc: 'Sus botas tipo flyboard lanzan chorros de agua hacia abajo: avanza a saltos y deslizándose, con estela de burbujas y espuma. Sobre el agua corre sin que la corriente lo arrastre.' },
     stats: { speed: 6.6, jump: 8.4, swim: 5.0, carry: 3 },
     bio: 'Nutria valiente, curiosa, amigable, leal y cariñosa. "La emoción de descubrir el mundo… también se vive en el agua."',
+  },
+  {
+    id: 'voya', name: 'Voya', species: 'León blanco', element: 'eter',
+    power: { type: 'ether', icon: '🪐', name: 'Impulso Etéreo', cd: 10, desc: 'Se impulsa con energía del Éter: un anillo orbital bajo sus pies lo lanza hacia delante y corre a gran velocidad dejando una estela de partículas cósmicas y fragmentos de luz.' },
+    stats: { speed: 7.4, jump: 9.0, swim: 3.6, carry: 2 },
+    bio: 'León blanco majestuoso, sereno y legendario. Guardián del Éter, la energía que mantiene unidos los mundos: invoca los anillos de Saturno para atacar, proteger y desatar descargas de luz cósmica. "Hasta la estrella más lejana gira alrededor de algo… yo protejo ese centro."',
   },
 ];
 
@@ -1166,7 +1174,9 @@ function buildHalley() {
   return rig;
 }
 
-const BUILDERS = { jago: buildJago, kairo: buildKairo, lira: buildLira, halley: buildHalley, nilo: buildNilo, kyra: buildKyra, ambar: buildAmbar };
+// VOYA no tiene modelo procedural propio: usa su GLB (voya_leon.glb). Solo si el GLB no se pudiera cargar se
+// recurre al felino procedural de Jaglion para que el juego no se rompa (aviso en la consola).
+const BUILDERS = { jago: buildJago, kairo: buildKairo, lira: buildLira, halley: buildHalley, nilo: buildNilo, kyra: buildKyra, ambar: buildAmbar, voya: buildJago };
 
 /* ------------------------------------------------------------------ */
 /*  Modelo animable                                                    */

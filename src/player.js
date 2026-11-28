@@ -221,6 +221,11 @@ export class Player {
       this.grounded = false;
       this.support = null;
       this.facing = Math.atan2(dx, dz);
+    } else if (type === 'ether') {
+      // VOYA: IMPULSO ETÉREO — un anillo de energía bajo los pies lo lanza hacia delante (sin salto) y corre ×1,9
+      this.speedBoost(sdur, 1.9, 0.5);
+      this.vx += (dx / len) * 7; this.vz += (dz / len) * 7;
+      this.facing = Math.atan2(dx, dz);
     } else if (type === 'glide') {
       this.vy = 13.5;
       this.glideT = 5.5;

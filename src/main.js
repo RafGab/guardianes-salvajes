@@ -154,6 +154,7 @@ function showHero(i, burst = true) {
     if (def.element === 'hielo') for (let k = 0; k < 40; k++) fx.iceShard(SHOW.x, y + 0.5, SHOW.z, 1.3);
     if (def.element === 'aire') for (let k = 0; k < 24; k++) fx.mist(SHOW.x + (Math.random() - 0.5), y + 0.3, SHOW.z + (Math.random() - 0.5), 0xeaf6ff, 1.6);
     if (def.element === 'tierra') for (let k = 0; k < 24; k++) { fx.rock(SHOW.x, y, SHOW.z); fx.gem(SHOW.x, y + 0.3, SHOW.z); }
+    if (def.element === 'eter') for (let k = 0; k < 36; k++) { const a = (k / 36) * Math.PI * 2; fx.sparkle(SHOW.x + Math.cos(a) * 1.3, y + 0.9 + Math.sin(a * 3) * 0.15, SHOW.z + Math.sin(a) * 1.3, k % 3 ? 0x9fc0ff : 0xffe2a8, 1.4); } // anillo de Saturno de polvo de estrellas
     audio.click();
   }
 }
@@ -441,6 +442,7 @@ function updateMenu(dt) {
     if (def.element === 'hielo' && Math.random() < dt * 20) fx.snow(SHOW.x, y, SHOW.z);
     if (def.element === 'agua' && Math.random() < dt * 14) fx.spray(SHOW.x + (Math.random() - 0.5) * 1.2, y + 1.6, SHOW.z + (Math.random() - 0.5), 0, 0.3, 0, 0.8);
     if (def.element === 'tierra' && Math.random() < dt * 9) fx.gem(SHOW.x, y + 0.2, SHOW.z);
+    if (def.element === 'eter' && Math.random() < dt * 16) { const a = clockT * 1.6 + Math.random() * 0.6; fx.sparkle(SHOW.x + Math.cos(a) * 1.15, y + 1.0 + Math.sin(a) * 0.25, SHOW.z + Math.sin(a) * 1.15, Math.random() < 0.7 ? 0x9fc0ff : 0xffffff, 0.3); } // VOYA: motas en órbita
     if (def.element === 'aire' && Math.random() < dt * 14) fx.sparkle(SHOW.x + (Math.random() - 0.5) * 1.6, y + 0.4 + Math.random() * 1.8, SHOW.z + (Math.random() - 0.5) * 1.6, 0xdff2ff, 0.4);
     world.update(dt, clockT, camera.position, new THREE.Vector3(SHOW.x, y, SHOW.z), menuT, true);
   }

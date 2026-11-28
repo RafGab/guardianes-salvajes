@@ -10,7 +10,7 @@ import { TEAM, HEAL_ITEMS, HEAL_ORDER } from './skills/config.js';
 import { hpTier } from './health.js';
 
 const $ = (id) => document.getElementById(id);
-export const HERO_ICON = { jago: '🐆', kairo: '🦎', lira: '🐈', halley: '🦊', nilo: '🦦', kyra: '❄️', ambar: '🦅' };
+export const HERO_ICON = { jago: '🐆', kairo: '🦎', lira: '🐈', halley: '🦊', nilo: '🦦', kyra: '❄️', ambar: '🦅', voya: '🦁' };
 const fmtH = (id) => `${HERO_SCALE[id].height.toFixed(2).replace('.', ',')} m`;
 export const HERO_FACE = (id) => `/img/heroes/${id}.jpg?v=h28`; // ?v: los retratos nuevos sustituyen a los guardados en caché
 

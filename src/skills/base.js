@@ -93,11 +93,14 @@ export function powerTail(skill, color) {
   if (!m || !m.bones) return null;
   const chain = [];
   for (let k = 1; k <= 8; k++) if (m.bones[`tail_${color}_${k}`]) chain.push(m.bones[`tail_${color}_${k}`]);
+  // modelo de UNA sola cola (Zorra Ártica H3): todos los poderes salen de esa cola (el brillo sigue siendo el de su poder)
+  let tailPre = `tail_${color}_`;
+  if (!chain.length) { tailPre = 'tail_'; for (let k = 1; k <= 8; k++) if (m.bones[`tail_${k}`]) chain.push(m.bones[`tail_${k}`]); }
   if (!chain.length) return null;
   // dirección de reposo de la cola (espacio del cuerpo: los huesos no tienen giro de reposo)
   const dir = new THREE.Vector3();
   for (let i = 1; i < chain.length; i++) dir.add(chain[i].position);
-  const end = m.bones[`tail_${color}_end`]; if (end) dir.add(end.position);
+  const end = m.bones[`${tailPre}end`]; if (end) dir.add(end.position);
   if (dir.lengthSq() < 1e-8) dir.set(0, 0, -1);
   dir.normalize();
   // eje para LEVANTARLA (hacia arriba) y, al final, curvarla por encima del cuerpo hacia delante

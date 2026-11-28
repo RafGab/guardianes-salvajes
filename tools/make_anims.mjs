@@ -86,7 +86,10 @@ const tail = (t, amp, speed = 1, lift = 0) => {
 };
 // Orejas: ear_L_k / ear_R_k (k = 1..n); z = abrir hacia fuera, x = adelante/atrás
 const EAR_N = Math.max(...Object.keys(bones).map((n) => { const m = n.match(/^ear_L_(\d+)$/); return m ? Number(m[1]) : 0; }), 0);
+// EAR_AMP (variable de entorno) suaviza o exagera las orejas (orejas enormes como las del Fénec necesitan menos giro)
+const EAR_AMP = Number(process.env.EAR_AMP || 1);
 const ears = (t, amp, speed = 1, back = 0, phase = 0) => {
+  amp *= EAR_AMP; back *= EAR_AMP;
   const o = {};
   for (let i = 1; i <= EAR_N; i++) {
     const ph = t * TAU * speed - i * 0.5 + phase;
@@ -97,7 +100,10 @@ const ears = (t, amp, speed = 1, back = 0, phase = 0) => {
 };
 // Alas (águila): wing_L_k / wing_R_k. spread = apertura hacia fuera (rad), flap = aleteo, speed = ciclos por clip.
 const WING_N = Math.max(...Object.keys(bones).map((n) => { const m = n.match(/^wing_L_(\d+)$/); return m ? Number(m[1]) : 0; }), 0);
+// WING_AMP (variable de entorno): ala plegada junto al cuerpo (Águila H2.5) → apertura más contenida
+const WING_AMP = Number(process.env.WING_AMP || 1);
 const wings = (t, spread, flap, speed, back = 0) => {
+  spread *= WING_AMP; flap *= WING_AMP; back *= WING_AMP;
   const o = {};
   for (let k = 1; k <= WING_N; k++) {
     const ph = t * TAU * speed - k * 0.45;

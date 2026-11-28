@@ -247,6 +247,37 @@ export const HERO_SKILLS = {
     boomerang: { id: 'boomerang', name: 'Bumerán', icon: '🪃', cd: 2.2, prep: 0.15, flightT: 1.3, recover: 0.15, dist: 11, width: 3.2, hitRadius: 1.4, damage: 6, force: 4 },
   },
 
+  // VOYA — LEÓN BLANCO DEL ÉTER: los anillos de Saturno (skills/voya.js)
+  voya: {
+    // ANILLO ASTRAL (poder): invoca un anillo de energía que gira, sale disparado, golpea a todo lo que atraviesa y
+    // vuelve a su mano golpeando otra vez (también parte los proyectiles enemigos que toca)
+    ring: {
+      id: 'astralring', name: 'Anillo Astral', icon: '🪐', cd: 9,
+      prep: 0.45, flightT: 1.5, recover: 0.3, // invocar · ida y vuelta · recogerlo
+      range: 14, radius: 1.15,                // alcance de la ida y radio del anillo (m)
+      damage: 13, force: 7,                   // por enemigo, una vez a la ida y otra a la vuelta
+    },
+    // ÓRBITA DE SATURNO (escudo): tres anillos orbitales a su alrededor (4 s de protección, como todos los escudos)
+    orbit: {
+      id: 'saturnorbit', name: 'Órbita de Saturno', icon: '💫', cd: 12,
+      ownShield: true,
+      prep: 0.5, exec: 3.0, recover: 0.5,     // formarse, proteger y disolverse (escudo: 4 s)
+      radius: 1.6,                            // radio de la órbita (m, para un héroe de 1,85 m)
+      zapEvery: 0.45, damage: 4, push: 9,     // descarga y empuje a los enemigos que tocan los anillos
+    },
+    // CETRO DE SATURNO (arma): barrido → giro completo → golpe al suelo con onda anular
+    staff: { id: 'saturnstaff', name: 'Cetro de Saturno', icon: '🔱', cd: 1.3, prep: 0.16, swing: 0.22, recover: 0.22, reach: 3.2, arcDeg: 150, ringR: 4.2, damage: 8, force: 5 },
+    // CORONA DE SATURNO (especial): levita, una gran estructura de anillos gira, se expande y estalla en Éter
+    saturn: {
+      id: 'saturncrown', name: 'Corona de Saturno', icon: '🌌', cd: 24,
+      prep: 1.1, exec: 1.8, burstT: 0.45, recover: 0.7, // ascenso · expansión · descarga · descenso
+      lift: 0.9,                              // altura a la que levita (m)
+      radius: 12,                             // alcance de la expansión y de la descarga
+      ringDamage: 6, ringForce: 9,            // golpe de cada frente de anillo (3 anillos)
+      damage: 20, force: 16,                  // descarga final
+    },
+  },
+
   // LINCE — PODERES DEL ECLIPSE: equilibrio entre la luz y la oscuridad
   lira: {
     // UMBRA — ECLIPSE SOLAR: el mundo se oscurece, la luna tapa el sol y libera energía oscura (ciega y marca)
@@ -294,6 +325,7 @@ export const NATURAL_ENV = {
   lira: ['quake'],       // Lince: tierra (terremoto)
   ambar: ['hurricane'],  // Águila: viento (huracán)
   nilo: ['flood'],       // Nutria: agua (tsunami)
+  voya: ['extreme'],     // León blanco del Éter: Apocalia (el mundo del desequilibrio cósmico)
 };
 export const ENV_SPEED_MUL = 2;
 // multiplicador de DURACIÓN de la velocidad del héroe en el mundo indicado (1 fuera de su hábitat)
@@ -319,6 +351,7 @@ export const HERO_BUTTONS = {
   kyra: [['special', 'poder'], ['solstice', 'escudo'], ['skill', 'poder'], ['axe', 'arma'], ['aurora', 'especial']],
   lira: [['blood', 'poder'], ['umbra', 'escudo'], ['penumbra', 'escudo'], ['scythe', 'arma'], ['vision', 'especial']],
   ambar: [['storm', 'poder'], ['overload', 'escudo'], ['disc', 'arma'], ['fusion', 'especial']],
+  voya: [['ring', 'poder'], ['orbit', 'escudo'], ['staff', 'arma'], ['saturn', 'especial']],
 };
 export const ROLE_LABEL = { velocidad: 'VEL', poder: 'PODER', escudo: 'ESCUDO', arma: 'ARMA', especial: 'ESPECIAL' };
 

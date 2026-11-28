@@ -18,6 +18,7 @@ import { POWER_CLASSES, AIM_MAX, aimPoint, aimShow, aimHide } from './powers.js'
 import { POWER2_CLASSES, WindClawsSkill } from './powers2.js';
 import { findSwingAnchor, swingStages, SwingMixin } from './swing.js';
 import { POWER3_CLASSES } from './powers3.js';
+import { AstralRingSkill, SaturnOrbitSkill, SaturnCrownSkill } from './voya.js';
 import { SandStorm, WaterGate, SpringWard, puddle, takeGate, returnGate } from './fx3.js';
 import { smotherFires } from './envreact.js';
 const damp1 = (a, b, k, dt) => a + (b - a) * (1 - Math.exp(-k * dt));
@@ -1162,7 +1163,7 @@ class BlinkSkill extends Skill {
 
 Object.defineProperties(TailSkill.prototype, Object.getOwnPropertyDescriptors(SwingMixin));
 Object.defineProperties(TongueSkill.prototype, Object.getOwnPropertyDescriptors(SwingMixin));
-const SKILLS = { tail: TailSkill, haboob: HaboobSkill, seasons: SeasonsSkill, wheel: WheelSkill, dive: DiveSkill, fusiondive: FusionDiveSkill, tongue: TongueSkill, blink: BlinkSkill, ...POWER_CLASSES, ...POWER2_CLASSES, ...POWER3_CLASSES };
+const SKILLS = { tail: TailSkill, haboob: HaboobSkill, seasons: SeasonsSkill, wheel: WheelSkill, dive: DiveSkill, fusiondive: FusionDiveSkill, tongue: TongueSkill, blink: BlinkSkill, ...POWER_CLASSES, ...POWER2_CLASSES, ...POWER3_CLASSES, astralring: AstralRingSkill, saturnorbit: SaturnOrbitSkill, saturncrown: SaturnCrownSkill };
 
 /* ====================================================================== */
 /*  Gestor: una habilidad principal a la vez + poderes de fondo (vuelo,    */

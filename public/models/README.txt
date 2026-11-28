@@ -55,3 +55,21 @@ DISEÑOS DEFINITIVOS H2.5 MAX (Jaglion, Zorra Ártica, Lince, Komodo y Nutria)
   La Zorra Ártica tiene 5 colas (tail_pink, tail_lblue, tail_orange, tail_blue, tail_navy); cada vértice de una cola
   pertenece solo a esa cola y los brazos no arrastran nada de detrás de la espalda (armMinZ en su especificación).
   Los nuevos modelos no traen armas pegadas: weapons/strip.json ya solo tiene la entrada del Fénec.
+
+MODELOS TRIPO (noviembre 2026): LOS 7 HÉROES + VOYA
+  Carpeta de origen: "JUEGO MATEO/imagenes para crear 3D/3D/HEROES" (AMBAR_EAGLE, BADA_FENNEC, DONA_BOBCAT, JAGLION,
+  KAIRO_KOMODO, KYRA_WHITEFOX, NILO_OTTER, VOYA_LION; ~5 millones de triángulos y sin esqueleto).
+  Sustituyen a ambar, halley, lira, jago, kairo, kyra y nilo (mismos nombres de archivo y de huesos) y VOYA, el
+  octavo héroe jugable (león blanco del Éter), usa voya_leon.glb (voya.glb sigue siendo la aliada de Apocalia).
+  Proceso de cada uno (unos 43 mil triángulos, texturas WebP 2048, ~1,5 MB):
+    gltf-transform optimize ORIGEN.glb BAJO.glb --compress false --simplify true --simplify-ratio 0.009 --simplify-error 0.01 --texture-compress webp --texture-size 2048
+    node tools/rig.mjs BAJO.glb tools/rigspecs/NOMBRE.json RIG.glb
+    node tools/make_anims.mjs RIG.glb ANIM.glb      (Águila: WING_AMP=0.45 · Fénec: EAR_AMP=0.6)
+    gltf-transform optimize ANIM.glb public/models/NOMBRE.glb --compress meshopt --simplify false --texture-compress webp --texture-size 2048
+  Zorra Ártica: antes del rig se quita un trozo suelto que flotaba sobre la cabeza (86 triángulos).
+  Las especificaciones (tools/rigspecs/*.json) pueden llevar "force": [{ "box": [x0,x1,y0,y1,z0,z1], "bone": "pack" }]
+  para atar accesorios rígidos a un hueso (arma a la espalda del Fénec, mochila de la Nutria).
+  Diferencias de diseño de los modelos nuevos: la Zorra Ártica tiene UNA cola (todos sus poderes salen de ella, con
+  el color de cada poder); el Águila tiene las alas en los brazos y un ala plegada a su izquierda (wing_L_1..4);
+  el Fénec lleva sus armas a la espalda como parte del modelo (weapons/strip.json ya no recorta nada).
+  Dedos y falanges de manos y pies: los añade src/anatomy.js al cargar (carpo, metacarpo, 3 falanges por dedo…).

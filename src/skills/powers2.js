@@ -8,6 +8,7 @@ import { ui } from '../ui.js';
 import { Trail } from '../weapons/system.js';
 import { SPEED2 } from './speedfx2.js';
 import { propsNear, captureProp, dropFlung } from './envreact.js';
+import { makeSaturnStaffSkill, speedVoya } from './voya.js';
 
 // ACTUALIZACIÓN DE BOTONES: animaciones de VELOCIDAD (botón 1), ARMAS (7), Tornados y Garras de Ámbar, Visión de Lira.
 // Números en skills/config.js (HERO_SKILLS / HERO_BUTTONS).
@@ -1698,7 +1699,12 @@ export class VisionSkill extends Skill {
   }
 }
 
+// VOYA: arma (Cetro de Saturno, usa la base de las armas) y efecto de su botón de velocidad (skills/voya.js)
+export const SaturnStaffSkill = makeSaturnStaffSkill(WeaponSkill, back);
+SpeedFxSkill.prototype.voya = speedVoya;
+
 export const POWER2_CLASSES = {
   speedfx: SpeedFxSkill, katana: KatanaSkill, hammer: HammerSkill, spear: SpearSkill, boomerang: BoomerangSkill,
   axe: AxeSkill, scythe: ScytheSkill, disc: DiscSkill, tornado: TornadoShieldSkill, claws: WindClawsSkill, vision: VisionSkill,
+  saturnstaff: SaturnStaffSkill,
 };

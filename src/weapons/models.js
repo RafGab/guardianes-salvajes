@@ -812,6 +812,58 @@ function spear(L) {
 }
 
 /* ======================================================================
+   VOYA — CETRO DE SATURNO (Éter): asta plateada con líneas de luz azul, tres garras de plata que sujetan un
+   núcleo de cristal (un pequeño planeta de Éter) y, a su alrededor, un ANILLO INCLINADO como el de Saturno que
+   gira sin parar (hueso `spin`). Pomo con un cristal azul y anillos dorados en el asta.
+   ====================================================================== */
+function saturnStaff(L) {
+  const w = base('cetro', L, 0x6aa8ff, 0xffe2a8);
+  // el hueso `spin` va el último (cuelga de la punta) para que su giro no mueva la punta del arma
+  const R = rig(['grip', 'shaft', 'head', 'tip', 'spin'], [0, 0.22, 0.52, 0.76, 0.64]);
+  w.group.add(R.root); w.skeleton = R.skeleton; w.bones = R.bones;
+  const silver = metal(0xdfe6f2, 0.22, 0.92);
+  const dark = metal(0x1a2240, 0.35, 0.85);
+  const gold = metal(0xd8b46a, 0.28, 1);
+  const lines = canvasTex(64, 512, (g, cw, ch) => { g.fillStyle = '#000'; g.fillRect(0, 0, cw, ch); g.fillStyle = '#6aa8ff'; g.fillRect(cw * 0.44, 0, cw * 0.12, ch); for (let y = 40; y < ch; y += 110) g.fillRect(0, y, cw, 6); }, { repeat: [3, 1] });
+  const shaftMat = glowStd({ color: 0xc8d2e6, roughness: 0.25, metalness: 0.9, emissive: 0xffffff, emissiveMap: lines, emissiveIntensity: 1.5 }, 1.5);
+  // asta (del pomo a la cabeza)
+  mesh(new THREE.CylinderGeometry(0.019, 0.023, 0.9, 12), shaftMat, R.bones.grip, { y: 0.1 });
+  for (const y of [-0.3, -0.06, 0.18, 0.42]) mesh(new THREE.TorusGeometry(0.026, 0.006, 6, 18), gold, R.bones.grip, { y, rx: Math.PI / 2 });
+  mesh(new THREE.CylinderGeometry(0.028, 0.024, 0.12, 10), dark, R.bones.grip, { y: 0.0 }); // empuñadura
+  // pomo con cristal
+  mesh(new THREE.CylinderGeometry(0.03, 0.034, 0.04, 10), silver, R.bones.grip, { y: -0.37 });
+  mesh(new THREE.OctahedronGeometry(0.035), neonSolid(0x6aa8ff, 2.4), R.bones.grip, { y: -0.41, s: [0.8, 1.3, 0.8] });
+  // cabeza: collar y tres garras de plata curvadas hacia el núcleo
+  const head = new THREE.Group(); head.position.y = 0.52; at(R.bones.head, head);
+  mesh(new THREE.CylinderGeometry(0.04, 0.03, 0.06, 12), silver, head, { y: 0.0 });
+  mesh(new THREE.TorusGeometry(0.04, 0.008, 6, 20), gold, head, { y: 0.03, rx: Math.PI / 2 });
+  for (let i = 0; i < 3; i++) {
+    const a = (i / 3) * Math.PI * 2;
+    const prong = new THREE.Group(); prong.rotation.y = a; head.add(prong);
+    mesh(new THREE.ConeGeometry(0.014, 0.16, 6), silver, prong, { x: 0.05, y: 0.1, rz: 0.35 });
+    mesh(new THREE.ConeGeometry(0.01, 0.08, 6), silver, prong, { x: 0.045, y: 0.2, rz: -0.5 });
+  }
+  // núcleo: pequeño planeta de Éter (cristal azul con resplandor)
+  const crys = glowStd({ color: 0xbfd4ff, emissive: 0x3a6aff, emissiveIntensity: 1.8, roughness: 0.08, metalness: 0.1, transparent: true, opacity: 0.9 }, 1.8);
+  mesh(new THREE.SphereGeometry(0.06, 20, 14), crys, head, { y: 0.12 });
+  mesh(new THREE.SphereGeometry(0.03, 12, 8), neonSolid(0xffffff, 2.2), head, { y: 0.12 });
+  sprite(0x6aa8ff, 0.42, head, new THREE.Vector3(0, 0.12, 0), 0.7);
+  // ANILLO DE SATURNO alrededor del núcleo: el hueso gira sobre su eje (z) y está inclinado como el planeta
+  const S = R.bones.spin;
+  S.rotation.x = -Math.PI / 2 + 0.45;
+  const ringMat = neonAdd(0x9fc0ff, 1.9, 0.8);
+  mesh(new THREE.RingGeometry(0.095, 0.15, 48, 1), ringMat, S);
+  mesh(new THREE.RingGeometry(0.155, 0.17, 48, 1), neonAdd(0xffe2a8, 1.6, 0.6), S);
+  mesh(new THREE.TorusGeometry(0.12, 0.004, 4, 48), neonSolid(0xffffff, 2.2), S);
+  w.spin.push({ bone: S, speed: 2.6 });
+  w.arcs.push(new Arc(head, new THREE.Vector3(0.05, 0.05, 0), new THREE.Vector3(-0.03, 0.19, 0.03), 0x9fc0ff, 6, 0.015));
+  w.trail = { base: marker(R.bones.head, 0, 0.0, 0), tip: marker(R.bones.tip, 0, 0.04, 0), color: 0x6aa8ff, color2: 0xffe2a8, width: 0.9 };
+  collect(w);
+  w.group.scale.setScalar(L);
+  return finish(w);
+}
+
+/* ======================================================================
    Catálogo: arma de cada héroe, tamaño y cómo se sujeta.
    · hand: mano que la empuña ('R' / 'L'). El mango pasa por el centro del puño,
      a lo ancho de la mano, y sale por el lado del pulgar (+Y del arma).
@@ -829,4 +881,5 @@ export const WEAPONS = {
   lira:   { id: 'scythe',    name: 'Guadaña',       build: () => scythe(1.15),   hand: 'R', axisX: 1, guard: { x: -0.2, y: 0.1, f: -1.0, w: 0 }, defense: { x: -0.95, y: 0.75, f: -1.2, w: 0.3 }, dir: [0, 1, 0.12], face: [-1, 0, 0], color: 0x3a9aff, color2: 0xbfeeff },
   nilo:   { id: 'boomerang', name: 'Bumerán',       build: () => boomerang(0.62), hand: 'L', axisX: 1, guard: { x: -0.3, y: 0.1, f: -0.8, w: 0 }, defense: { x: -1.0, y: 0.6, f: -1.2, w: 0.3 }, dir: [0, 1, 0.5], face: [1, 0, 0], color: 0x3ad8ff, color2: 0xff3a2a },
   halley: { id: 'spear',     name: 'Lanza morada',  build: () => spear(0.88),    hand: 'R', axisX: 1, guard: { x: -0.2, y: 0.05, f: -1.1, w: 0 }, defense: { x: -0.95, y: 0.75, f: -1.2, w: 0.3 }, dir: [0, 1, 0.2], face: [1, 0, 0], color: 0xb050ff, color2: 0xe8c0ff },
+  voya:   { id: 'saturnstaff', name: 'Cetro de Saturno', build: () => saturnStaff(1.3), hand: 'R', axisX: 1, guard: { x: -0.2, y: 0.1, f: -1.0, w: 0 }, defense: { x: -0.95, y: 0.75, f: -1.2, w: 0.3 }, dir: [0, 1, 0.12], face: [1, 0, 0], color: 0x6aa8ff, color2: 0xffe2a8 },
 };
