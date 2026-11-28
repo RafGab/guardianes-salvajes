@@ -6,12 +6,13 @@ import { Save, BADGES } from './save.js';
 import { ITEMS, heroPowerItem } from './items.js';
 import { IS_TOUCH } from './platform.js';
 import { HERO_SCALE } from './scale.js';
-import { TEAM, HEAL_ITEMS, HEAL_ORDER } from './skills/config.js';
+import { TEAM, HEAL_ITEMS, HEAL_ORDER, HERO_SKILLS, HERO_BUTTONS } from './skills/config.js';
 import { hpTier } from './health.js';
 
 const $ = (id) => document.getElementById(id);
 export const HERO_ICON = { jago: '🐆', kairo: '🦎', lira: '🐈', halley: '🦊', nilo: '🦦', kyra: '❄️', ambar: '🦅', voya: '🦁' };
 const fmtH = (id) => `${HERO_SCALE[id].height.toFixed(2).replace('.', ',')} m`;
+export const HERO_ART = (id) => `/img/select/${id}.webp?v=s1`; // ilustración de cuerpo entero para la galería de selección
 export const HERO_FACE = (id) => `/img/heroes/${id}.jpg?v=h30`; // ?v: los retratos nuevos sustituyen a los guardados en caché
 
 const SCREENS = ['loading', 'title', 'missions', 'select', 'team', 'pause', 'how', 'end', 'reveal', 'inventory', 'levelintro'];
@@ -214,20 +215,24 @@ export const ui = {
   },
 
   /* ---------- selección ---------- */
+  // Galería de la selección: tarjetas con la ilustración de cuerpo entero de cada héroe (img/select, copias
+  // reducidas de las ilustraciones de la intro; la de Voya es un render de su modelo 3D)
   buildSelect(onPick) {
     this.onPick = onPick;
     const box = $('hero-cards');
     box.innerHTML = '';
     HEROES.forEach((h, i) => {
       const el = ELEMENTS[h.element];
-      const c = document.createElement('div');
-      c.className = 'card';
+      const c = document.createElement('button');
+      c.type = 'button';
+      c.className = 'hs-card' + (h.locked ? ' locked' : '');
       c.style.setProperty('--cel', el.css);
-      c.innerHTML = `${h.leader ? '<span class="lead">👑 Líder</span>' : ''}<div class="em"><img src="${HERO_FACE(h.id)}" alt="${h.name}" /></div><div class="nm">${h.name}</div><div class="sp">${h.species}</div><div class="el">${el.icon} ${el.name}</div>`;
-      if (h.leader) c.classList.add('leader');
-      c.addEventListener('click', () => onPick(i));
+      c.style.setProperty('--i', i);
+      c.innerHTML = `<span class="hs-art"><img src="${HERO_ART(h.id)}" alt="${h.name}" loading="lazy" decoding="async" /></span><span class="hs-shine"></span>${h.leader ? '<span class="hs-crown">👑</span>' : ''}<span class="hs-plate"><b>${h.name}</b><i>${el.icon} ${el.name}</i></span><span class="hs-rec">★ RECOMENDADO</span>${h.locked ? '<span class="hs-lock">🔒</span>' : ''}`;
+      c.addEventListener('click', () => { if (!h.locked) onPick(i); });
       box.appendChild(c);
     });
+    $('hs-count').textContent = String(HEROES.filter((h) => !h.locked).length);
   },
   fillSelect(i) {
     this.selected = i;
@@ -235,12 +240,21 @@ export const ui = {
     const el = ELEMENTS[h.element];
     this.setElementColor(el.css);
     [...$('hero-cards').children].forEach((c, k) => c.classList.toggle('sel', k === i));
+    const cur = $('hero-cards').children[i];
+    if (cur && cur.scrollIntoView) try { cur.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' }); } catch (e) { /* */ }
     $('sel-name').textContent = h.name;
     $('sel-species').textContent = h.species;
     $('sel-element').textContent = `${el.icon} ${el.name}`;
+    $('hs-class').textContent = (HERO_SCALE[h.id] && HERO_SCALE[h.id].tipo) || 'Héroe';
+    $('hs-lead').hidden = !h.leader;
     $('sel-bio').textContent = h.bio;
-    $('sel-power-name').textContent = h.power.name;
-    $('sel-power-desc').textContent = h.power.desc;
+    // habilidades: velocidad (el poder base o su botón propio) + los botones del héroe
+    const btns = HERO_BUTTONS[h.id] || [], defs = HERO_SKILLS[h.id] || {};
+    const ROLE = { velocidad: 'Velocidad', poder: 'Poder', escudo: 'Escudo', arma: 'Arma', especial: 'Especial' };
+    const list = [];
+    if (!btns.some(([, r]) => r === 'velocidad')) list.push({ role: 'velocidad', icon: h.power.icon, name: h.power.name, desc: h.power.desc });
+    for (const [k, r] of btns) { const d = defs[k]; if (d) list.push({ role: r, icon: d.icon || '✦', name: d.name || k, desc: '' }); }
+    $('hs-skills').innerHTML = list.map((s) => `<div class="hs-skill" title="${(s.desc || s.name).replace(/"/g, '&quot;')}"><span class="ic">${s.icon}</span><span class="tx"><b>${s.name}</b><i>${ROLE[s.role] || s.role}</i></span></div>`).join('');
     const stats = [
       ['Velocidad', (h.stats.speed - 5.5) / 2.4],
       ['Salto', (h.stats.jump - 7.8) / 1.8],
@@ -248,8 +262,11 @@ export const ui = {
       ['Carga', h.stats.carry / 3],
     ];
     $('sel-stats').innerHTML = stats
-      .map(([n, v]) => `<div class="stat"><span>${n}</span><div class="bar"><i style="width:${Math.round(Math.max(0.12, Math.min(1, v)) * 100)}%"></i></div></div>`)
+      .map(([n, v]) => { const p = Math.round(Math.max(0.12, Math.min(1, v)) * 100); return `<div class="stat"><span>${n}</span><div class="bar"><i style="width:${p}%"></i></div><b>${Math.round(p / 10)}</b></div>`; })
       .join('');
+    // animación de entrada de la ficha
+    const info = document.querySelector('#select .hs-info');
+    if (info) { info.classList.remove('swap'); void info.offsetWidth; info.classList.add('swap'); }
   },
 
   /* ---------- preparación del jefe: selección y formación del equipo ---------- */

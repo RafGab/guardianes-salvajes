@@ -24,6 +24,7 @@ import { Save } from './save.js';
 import { ITEMS } from './items.js';
 import { IS_TOUCH } from './platform.js';
 import { Formation } from './formation.js';
+import { HeroStage } from './herostage.js';
 import { TEAM } from './skills/config.js';
 import { TOON } from './toon.js';
 
@@ -112,49 +113,21 @@ let titleAngle = 0.6;
 let clockT = 0;
 let showcase = null;
 
-/* ---------- pedestal para el showcase de héroes ---------- */
-const SHOW = { x: 0, z: 56.5 };
-const pedestal = new THREE.Group();
-let pedRing, pedLight;
-(function buildPedestal() {
-  const base = new THREE.Mesh(new THREE.CylinderGeometry(1.45, 1.6, 0.8, 32), new THREE.MeshStandardMaterial({ color: 0x1a2230, metalness: 0.7, roughness: 0.35 }));
-  base.position.y = 0.4;
-  base.castShadow = true;
-  base.receiveShadow = true;
-  pedestal.add(base);
-  pedRing = new THREE.Mesh(new THREE.TorusGeometry(1.42, 0.05, 8, 48), new THREE.MeshBasicMaterial({ color: new THREE.Color(0xff7a2a).multiplyScalar(2.4) }));
-  pedRing.rotation.x = Math.PI / 2;
-  pedRing.position.y = 0.8;
-  pedestal.add(pedRing);
-  pedLight = new THREE.PointLight(0xff7a2a, 1.6, 9, 1.5);
-  pedLight.position.set(0, 1.2, 1.2);
-  pedestal.add(pedLight);
-})();
+/* ---------- presentación del héroe en la selección (escenario propio: src/herostage.js) ---------- */
+const SHOW = { x: 0, z: 56.5 }; // punto de referencia de la pantalla de equipo (formación) dentro del mundo
+let heroStage = null;
+function stage3D() { if (!heroStage) heroStage = new HeroStage(renderer); return heroStage; }
+function leaveStage() { if (heroStage) heroStage.release(); showcase = null; }
 
 function showHero(i, burst = true) {
   selected = (i + HEROES.length) % HEROES.length;
   const def = HEROES[selected];
-  if (showcase) scene.remove(showcase.root);
   showcase = getHeroModel(def.id);
-  scene.add(showcase.root);
-  showcase.setVisible(true);
-  const y = terrainH(SHOW.x, SHOW.z) + 0.8;
-  showcase.root.position.set(SHOW.x, y, SHOW.z);
-  showcase.root.rotation.y = 0.35;
-  const col = ELEMENTS[def.element].color;
-  pedRing.material.color.set(col).multiplyScalar(2.4);
-  pedLight.color.set(col);
+  stage3D().setHero(showcase, ELEMENTS[def.element].color, { entrance: burst });
   ui.fillSelect(selected);
-  if (burst && fx) {
-    for (let k = 0; k < 40; k++) {
-      fx.sparkle(SHOW.x, y + 0.2, SHOW.z, col, 3.2);
-    }
-    if (def.element === 'fuego') fx.flameRing(SHOW.x, y, SHOW.z, 30);
-    if (def.element === 'agua') fx.waterRing(SHOW.x, y, SHOW.z, 30);
-    if (def.element === 'hielo') for (let k = 0; k < 40; k++) fx.iceShard(SHOW.x, y + 0.5, SHOW.z, 1.3);
-    if (def.element === 'aire') for (let k = 0; k < 24; k++) fx.mist(SHOW.x + (Math.random() - 0.5), y + 0.3, SHOW.z + (Math.random() - 0.5), 0xeaf6ff, 1.6);
-    if (def.element === 'tierra') for (let k = 0; k < 24; k++) { fx.rock(SHOW.x, y, SHOW.z); fx.gem(SHOW.x, y + 0.3, SHOW.z); }
-    if (def.element === 'eter') for (let k = 0; k < 36; k++) { const a = (k / 36) * Math.PI * 2; fx.sparkle(SHOW.x + Math.cos(a) * 1.3, y + 0.9 + Math.sin(a * 3) * 0.15, SHOW.z + Math.sin(a) * 1.3, k % 3 ? 0x9fc0ff : 0xffe2a8, 1.4); } // anillo de Saturno de polvo de estrellas
+  if (burst) {
+    const fl = document.getElementById('hs-flash');
+    if (fl) { fl.classList.remove('on'); void fl.offsetWidth; fl.classList.add('on'); }
     audio.click();
   }
 }
@@ -165,8 +138,7 @@ function enterTitle() {
   worldSel.close();
   document.body.style.cursor = '';
   input.enabled = false;
-  if (showcase) scene.remove(showcase.root);
-  scene.remove(pedestal);
+  leaveStage();
   if (player && player.model) player.model.setVisible(false);
   game.clearVictims();
   game.state = 'idle';
@@ -215,8 +187,7 @@ function enterMissions() {
   input.enabled = false;
   ui.hud(false);
   ui.showOverlay('inventory', false);
-  if (showcase) scene.remove(showcase.root);
-  scene.remove(pedestal);
+  leaveStage();
   if (player && player.model) player.model.setVisible(false);
   game.clearVictims();
   game.state = 'idle';
@@ -264,8 +235,6 @@ function enterSelect() {
   game.clearVictims();
   game.state = 'idle';
   world.reset();
-  scene.add(pedestal);
-  pedestal.position.set(SHOW.x, terrainH(SHOW.x, SHOW.z), SHOW.z);
   ui.showScreen('select');
   ui.markRecommended(currentLevel);
   const saved = Math.max(0, HEROES.findIndex((h) => h.id === (curHero ? curHero.id : Save.hero)));
@@ -331,8 +300,7 @@ async function confirmTeam() {
 function beginMission() {
   curHero = HEROES[selected];
   Save.setHero(curHero.id);
-  scene.remove(pedestal);
-  if (showcase) scene.remove(showcase.root);
+  leaveStage();
   audio.init();
   goFullscreen();
   mode = 'playing';
@@ -386,8 +354,23 @@ function frame(now) {
     } catch (e) { console.error(e); }
     return;
   }
+  if (mode === 'select' && heroStage) {
+    // selección de héroe: escenario propio con la misma tubería de render (resplandor y color)
+    try {
+      heroStage.setSize(curW, curH);
+      heroStage.setView(selectView());
+      heroStage.update(dt);
+      renderer.toneMappingExposure = 1.0;
+      const sc0 = renderPass.scene, cam0 = renderPass.camera;
+      renderPass.scene = heroStage.scene; renderPass.camera = heroStage.camera;
+      if (bloomPass) bloomPass.strength = TOON.bloom.strength * 0.55;
+      composer.render();
+      renderPass.scene = sc0; renderPass.camera = cam0;
+    } catch (e) { console.error(e); }
+    return;
+  }
   try {
-    if (mode === 'title' || mode === 'select') updateMenu(dt);
+    if (mode === 'title') updateMenu(dt);
     else if (mode === 'team') {
       formation.update(dt, camera);
       world.update(dt, clockT, camera.position, new THREE.Vector3(SHOW.x, terrainH(SHOW.x, SHOW.z), SHOW.z), 30, true);
@@ -428,45 +411,27 @@ function updateMenu(dt) {
     camera.position.set(Math.cos(titleAngle) * r * 0.9, 34 + Math.sin(clockT * 0.2) * 3, Math.sin(titleAngle) * r * 0.75 + 4);
     camera.lookAt(0, 5, -8);
     world.update(dt, clockT, camera.position, new THREE.Vector3(0, 0, 0), menuT, true);
-  } else {
-    // showcase del héroe: cámara frontal con la ciudad de fondo
-    const y = terrainH(SHOW.x, SHOW.z) + 0.8;
-    const sway = Math.sin(clockT * 0.4) * 0.35;
-    const hh = showcase.height || 1.8; // encuadre a la medida de cada héroe (el pequeño no se pierde, el grande cabe)
-    if (curH > curW) {
-      // MÓVIL EN VERTICAL: el héroe entero, centrado en el hueco libre entre el panel de arriba y las tarjetas de abajo
-      const band = menuBand(), t = Math.tan((camera.fov * Math.PI) / 360);
-      const bh = Math.max(0.18, band.bot - band.top), yc = (band.top + band.bot) / 2;
-      const dist = (hh * 1.2) / (bh * 2 * t), cy = y + hh * 0.5;
-      camera.position.set(SHOW.x + sway * 0.4, cy + 0.15, SHOW.z + dist);
-      camera.lookAt(SHOW.x, cy + 0.15 + dist * (yc - 0.5) * 2 * t, SHOW.z);
-    } else {
-      // (la cámara va referida al pedestal: en los mundos donde el inicio no está en x = 0 el héroe ya no sale lejísimos)
-      camera.position.set(SHOW.x + 3.3 + sway * 0.6, y + 0.5 + hh * 0.45, SHOW.z + 3.2 + hh * 1.1);
-      camera.lookAt(SHOW.x - 0.9, y + hh * 0.67, SHOW.z);
-    }
-    if (!dragSel.active) showcase.root.rotation.y += dt * 0.35;
-    showcase.update(dt, { speed: 0, grounded: true });
-    const def = HEROES[selected];
-    if (def.element === 'fuego' && Math.random() < dt * 30) fx.ember(SHOW.x, y, SHOW.z, 1);
-    if (def.element === 'hielo' && Math.random() < dt * 20) fx.snow(SHOW.x, y, SHOW.z);
-    if (def.element === 'agua' && Math.random() < dt * 14) fx.spray(SHOW.x + (Math.random() - 0.5) * 1.2, y + 1.6, SHOW.z + (Math.random() - 0.5), 0, 0.3, 0, 0.8);
-    if (def.element === 'tierra' && Math.random() < dt * 9) fx.gem(SHOW.x, y + 0.2, SHOW.z);
-    if (def.element === 'eter' && Math.random() < dt * 16) { const a = clockT * 1.6 + Math.random() * 0.6; fx.sparkle(SHOW.x + Math.cos(a) * 1.15, y + 1.0 + Math.sin(a) * 0.25, SHOW.z + Math.sin(a) * 1.15, Math.random() < 0.7 ? 0x9fc0ff : 0xffffff, 0.3); } // VOYA: motas en órbita
-    if (def.element === 'aire' && Math.random() < dt * 14) fx.sparkle(SHOW.x + (Math.random() - 0.5) * 1.6, y + 0.4 + Math.random() * 1.8, SHOW.z + (Math.random() - 0.5) * 1.6, 0xdff2ff, 0.4);
-    world.update(dt, clockT, camera.position, new THREE.Vector3(SHOW.x, y, SHOW.z), menuT, true);
   }
   fx.update(dt, camera, renderer.domElement.height);
 }
 
 const dragSel = { active: false, x: 0 };
-// hueco visible de la selección de héroe (fracciones de la altura de la pantalla): entre el panel y las tarjetas
-const _band = { top: 0.3, bot: 0.72, t: -1 };
-function menuBand() {
-  if (clockT - _band.t < 0.3) return _band;
+// hueco libre de la pantalla de selección (fracciones): entre la galería y la ficha, o entre la ficha (arriba) y la
+// galería (abajo) en el móvil en vertical. Ahí se encuadra al héroe entero.
+const _band = { left: 0.3, right: 0.7, top: 0.04, bottom: 0.95, t: -1 };
+function selectView() {
+  if (clockT - _band.t < 0.25) return _band;
   _band.t = clockT;
-  const H = window.innerHeight || 1, a = document.querySelector('#select .sel-left'), b = document.querySelector('#select .sel-bottom');
-  if (a && b) { const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(); if (rb.top > ra.bottom) { _band.top = ra.bottom / H; _band.bot = rb.top / H; } }
+  const W = window.innerWidth || 1, H = window.innerHeight || 1;
+  const g = document.querySelector('#select .hs-gallery'), inf = document.querySelector('#select .hs-info'), act = document.querySelector('#select .hs-actions');
+  if (!g || !inf) return _band;
+  const rg = g.getBoundingClientRect(), ri = inf.getBoundingClientRect();
+  if (ri.width > W * 0.8) { // vertical: ficha arriba, galería y botones abajo
+    const ra = act ? act.getBoundingClientRect() : rg;
+    _band.left = 0.02; _band.right = 0.98; _band.top = Math.min(0.6, ri.bottom / H) + 0.005; _band.bottom = Math.max(_band.top + 0.2, Math.min(rg.top, ra.top) / H - 0.005);
+  } else {
+    _band.left = Math.min(0.6, rg.right / W); _band.right = Math.max(_band.left + 0.2, ri.left / W); _band.top = 0.05; _band.bottom = 0.93;
+  }
   return _band;
 }
 
@@ -495,8 +460,7 @@ async function buildGame(scenario) {
     const m = getHeroModel(h.id);
     if (m.root.parent) m.root.parent.remove(m.root);
   }
-  scene.remove(pedestal);
-  showcase = null;
+  leaveStage();
   if (world) disposeScene(scene);
   scene = new THREE.Scene();
   if (renderPass) renderPass.scene = scene;
@@ -694,10 +658,11 @@ function bindUi() {
   // arrastrar para girar al héroe en la selección
   const cvs = renderer.domElement;
   cvs.addEventListener('pointerdown', (e) => { if (mode === 'select') { dragSel.active = true; dragSel.x = e.clientX; } });
-  window.addEventListener('pointerup', () => (dragSel.active = false));
+  window.addEventListener('pointerup', () => { dragSel.active = false; if (heroStage) heroStage.endDrag(); });
+  window.addEventListener('pointercancel', () => { dragSel.active = false; if (heroStage) heroStage.endDrag(); });
   window.addEventListener('pointermove', (e) => {
-    if (mode === 'select' && dragSel.active && showcase) {
-      showcase.root.rotation.y += (e.clientX - dragSel.x) * 0.012;
+    if (mode === 'select' && dragSel.active && heroStage) {
+      heroStage.drag(e.clientX - dragSel.x);
       dragSel.x = e.clientX;
     }
   });
