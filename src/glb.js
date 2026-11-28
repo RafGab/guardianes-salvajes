@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { MeshoptDecoder } from 'three/examples/jsm/libs/meshopt_decoder.module.js';
+import { IS_TOUCH } from './platform.js';
 
 // Cargador único de modelos .glb (los de public/models están comprimidos con meshopt + texturas webp).
 const loader = new GLTFLoader();
@@ -11,9 +12,35 @@ const loaded = new Map();
 
 export function loadGLB(url) {
   if (!promises.has(url)) {
-    promises.set(url, loader.loadAsync(url).then((g) => { loaded.set(url, g); return g; }));
+    promises.set(url, loader.loadAsync(url).then((g) => { if (IS_TOUCH) shrinkTextures(g.scene, MOBILE_TEX); loaded.set(url, g); return g; }));
   }
   return promises.get(url);
+}
+
+// MÓVILES: los 8 héroes, los jefes y los objetos llevan texturas de 2048 px (≈ 22 MB de memoria gráfica cada una).
+// Todas juntas superan la memoria de muchos teléfonos y el navegador cierra la página. En los dispositivos
+// táctiles se reducen a 1024 px al cargarlas (4 veces menos memoria; en pantalla de móvil no se nota).
+const MOBILE_TEX = 1024;
+function shrinkTextures(root, max) {
+  const done = new Set();
+  root.traverse((o) => {
+    const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+    for (const m of mats) for (const k in m) {
+      const t = m[k];
+      if (!t || !t.isTexture || done.has(t)) continue;
+      done.add(t);
+      const img = t.image, w = img && img.width, h = img && img.height;
+      if (!w || !h || Math.max(w, h) <= max) continue;
+      try {
+        const s = max / Math.max(w, h), c = document.createElement('canvas');
+        c.width = Math.round(w * s); c.height = Math.round(h * s);
+        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+        if (img.close) img.close(); // libera la imagen original (ImageBitmap)
+        t.image = c;
+        t.needsUpdate = true;
+      } catch (e) { /* si no se puede reducir, se queda como estaba */ }
+    }
+  });
 }
 
 // Devuelve el GLB si ya está cargado (null si aún no): permite usar un modelo de reserva mientras tanto.
