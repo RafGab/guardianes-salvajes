@@ -1,6 +1,6 @@
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import { loadGLB, normalizeModel, prepareMeshes, measure } from './glb.js';
+import { loadGLB, normalizeModel, prepareMeshes, measure, freeHeroTextures } from './glb.js';
 import { HERO_SCALE, modelUrl } from './scale.js';
 import { makeCanvas, texFromCanvas, makeRng, clamp, lerp, damp, TAU } from './utils.js';
 import STRIP from './weapons/strip.json';
@@ -1636,6 +1636,7 @@ export async function preloadGLBHeroes() {
     try {
       const gltf = await loadGLB(modelUrl(S.glb));
       glbCache[def.id] = new GLBHero(def, gltf, S);
+      freeHeroTextures(glbCache[def.id].root); // móvil: suelta la copia de sus texturas tras subirlas a la GPU
     } catch (e) {
       console.warn('No se pudo cargar el GLB de', def.id, '- se usa el modelo procedural', e);
     }

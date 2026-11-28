@@ -12,17 +12,47 @@ const loaded = new Map();
 
 export function loadGLB(url) {
   if (!promises.has(url)) {
-    promises.set(url, loader.loadAsync(url).then((g) => { if (IS_TOUCH) shrinkTextures(g.scene, MOBILE_TEX); loaded.set(url, g); return g; }));
+    promises.set(url, loader.loadAsync(url).then(async (g) => { if (IS_TOUCH) await shrinkTextures(g.scene, MOBILE_TEX); loaded.set(url, g); return g; }));
   }
   return promises.get(url);
 }
 
 // MÓVILES: los 8 héroes, los jefes y los objetos llevan texturas de 2048 px (≈ 22 MB de memoria gráfica cada una).
-// Todas juntas superan la memoria de muchos teléfonos y el navegador cierra la página. En los dispositivos
-// táctiles se reducen a 1024 px al cargarlas (4 veces menos memoria; en pantalla de móvil no se nota).
+// Todas juntas superan la memoria de muchos teléfonos y el navegador (sobre todo Safari en iPhone) cierra la
+// página. En los dispositivos táctiles:
+//  · se reducen a 1024 px al cargarlas (4 veces menos memoria; en pantalla de móvil no se nota), con
+//    createImageBitmap (los lienzos <canvas> tienen en iPhone su propio límite de memoria, muy bajo);
+//  · en los HÉROES (freeHeroTextures), en cuanto la textura se ha subido a la tarjeta gráfica se libera su copia
+//    en la memoria normal (nada vuelve a leerlas y nunca se liberan al cambiar de mundo; los objetos y jefes sí
+//    pueden volver a subirse, así que conservan su imagen).
 const MOBILE_TEX = 1024;
-function shrinkTextures(root, max) {
+async function resized(img, w, h) {
+  if (typeof createImageBitmap === 'function') {
+    try { return await createImageBitmap(img, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' }); } catch (e) { /* sin redimensionado: lienzo */ }
+  }
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  c.getContext('2d').drawImage(img, 0, 0, w, h);
+  return c;
+}
+export function freeHeroTextures(root) {
+  if (!IS_TOUCH) return;
   const done = new Set();
+  root.traverse((o) => {
+    const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+    for (const m of mats) for (const k in m) { const t = m[k]; if (t && t.isTexture && !done.has(t)) { done.add(t); freeAfterUpload(t); } }
+  });
+}
+function freeAfterUpload(t) {
+  t.onUpdate = () => {
+    const im = t.image;
+    if (im && im.close) im.close();
+    else if (im && im.getContext) { im.width = im.height = 1; } // lienzo: suelta su memoria
+    t.onUpdate = null;
+  };
+}
+async function shrinkTextures(root, max) {
+  const done = new Set(), jobs = [];
   root.traverse((o) => {
     const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
     for (const m of mats) for (const k in m) {
@@ -30,17 +60,17 @@ function shrinkTextures(root, max) {
       if (!t || !t.isTexture || done.has(t)) continue;
       done.add(t);
       const img = t.image, w = img && img.width, h = img && img.height;
-      if (!w || !h || Math.max(w, h) <= max) continue;
-      try {
-        const s = max / Math.max(w, h), c = document.createElement('canvas');
-        c.width = Math.round(w * s); c.height = Math.round(h * s);
-        c.getContext('2d').drawImage(img, 0, 0, c.width, c.height);
+      if (!w || !h) continue;
+      if (Math.max(w, h) <= max) continue;
+      const s = max / Math.max(w, h);
+      jobs.push(resized(img, Math.round(w * s), Math.round(h * s)).then((r) => {
         if (img.close) img.close(); // libera la imagen original (ImageBitmap)
-        t.image = c;
+        t.image = r;
         t.needsUpdate = true;
-      } catch (e) { /* si no se puede reducir, se queda como estaba */ }
+      }).catch(() => { /* si no se puede reducir, se queda como estaba */ }));
     }
   });
+  await Promise.all(jobs);
 }
 
 // Devuelve el GLB si ya está cargado (null si aún no): permite usar un modelo de reserva mientras tanto.
