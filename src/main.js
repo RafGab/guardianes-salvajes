@@ -1,3 +1,4 @@
+import { heroTheme } from './herothemes.js';
 import * as THREE from 'three';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
@@ -123,7 +124,7 @@ function showHero(i, burst = true) {
   selected = (i + HEROES.length) % HEROES.length;
   const def = HEROES[selected];
   showcase = getHeroModel(def.id);
-  stage3D().setHero(showcase, ELEMENTS[def.element].color, { entrance: burst });
+  stage3D().setHero(showcase, ELEMENTS[def.element].color, { entrance: burst, theme: heroTheme(def.id) });
   ui.fillSelect(selected);
   if (burst) {
     const fl = document.getElementById('hs-flash');
@@ -426,11 +427,11 @@ function selectView() {
   const g = document.querySelector('#select .hs-gallery'), inf = document.querySelector('#select .hs-info'), act = document.querySelector('#select .hs-actions');
   if (!g || !inf) return _band;
   const rg = g.getBoundingClientRect(), ri = inf.getBoundingClientRect();
-  if (ri.width > W * 0.8) { // vertical: ficha arriba, galería y botones abajo
-    const ra = act ? act.getBoundingClientRect() : rg;
+  const ra = act ? act.getBoundingClientRect() : rg;
+  if (ri.width > W * 0.8) { // vertical: ficha arriba, roster y botones abajo
     _band.left = 0.02; _band.right = 0.98; _band.top = Math.min(0.6, ri.bottom / H) + 0.005; _band.bottom = Math.max(_band.top + 0.2, Math.min(rg.top, ra.top) / H - 0.005);
-  } else {
-    _band.left = Math.min(0.6, rg.right / W); _band.right = Math.max(_band.left + 0.2, ri.left / W); _band.top = 0.05; _band.bottom = 0.93;
+  } else { // presentación: el héroe en grande a la izquierda de la ficha y encima del roster
+    _band.left = 0.02; _band.right = Math.max(0.3, ri.left / W); _band.top = 0.03; _band.bottom = Math.max(0.4, (rg.top + rg.height * 0.42) / H); // los pies quedan justo encima de las tarjetas
   }
   return _band;
 }
@@ -622,6 +623,7 @@ function bindUi() {
   input.on('selectPrev', () => mode === 'select' && stepHero(-1));
   input.on('selectNext', () => mode === 'select' && stepHero(1));
   input.on('confirm', () => mode === 'select' && beginMission());
+  input.on('back', () => { if (mode === 'select') { audio.click(); enterMissions(); } }); // Esc / botón B del mando
   input.on('mute', toggleSound);
   input.on('power', () => mode === 'playing' && game.state === 'playing' && game.primaryAttack()); // Q / clic: atacar (en el jefe, golpe con el arma)
   input.on('ability', (i) => mode === 'playing' && game.state === 'playing' && game.triggerAbility(i)); // cada poder, su tecla

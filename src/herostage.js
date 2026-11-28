@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { IS_TOUCH } from './platform.js';
+import { HERO_THEME, heroTheme } from './herothemes.js';
 
 /* ======================================================================
    ESCENARIO DE PRESENTACIÓN DE HÉROES (pantalla de selección)
@@ -60,21 +61,184 @@ function beamMat() {
         float a = edge * fade * dust * uK; gl_FragColor = vec4(mix(uC, vec3(1.0), 0.55) * a, a); }`,
   });
 }
-// fondo: degradado oscuro con un halo del color del héroe detrás de la plataforma y bandas de luz muy suaves
+// ruido común de los sombreadores del escenario
+const NOISE = `
+  float h21(vec2 p){ p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+  float n2(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f);
+    return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
+  float fbm(vec2 p){ float v = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { v += a * n2(p); p = p * 2.03 + vec2(1.7, 9.2); a *= 0.5; } return v; }
+  float hexD(vec2 p){ p = abs(p); return max(dot(p, normalize(vec2(1.0, 1.732))), p.x); }
+`;
+/* FONDO AMBIENTAL DE CADA GUARDIÁN: cúpula que rodea la escena. Base: degradado del tono del héroe, gran resplandor
+   detrás de él, horizonte iluminado y humo que se mueve. Encima, el escenario propio de cada uno (uW: peso de cada
+   escenario; al cambiar de héroe los pesos y los colores se funden y el fondo cambia sin saltos):
+   0 fuego y brasas · 1 selva esmeralda (copas, lianas, rayos de luz y bruma) · 2 sol (disco, corona y rayos) ·
+   3 místico (vórtice y círculo de runas) · 4 cristal rosa (facetas y destellos) · 5 acuático (cáusticas, ondas y
+   luz desde la superficie) · 6 energía carmesí (venas de energía y ondas de choque) · 7 cristal de éter (aurora y
+   rejilla cristalina). Ventana visible ≈ p.x ±1 (a los lados) y p.y 0..1 (del horizonte hacia arriba). */
 function skyMat() {
   return new THREE.ShaderMaterial({
-    uniforms: { uC: { value: new THREE.Color() }, uT: { value: 0 } },
+    uniforms: { uC: { value: new THREE.Color() }, uC2: { value: new THREE.Color() }, uDeep: { value: new THREE.Color() }, uT: { value: 0 }, uFlash: { value: 0 }, uW: { value: [0, 0, 0, 0, 0, 0, 0, 0] } },
     side: THREE.BackSide, depthWrite: false, toneMapped: false, fog: false,
     vertexShader: 'varying vec3 vD; void main(){ vD = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
-    fragmentShader: `uniform vec3 uC; uniform float uT; varying vec3 vD;
-      void main(){ float y = vD.y; vec3 base = mix(vec3(0.004, 0.006, 0.012), vec3(0.012, 0.016, 0.03), smoothstep(-0.2, 0.6, y));
-        float back = pow(max(0.0, -vD.z), 3.0);
-        float halo = exp(-pow((y - 0.02) * 9.0, 2.0)) * back;
-        float rays = pow(max(0.0, sin(atan(vD.x, -vD.z) * 9.0 + uT * 0.05)), 12.0) * smoothstep(0.0, 0.5, y) * back * 0.08;
-        vec3 c = base + uC * (halo * 0.07 + rays * 0.5);
-        gl_FragColor = vec4(c, 1.0); }`,
+    fragmentShader: `uniform vec3 uC; uniform vec3 uC2; uniform vec3 uDeep; uniform float uT; uniform float uFlash; uniform float uW[8]; varying vec3 vD;
+      ${NOISE}
+      void main(){
+        vec3 d = normalize(vD);
+        float az = atan(d.x, -d.z);
+        vec2 p = vec2(az * 2.2, d.y * 4.0);
+        float back = smoothstep(1.8, 0.0, abs(az));
+        float y = max(p.y, -0.2);
+        vec3 col = mix(uDeep * 0.95, uDeep * 0.3, smoothstep(0.0, 1.3, y));
+        float hor = exp(-pow(d.y * 8.0, 2.0));
+        col += mix(uC, uC2, 0.35) * hor * 0.1 * back;
+        col *= 0.75 + 0.25 * smoothstep(1.3, 0.2, abs(p.x));
+        vec2 gp = p - vec2(0.0, 0.4);
+        float glow = exp(-dot(gp, gp) * 2.6);
+        col += uC * glow * (0.13 + uFlash * 0.45);
+        float sm = fbm(p * 2.2 + vec2(uT * 0.03, -uT * 0.015));
+        col += mix(uC, uC2, sm) * sm * sm * 0.14 * smoothstep(1.2, 0.0, y);
+        float w;
+        // 0 · FUEGO Y BRASAS
+        w = uW[0]; if (w > 0.002) {
+          float f = fbm(vec2(p.x * 3.0, p.y * 2.4 - uT * 0.55));
+          float fl = clamp(f * 1.3 - y * 0.95 + 0.02, 0.0, 1.0); fl = fl * fl;
+          vec3 fc = mix(uC * 0.7, uC2, smoothstep(0.3, 0.9, fl));
+          float emb = smoothstep(0.93, 1.0, n2(p * vec2(30.0, 22.0) + vec2(sin(uT * 0.3) * 2.0, -uT * 2.6)));
+          float heat = fbm(p * 6.0 + vec2(0.0, -uT * 0.8));
+          col += (fc * fl * 0.75 + uC2 * emb * 0.55 * smoothstep(1.2, 0.0, y) + uC * heat * heat * 0.08) * w;
+        }
+        // 1 · SELVA ESMERALDA
+        w = uW[1]; if (w > 0.002) {
+          float leaf = fbm(p * vec2(3.4, 4.2) + vec2(0.0, uT * 0.008));
+          float sil = max(smoothstep(0.5, 0.56, leaf + (y - 0.78) * 1.3), smoothstep(0.5, 0.56, leaf * 0.92 + (abs(p.x) - 0.78) * 1.1));
+          float vine = smoothstep(0.03, 0.0, abs(fract(p.x * 2.6 + sin(y * 3.0 + p.x) * 0.15) - 0.5) - 0.0) * smoothstep(0.35, 1.0, y) * step(0.55, h21(vec2(floor(p.x * 2.6), 1.0)));
+          float sh = pow(max(0.0, sin(p.x * 6.5 + y * 2.4 + 1.3)), 7.0) * smoothstep(0.0, 0.9, y) * (0.6 + 0.4 * sin(uT * 0.4 + p.x * 3.0));
+          float mist = fbm(p * 3.0 + vec2(uT * 0.05, 0.0)) * smoothstep(0.6, 0.0, y);
+          float bio = smoothstep(0.95, 1.0, n2(p * 26.0 + vec2(uT * 0.2, 0.0))) * (0.5 + 0.5 * sin(uT * 2.0 + p.x * 20.0));
+          vec3 jc = uC * (sh * 0.32 + mist * 0.3) + uC2 * (mist * mist * mist * 0.25 + bio * 0.4);
+          col += jc * w;
+          col = mix(col, col * 0.22 + uDeep * 0.05, clamp(max(sil, vine) * 0.85, 0.0, 1.0) * w);
+        }
+        // 2 · ENERGÍA SOLAR
+        w = uW[2]; if (w > 0.002) {
+          vec2 sp = p - vec2(0.0, 0.46); float r = length(sp); float a = atan(sp.y, sp.x);
+          float disc = smoothstep(0.26, 0.23, r) * (0.75 + 0.25 * fbm(sp * 9.0 + uT * 0.1));
+          float ring = smoothstep(0.02, 0.0, abs(r - 0.3)) * 0.6;
+          float cor = exp(-r * 3.2);
+          float rays = pow(max(0.0, sin(a * 12.0 + uT * 0.12)), 10.0) * exp(-r * 1.2) + pow(max(0.0, sin(a * 7.0 - uT * 0.08 + 1.0)), 14.0) * exp(-r * 0.9) * 0.8;
+          float heat = fbm(p * 4.0 + vec2(0.0, -uT * 0.25));
+          col += (mix(uC, uC2, 0.7) * (disc * 0.55 + ring) + uC * cor * 0.4 + mix(uC, uC2, 0.4) * rays * 0.34 + uC * heat * heat * 0.12) * w;
+        }
+        // 3 · MÍSTICO
+        w = uW[3]; if (w > 0.002) {
+          vec2 mp = p - vec2(0.0, 0.42); float r = length(mp); float a = atan(mp.y, mp.x);
+          float sw = sin(a * 3.0 + log(r + 0.03) * 6.0 - uT * 0.55) * 0.5 + 0.5;
+          float spiral = pow(sw, 5.0) * smoothstep(1.5, 0.15, r) * smoothstep(0.03, 0.25, r);
+          float rune = smoothstep(0.012, 0.0, abs(r - 0.62)) + smoothstep(0.01, 0.0, abs(r - 0.74)) * step(0.45, fract(a / 6.2832 * 12.0 + uT * 0.03));
+          float gly = smoothstep(0.035, 0.0, abs(r - 0.68)) * step(0.62, h21(vec2(floor((a + uT * 0.04) * 14.0), 3.0)));
+          float neb = fbm(p * 2.4 + vec2(sin(uT * 0.05) * 2.0, uT * 0.025));
+          col += (mix(uC, uC2, sw) * spiral * 0.34 + uC2 * (rune * 0.4 + gly * 0.32) + mix(uC, uC2, neb) * neb * neb * 0.32) * w;
+        }
+        // 4 · CRISTAL ROSA
+        w = uW[4]; if (w > 0.002) {
+          vec2 q = p * vec2(4.0, 5.0) + vec2(0.0, uT * 0.015);
+          vec2 qi = floor(q), qf = fract(q); float d1 = 8.0, d2 = 8.0; vec2 cid = vec2(0.0);
+          for (int yy = -1; yy <= 1; yy++) for (int xx = -1; xx <= 1; xx++) {
+            vec2 g = vec2(float(xx), float(yy)); vec2 o = vec2(h21(qi + g), h21(qi + g + 17.3));
+            float dd = length(g + o - qf); if (dd < d1) { d2 = d1; d1 = dd; cid = qi + g; } else if (dd < d2) d2 = dd; }
+          float edge = smoothstep(0.07, 0.0, d2 - d1);
+          float shade = h21(cid) * 0.6 + 0.4;
+          float spark = pow(max(0.0, sin(uT * 1.8 + h21(cid) * 40.0)), 24.0) * step(0.55, h21(cid + 5.0));
+          float wall = smoothstep(1.3, 0.0, y);
+          float depth = 0.35 + 0.65 * fbm(p * 1.6 + uT * 0.02);
+          col += (mix(uC, uC2, 0.2) * (1.0 - d1) * shade * 0.16 * wall + mix(uC, uC2, 0.6) * edge * 0.2 * depth * (0.3 + wall) + uC2 * spark * edge * 0.9) * w;
+        }
+        // 5 · PROFUNDIDAD ACUÁTICA
+        w = uW[5]; if (w > 0.002) {
+          float c1 = fbm(p * 4.0 + vec2(uT * 0.09, uT * 0.05)), c2 = fbm(p * 4.0 - vec2(uT * 0.07, 0.0) + 3.0);
+          float caus = pow(1.0 - abs(sin((c1 - c2) * 10.0)), 6.0);
+          float wv = sin(y * 24.0 - uT * 1.1 + sin(p.x * 4.0 + uT * 0.5) * 1.6);
+          float waves = smoothstep(0.82, 1.0, wv) * smoothstep(0.7, 0.0, y);
+          float sh = pow(max(0.0, sin(p.x * 5.0 + 0.6 + sin(uT * 0.3) * 0.4)), 8.0) * smoothstep(0.1, 1.1, y);
+          float surf = smoothstep(0.7, 1.3, y) * (0.5 + 0.5 * sin(p.x * 10.0 + c1 * 6.0 + uT));
+          col += (uC * caus * 0.24 * smoothstep(1.4, 0.0, y) + uC2 * waves * 0.22 + mix(uC, uC2, 0.5) * (sh * 0.24 + surf * 0.12)) * w;
+        }
+        // 6 · ENERGÍA CARMESÍ
+        w = uW[6]; if (w > 0.002) {
+          float rn = abs(fbm(p * 3.0 + vec2(uT * 0.1, -uT * 0.05)) - 0.5);
+          float veins = smoothstep(0.035, 0.0, rn) * (0.6 + 0.4 * sin(uT * 3.0 + p.x * 4.0));
+          vec2 rp = p - vec2(0.0, 0.38); float rr = length(rp * vec2(1.0, 1.25));
+          float k1 = fract(uT * 0.33), k2 = fract(uT * 0.33 + 0.5);
+          float shock = smoothstep(0.035, 0.0, abs(rr - k1 * 1.7)) * (1.0 - k1) + smoothstep(0.035, 0.0, abs(rr - k2 * 1.7)) * (1.0 - k2);
+          float flare = fbm(p * 5.0 - vec2(0.0, uT * 0.45));
+          col += (mix(uC, uC2, 0.35) * veins * 0.5 + uC * shock * 0.38 + uC * flare * flare * flare * 0.35 * smoothstep(0.9, 0.0, y)) * w;
+        }
+        // 7 · CRISTAL DE ÉTER
+        w = uW[7]; if (w > 0.002) {
+          float au = fbm(vec2(p.x * 1.4 + uT * 0.03, 1.0));
+          float cur = smoothstep(0.1, 0.9, sin(p.x * 3.0 + au * 6.0 + uT * 0.2) * 0.5 + 0.5) * exp(-pow((y - 0.78 - au * 0.25) * 3.2, 2.0));
+          float streak = fbm(vec2(p.x * 12.0 + au * 4.0, uT * 0.1));
+          vec2 hq = p * vec2(7.0, 8.0); vec2 s = vec2(1.0, 1.732); vec2 hh = s * 0.5;
+          vec2 g1 = mod(hq, s) - hh, g2 = mod(hq - hh, s) - hh; vec2 g = dot(g1, g1) < dot(g2, g2) ? g1 : g2;
+          float hx = smoothstep(0.43, 0.5, hexD(g)) * smoothstep(0.75, 0.0, y) * (0.45 + 0.55 * sin(uT * 0.8 - length(p) * 7.0));
+          float mist = fbm(p * 2.6 + vec2(-uT * 0.04, 0.0));
+          col += (mix(uC, uC2, au) * cur * (0.3 + streak * streak * 0.8) + uC * max(hx, 0.0) * 0.2 + uC2 * mist * mist * 0.2 * smoothstep(0.8, 0.0, y)) * w;
+        }
+        col = mix(uDeep * 0.8 + uC * 0.26, col, smoothstep(-0.05, 0.22, y)); // horizonte: bruma que une el fondo con el suelo
+        gl_FragColor = vec4(max(col, 0.0), 1.0); }`,
   });
 }
+// partículas propias de cada escenario (brasas, esporas, polvo de oro, chispas mágicas, cristales, burbujas...)
+function themePartMat(o) {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uT: { value: 0 }, uK: { value: 0 }, uS: { value: 1 }, uC: { value: new THREE.Color(o.c) }, uC2: { value: new THREE.Color(o.c2) },
+      uRise: { value: o.rise }, uSwirl: { value: o.swirl }, uSize: { value: o.size }, uFlick: { value: o.flick }, uShape: { value: o.shape }, uWob: { value: o.wob },
+    },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+    vertexShader: `attribute float seed; uniform float uT, uS, uRise, uSwirl, uSize, uFlick, uWob, uK; varying float vA; varying float vS;
+      void main(){ vec3 p = position; float H = 5.2;
+        float y = mod(p.y + uT * uRise * (0.5 + seed), H); p.y = y;
+        float ang = uT * uSwirl * (0.3 + seed * 0.7) / max(0.9, length(p.xz));
+        float cs = cos(ang), sn = sin(ang); p.xz = mat2(cs, -sn, sn, cs) * p.xz;
+        p.x += sin(uT * 0.7 * (0.5 + seed) + seed * 30.0) * uWob; p.z += cos(uT * 0.6 + seed * 17.0) * uWob * 0.6;
+        float fl = mix(1.0, 0.25 + 0.75 * pow(abs(sin(uT * (1.5 + seed * 4.0) + seed * 50.0)), 3.0), uFlick);
+        vA = smoothstep(0.0, 0.5, y) * smoothstep(H, H - 1.5, y) * (0.35 + 0.65 * seed) * fl * uK; vS = seed;
+        vec4 mv = modelViewMatrix * vec4(p, 1.0); gl_PointSize = uS * uSize * (2.0 + seed * 5.0) * (6.0 / -mv.z); gl_Position = projectionMatrix * mv; }`,
+    fragmentShader: `uniform vec3 uC; uniform vec3 uC2; uniform float uShape; varying float vA; varying float vS;
+      void main(){ vec2 q = gl_PointCoord - 0.5; float d = length(q); float a;
+        if (uShape < 0.5) a = smoothstep(0.5, 0.0, d);
+        else if (uShape < 1.5) a = max(max(smoothstep(0.07, 0.0, abs(q.x)) * smoothstep(0.5, 0.0, abs(q.y)), smoothstep(0.07, 0.0, abs(q.y)) * smoothstep(0.5, 0.0, abs(q.x))), smoothstep(0.2, 0.0, d));
+        else if (uShape < 2.5) a = smoothstep(0.07, 0.0, abs(d - 0.36)) * 0.9 + smoothstep(0.5, 0.0, d) * 0.12 + smoothstep(0.1, 0.0, length(q - vec2(-0.13, 0.13))) * 0.7;
+        else a = smoothstep(0.5, 0.36, abs(q.x) * 1.7 + abs(q.y)) * (0.55 + 0.45 * smoothstep(0.1, -0.2, q.x + q.y));
+        a *= vA; if (a < 0.004) discard; gl_FragColor = vec4(mix(uC, uC2, vS) * a, a); }`,
+  });
+}
+// neblina / humo en capas (planos con ruido que se mueve)
+function fogMat(seed) {
+  return new THREE.ShaderMaterial({
+    uniforms: { uT: { value: 0 }, uC: { value: new THREE.Color() }, uK: { value: 0 }, uSeed: { value: seed } },
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false, side: THREE.DoubleSide,
+    vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+    fragmentShader: `uniform vec3 uC; uniform float uT; uniform float uK; uniform float uSeed; varying vec2 vUv;
+      ${NOISE}
+      void main(){ float n = fbm(vUv * vec2(4.0, 1.6) + vec2(uT * 0.035 + uSeed, uT * 0.01));
+        float a = smoothstep(0.38, 0.85, n) * smoothstep(0.0, 0.35, vUv.y) * smoothstep(1.0, 0.45, vUv.y) * smoothstep(0.0, 0.2, vUv.x) * smoothstep(1.0, 0.8, vUv.x) * uK;
+        gl_FragColor = vec4(uC * a, a); }`,
+  });
+}
+// parámetros de cada escenario: partículas, neblina, ondas en el suelo y rayos de luz
+const SCENE_FX = [
+  { rise: 0.55, swirl: 0.12, size: 0.8, flick: 1.0, shape: 0, wob: 0.25, fog: 0.45, wave: 0.8, rays: 0.05 }, // fuego: brasas que suben
+  { rise: -0.12, swirl: 0.05, size: 1.3, flick: 0.5, shape: 3, wob: 0.5, fog: 0.85, wave: 0.4, rays: 0.13 }, // selva: hojas y esporas
+  { rise: 0.06, swirl: 0.1, size: 0.75, flick: 0.8, shape: 1, wob: 0.15, fog: 0.35, wave: 0.6, rays: 0.17 }, // sol: polvo dorado
+  { rise: 0.15, swirl: 0.9, size: 0.9, flick: 0.7, shape: 1, wob: 0.1, fog: 0.95, wave: 0.7, rays: 0.05 },   // místico: chispas que orbitan
+  { rise: 0.08, swirl: 0.2, size: 1.1, flick: 1.0, shape: 3, wob: 0.1, fog: 0.4, wave: 0.5, rays: 0.08 },    // cristal rosa
+  { rise: 0.4, swirl: 0.05, size: 1.6, flick: 0.0, shape: 2, wob: 0.12, fog: 0.6, wave: 0.95, rays: 0.12 },  // agua: burbujas
+  { rise: 0.9, swirl: 0.0, size: 0.6, flick: 1.0, shape: 0, wob: 0.35, fog: 0.5, wave: 1.0, rays: 0.04 },    // carmesí: chispas rápidas
+  { rise: 0.2, swirl: 0.35, size: 0.9, flick: 0.6, shape: 3, wob: 0.1, fog: 0.85, wave: 0.8, rays: 0.08 },   // éter: cristales
+];
 // suelo: metal oscuro reflectante con rejilla que se apaga a lo lejos
 function floorGridMat() {
   return new THREE.ShaderMaterial({
@@ -94,7 +258,7 @@ export class HeroStage {
     this.renderer = renderer;
     this.scene = new THREE.Scene();
     this.camera = new THREE.PerspectiveCamera(28, 16 / 9, 0.05, 120);
-    this.scene.fog = new THREE.Fog(0x05070d, 9, 30);
+    this.scene.fog = new THREE.Fog(0x05070d, 7, 26);
     // entorno PBR (reflejos de los materiales metálicos de la plataforma y de los héroes)
     try {
       const pm = new THREE.PMREMGenerator(renderer);
@@ -132,7 +296,7 @@ export class HeroStage {
     this.bgMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true, opacity: 0.55 });
     const pillarMat = new THREE.MeshStandardMaterial({ color: 0x0d1119, metalness: 0.8, roughness: 0.45 });
     const pillarG = new THREE.BoxGeometry(0.5, 9, 0.5), stripG = new THREE.BoxGeometry(0.05, 7.4, 0.05), capG = new THREE.BoxGeometry(0.9, 0.12, 0.9);
-    for (let i = 0; i < 13; i++) {
+    for (let i = 0; i < 13 && false; i++) { // columnas retiradas: el fondo es ahora el escenario propio de cada guardián
       const a = -Math.PI / 2 + (i - 6) * 0.2, r = 10.5 + (i % 2) * 1.6;
       const g = new THREE.Group();
       g.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
@@ -269,12 +433,59 @@ export class HeroStage {
     }));
     this.parts.frustumCulled = false;
     S.add(this.parts);
+
+    // ESCENARIO PROPIO DE CADA GUARDIÁN (se funden al cambiar de héroe; ver skyMat y SCENE_FX)
+    this.w8 = [0, 0, 0, 0, 0, 0, 0, 0]; this.w8T = [0, 0, 0, 0, 0, 0, 0, 0];
+    this.c2 = new THREE.Color(0xc6e0ff); this.c2T = new THREE.Color(0xc6e0ff);
+    this.deep = new THREE.Color(0x0a1430); this.deepT = new THREE.Color(0x0a1430);
+    const byMode = {}; for (const th of Object.values(HERO_THEME)) byMode[th.mode] = th;
+    const NP = IS_TOUCH ? 80 : 150;
+    this.themeParts = SCENE_FX.map((fx, k) => {
+      const th = byMode[k] || heroTheme('');
+      const tp = new Float32Array(NP * 3), ts = new Float32Array(NP);
+      for (let i = 0; i < NP; i++) {
+        const a = Math.random() * Math.PI * 2, r = 0.9 + Math.pow(Math.random(), 0.7) * 5.5;
+        tp[i * 3] = Math.cos(a) * r; tp[i * 3 + 1] = Math.random() * 5.2; tp[i * 3 + 2] = Math.sin(a) * r * 0.8 - 1.2;
+        ts[i] = Math.random();
+      }
+      const g = new THREE.BufferGeometry();
+      g.setAttribute('position', new THREE.BufferAttribute(tp, 3));
+      g.setAttribute('seed', new THREE.BufferAttribute(ts, 1));
+      const pts = new THREE.Points(g, themePartMat({ ...fx, c: th.c, c2: th.c2 }));
+      pts.frustumCulled = false; pts.visible = false; pts.renderOrder = 5;
+      S.add(pts);
+      return pts;
+    });
+    // neblina en capas: dos al fondo y una baja a ras de suelo
+    this.fogs = [[0, 1.3, -3.4, 13, 3.4, 0.0], [0, 2.0, -6.5, 22, 6, 4.0], [0, 0.35, -1.2, 9, 1.3, 8.0]].map(([x, y, z, w, h, sd]) => {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), fogMat(sd));
+      m.position.set(x, y, z); m.renderOrder = 1;
+      S.add(m);
+      return m;
+    });
+    // ondas de energía que salen de la plataforma por el suelo
+    this.waveMat = [0, 1].map(() => new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false }));
+    this.waves = this.waveMat.map((mt) => {
+      const m = new THREE.Mesh(new THREE.RingGeometry(0.97, 1, 128), mt);
+      m.rotation.x = -Math.PI / 2; m.position.y = 0.012; m.renderOrder = 2;
+      S.add(m);
+      return m;
+    });
+  }
+
+  // escenario del guardián: colores del ambiente y peso de su escenario
+  setTheme(th) {
+    if (!th) return;
+    this.colT.set(th.c); this.c2T.set(th.c2); this.deepT.set(th.deep);
+    this.w8T.fill(0); this.w8T[th.mode] = 1;
+    this.themeMode = th.mode;
   }
 
   // color de identidad del héroe (las luces y la plataforma se funden hacia él)
   setColor(hex) { this.colT.set(hex); }
 
-  setHero(model, colorHex, { entrance = true } = {}) {
+  setHero(model, colorHex, { entrance = true, theme = null } = {}) {
+    if (theme) this.setTheme(theme);
     if (this.hero && this.hero !== model && this.hero.root.parent === this.scene) this.scene.remove(this.hero.root);
     this.hero = model;
     if (!model) return;
@@ -283,7 +494,7 @@ export class HeroStage {
     model.root.position.set(0, PLAT_H, 0);
     model.root.rotation.set(0, this.yaw, 0);
     model.root.scale.setScalar(1);
-    this.setColor(colorHex);
+    if (!theme) this.setColor(colorHex);
     this.restPose(model);
     if (entrance) {
       this.enterK = 0; // entrada: sube de la plataforma (sin animar el cuerpo)
@@ -401,12 +612,12 @@ export class HeroStage {
     cam.aspect = W / H;
     // el héroe entero (con la plataforma) ocupa el 78 % del alto libre, sin cortar cabeza ni pies
     const tH = Math.tan((cam.fov * Math.PI) / 360);
-    const needH = hh * 1.16 + PLAT_H + 0.12;
+    const needH = hh * 1.06 + PLAT_H * 0.6;
     const needW = Math.max(1.0, hh * 0.8);
     const dH = needH / (2 * tH * bh);
     const dW = needW / (2 * tH * cam.aspect * bw);
     const d = Math.max(dH, dW, 2.0);
-    const cy = (PLAT_H + hh * 1.12) * 0.5 + 0.02;
+    const cy = (PLAT_H * 0.4 + hh * 1.08) * 0.5 + 0.02;
     const sway = Math.sin(this.t * 0.25) * 0.06;
     cam.position.set(Math.sin(sway) * d, cy + d * 0.07, Math.cos(sway) * d);
     cam.lookAt(0, cy, 0);
@@ -420,8 +631,30 @@ export class HeroStage {
     this.t += dt;
     const t = this.t;
     // color de identidad (transición suave)
-    this.col.lerp(this.colT, Math.min(1, dt * 4));
-    const c = this.col;
+    const kc = Math.min(1, dt * 3);
+    this.col.lerp(this.colT, kc); this.c2.lerp(this.c2T, kc); this.deep.lerp(this.deepT, kc);
+    const c = this.col, c2 = this.c2;
+    // escenario del guardián: fundido de pesos (≈1 s) entre el escenario anterior y el nuevo
+    const kw = Math.min(1, dt * 2.4), su = this.sky.material.uniforms;
+    let fogK = 0, waveK = 0, raysK = 0;
+    for (let k = 0; k < 8; k++) {
+      const w = (this.w8[k] += (this.w8T[k] - this.w8[k]) * kw);
+      su.uW.value[k] = w;
+      const P = this.themeParts[k];
+      P.visible = w > 0.01;
+      if (P.visible) { const u = P.material.uniforms; u.uK.value = w; u.uT.value = t; u.uS.value = this.renderer.getPixelRatio(); }
+      fogK += SCENE_FX[k].fog * w; waveK += SCENE_FX[k].wave * w; raysK += SCENE_FX[k].rays * w;
+    }
+    su.uC2.value.copy(c2); su.uDeep.value.copy(this.deep); su.uFlash.value = this.pulseK || 0;
+    this.fogs.forEach((f, i) => { const u = f.material.uniforms; u.uT.value = t; u.uK.value = fogK * (i === 2 ? 0.26 : 0.42); u.uC.value.copy(i === 1 ? c : c2).lerp(c, 0.5); });
+    this.scene.fog.color.copy(this.deep).lerp(c, 0.32).multiplyScalar(0.8); // el suelo lejano se funde con el horizonte del escenario
+    // ondas de energía por el suelo (dos, alternas)
+    this.waves.forEach((m, i) => {
+      const k = (t * 0.42 + i * 0.5) % 1;
+      m.scale.setScalar(PLAT_R + 0.3 + k * 6.5);
+      this.waveMat[i].color.copy(c).multiplyScalar(1.6);
+      this.waveMat[i].opacity = Math.sin(k * Math.PI) * (1 - k) * 0.7 * waveK;
+    });
     this.holo.uniforms.uC.value.copy(c); this.holo.uniforms.uT.value = t;
     this.beam.material.uniforms.uC.value.copy(c); this.beam.material.uniforms.uT.value = t;
     this.sky.material.uniforms.uC.value.copy(c); this.sky.material.uniforms.uT.value = t;
@@ -430,14 +663,18 @@ export class HeroStage {
     this.parts.material.uniforms.uS.value = this.renderer.getPixelRatio();
     this.glowMat.color.copy(c).multiplyScalar(2.6);
     this.glowMat2.color.copy(c).multiplyScalar(1.6);
-    this.rimL.color.copy(c).lerp(WHITE, 0.5);
-    this.rimR.color.copy(c).lerp(WHITE, 0.8);
-    this.under.color.copy(c).lerp(WHITE, 0.4);
+    // iluminación ambiental del color del guardián sobre el modelo (contornos intensos, luz principal apenas teñida)
+    this.rimL.color.copy(c).lerp(WHITE, 0.22);
+    this.rimR.color.copy(c2).lerp(WHITE, 0.4);
+    this.under.color.copy(c).lerp(WHITE, 0.3);
+    this.key.color.setHex(0xfff2e2).lerp(c, 0.14);
+    this.fill.color.copy(c2).lerp(WHITE, 0.55);
+    this.hemi.color.copy(c).lerp(WHITE, 0.55); this.hemi.groundColor.copy(this.deep);
     this.orbit.rotation.y = t * 0.12;
     this.bgMat.color.copy(c).multiplyScalar(0.9);
     this.haloMat.color.copy(c);
     this.halo.rotation.z = t * 0.03; this.haloArcs[0].rotation.z = -t * 0.08; this.haloArcs[1].rotation.z = t * 0.05;
-    this.rayMat.uniforms.uC.value.copy(c); this.rayMat.uniforms.uK.value = 0.07 + 0.02 * Math.sin(t * 0.5);
+    this.rayMat.uniforms.uC.value.copy(c); this.rayMat.uniforms.uK.value = raysK * (1 + 0.25 * Math.sin(t * 0.5));
     this.pool.material.uniforms.uC.value.copy(c);
     // pulso al cambiar de héroe
     if (this.pulseK > 0) {

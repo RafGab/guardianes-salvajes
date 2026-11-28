@@ -68,29 +68,33 @@
 
     <!-- Selección de héroe: galería (izquierda) · héroe 3D en su plataforma (centro) · ficha (derecha) -->
     <section id="select" class="screen hs">
-      <aside class="hs-gallery">
-        <div class="hs-head">
-          <div class="hs-kicker">GUARDIANES · ELIGE A TU HÉROE</div>
-          <div id="sel-mission" class="sel-mission"></div>
-        </div>
-        <div id="hero-cards" class="hs-grid"></div>
-        <div class="hs-count"><span id="hs-count">8</span> héroes disponibles</div>
-      </aside>
-      <div class="hs-hint">⟲ Arrastra para girar · ← → para cambiar</div>
+      <div class="hs-fx" aria-hidden="true"></div>
+      <div id="hs-ghost" class="hs-ghost" aria-hidden="true"></div>
+      <header class="hs-head">
+        <div class="hs-kicker">GUARDIANES · ELIGE A TU HÉROE</div>
+        <div id="sel-mission" class="sel-mission"></div>
+      </header>
+      <div class="hs-hint">⟲ Arrastra para girar · ← → para cambiar · Enter para confirmar</div>
       <aside class="hs-info">
         <div class="hs-tags"><span id="sel-element" class="hs-el">🌎 Tierra</span><span id="hs-class" class="hs-class">Héroe</span><span id="hs-lead" class="hs-lead" hidden>👑 Líder</span></div>
         <h2 id="sel-name" class="hs-name">Dona</h2>
         <div class="hs-species"><span id="sel-species">Lince</span></div>
-        <p id="sel-bio" class="hs-bio"></p>
-        <div class="hs-sec">HABILIDADES</div>
-        <div id="hs-skills" class="hs-skills"></div>
-        <div class="hs-sec hs-sec-stats">ESTADÍSTICAS</div>
+        <div id="hs-combat" class="hs-combat"></div>
+        <div class="hs-sec hs-sec-stats">ATRIBUTOS</div>
         <div class="stats hs-stats" id="sel-stats"></div>
+        <div id="hs-special" class="hs-special"></div>
+        <div class="hs-sec hs-sec-skills">HABILIDADES</div>
+        <div id="hs-skills" class="hs-skills"></div>
+        <p id="sel-bio" class="hs-bio"></p>
         <div class="hs-actions">
           <button id="btn-back" class="hs-btn ghost" type="button">← VOLVER</button>
           <button id="btn-start" class="hs-btn main" type="button">CONFIRMAR HÉROE ▶</button>
         </div>
       </aside>
+      <nav class="hs-gallery" aria-label="Guardianes">
+        <div id="hero-cards" class="hs-grid"></div>
+        <div class="hs-count"><span id="hs-count">8</span> guardianes</div>
+      </nav>
       <div id="hs-flash" class="hs-flash"></div>
     </section>
 

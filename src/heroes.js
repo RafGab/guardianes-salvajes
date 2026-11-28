@@ -47,7 +47,7 @@ export const HEROES = [
 // ORDEN FIJO de la sala de selección (indicado por Viviana): Jaglion (líder), Komodo, Zorra ártica, Fénec, Lince, Águila, Nutria.
 // Toda la interfaz recorre esta lista tal cual: no reordenar.
   {
-    id: 'jago', name: 'Jago', species: 'Jaglión', element: 'roca', leader: true, // líder del grupo: siempre el primero
+    id: 'jago', name: 'Jaglion', species: 'Jaglión', element: 'roca', leader: true, // líder del grupo: siempre el primero
     power: { type: 'dash', icon: '🥌', name: 'Transformación en Roca', cd: 10, desc: 'Se encoge, se cubre de roca y se convierte en una bola de piedra pesada que rueda a gran velocidad arrollando lo que encuentra (vuelve a pulsar para recuperar su forma).' },
     stats: { speed: 7.6, jump: 9.0, swim: 3.9, carry: 2 },
     bio: 'Jaglión valiente, leal, audaz, resistente y explorador. Su cola es su herramienta principal para escalar, trepar y moverse en terrenos difíciles. "La montaña no es un límite… es mi hogar."',

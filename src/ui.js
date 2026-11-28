@@ -6,7 +6,8 @@ import { Save, BADGES } from './save.js';
 import { ITEMS, heroPowerItem } from './items.js';
 import { IS_TOUCH } from './platform.js';
 import { HERO_SCALE } from './scale.js';
-import { TEAM, HEAL_ITEMS, HEAL_ORDER, HERO_SKILLS, HERO_BUTTONS } from './skills/config.js';
+import { TEAM, HEAL_ITEMS, HEAL_ORDER, HERO_SKILLS, HERO_BUTTONS, BUTTON_TIMES } from './skills/config.js';
+import { heroTheme } from './herothemes.js';
 import { hpTier } from './health.js';
 
 const $ = (id) => document.getElementById(id);
@@ -227,51 +228,76 @@ export const ui = {
     box.innerHTML = '';
     selectOrder().forEach((i, pos) => {
       const h = HEROES[i];
-      const el = ELEMENTS[h.element];
+      const el = ELEMENTS[h.element], th = heroTheme(h.id);
       const c = document.createElement('button');
       c.dataset.idx = String(i);
       c.type = 'button';
       c.className = 'hs-card' + (h.locked ? ' locked' : '');
-      c.style.setProperty('--cel', el.css);
+      c.style.setProperty('--cel', th.c);
+      c.style.setProperty('--cel2', th.c2);
       c.style.setProperty('--i', pos);
-      c.innerHTML = `<span class="hs-art"><img src="${HERO_ART(h.id)}" alt="${h.name}" loading="lazy" decoding="async" /></span><span class="hs-shine"></span>${h.leader ? '<span class="hs-crown">👑</span>' : ''}<span class="hs-plate"><b>${h.name}</b><i>${el.icon} ${el.name}</i></span><span class="hs-rec">★ RECOMENDADO</span>${h.locked ? '<span class="hs-lock">🔒</span>' : ''}`;
+      c.innerHTML = `<span class="hs-in"><span class="hs-art"><img src="${HERO_ART(h.id)}" alt="${h.name}" loading="lazy" decoding="async" /></span><span class="hs-shine"></span><span class="hs-num">${String(pos + 1).padStart(2, '0')}</span>${h.leader ? '<span class="hs-crown">👑</span>' : ''}<span class="hs-plate"><b>${h.name}</b><i>${el.icon} ${el.name}</i></span><span class="hs-rec">★ RECOMENDADO</span>${h.locked ? '<span class="hs-lock">🔒</span>' : ''}</span>`;
       c.addEventListener('click', () => { if (!h.locked) onPick(i); });
       box.appendChild(c);
     });
     $('hs-count').textContent = String(HEROES.filter((h) => !h.locked).length);
   },
+  // ATRIBUTOS de la ficha, todos sacados de los datos del juego (no hay valores inventados):
+  //  · Velocidad, Salto y Natación: stats de heroes.js · Poder: mayor daño de un golpe entre sus habilidades
+  //    (skills/config.js) · Defensa: protección total de su botón ESCUDO (BUTTON_TIMES.escudo, igual para todos)
+  //  · Tipo de combate: su arma (cuerpo a cuerpo si golpea de cerca; a distancia si lanza proyectiles)
+  heroSheet(h) {
+    const btns = HERO_BUTTONS[h.id] || [], defs = HERO_SKILLS[h.id] || {};
+    let dmg = 0;
+    for (const [k] of btns) { const d = defs[k]; if (d && typeof d.damage === 'number') dmg = Math.max(dmg, d.damage); }
+    const wk = (btns.find(([, r]) => r === 'arma') || [])[0], wd = wk && defs[wk];
+    let combat = 'Cuerpo a cuerpo';
+    if (wd) { const near = wd.reach || (wd.range && wd.range <= 4 && !wd.speed); const far = wd.speed || wd.dist; combat = near && far ? 'Cuerpo a cuerpo y a distancia' : far ? 'A distancia' : 'Cuerpo a cuerpo'; }
+    const sk = (btns.find(([, r]) => r === 'especial') || [])[0], sd = sk && defs[sk];
+    const shK = (btns.find(([, r]) => r === 'escudo') || [])[0], shd = shK && defs[shK];
+    return { dmg, combat, weapon: wd, special: sd, shield: shd, shieldT: (BUTTON_TIMES.escudo && BUTTON_TIMES.escudo.act) || 0 };
+  },
   fillSelect(i) {
     this.selected = i;
     const h = HEROES[i];
-    const el = ELEMENTS[h.element];
-    this.setElementColor(el.css);
+    const el = ELEMENTS[h.element], th = heroTheme(h.id);
+    this.setElementColor(th.c);
+    document.documentElement.style.setProperty('--el2', th.c2);
     [...$('hero-cards').children].forEach((c) => c.classList.toggle('sel', Number(c.dataset.idx) === i));
     $('sel-name').textContent = h.name;
     $('sel-name').dataset.name = h.name;
+    $('hs-ghost').textContent = h.name;
     $('sel-species').textContent = h.species;
     $('sel-element').textContent = `${el.icon} ${el.name}`;
     $('hs-class').textContent = (HERO_SCALE[h.id] && HERO_SCALE[h.id].tipo) || 'Héroe';
     $('hs-lead').hidden = !h.leader;
     $('sel-bio').textContent = h.bio;
+    const sh = this.heroSheet(h);
+    $('hs-combat').innerHTML = `<span>TIPO DE COMBATE</span><b>${sh.combat}</b>${sh.weapon ? `<em>${sh.weapon.icon || '⚔'} ${sh.weapon.name}</em>` : ''}`;
     // habilidades: velocidad (el poder base o su botón propio) + los botones del héroe
     const btns = HERO_BUTTONS[h.id] || [], defs = HERO_SKILLS[h.id] || {};
     const ROLE = { velocidad: 'Velocidad', poder: 'Poder', escudo: 'Escudo', arma: 'Arma', especial: 'Especial' };
     const list = [];
     if (!btns.some(([, r]) => r === 'velocidad')) list.push({ role: 'velocidad', icon: h.power.icon, name: h.power.name, desc: h.power.desc });
-    for (const [k, r] of btns) { const d = defs[k]; if (d) list.push({ role: r, icon: d.icon || '✦', name: d.name || k, desc: '' }); }
+    for (const [k, r] of btns) { const d = defs[k]; if (d && r !== 'especial') list.push({ role: r, icon: d.icon || '✦', name: d.name || k, desc: '' }); }
     $('hs-skills').innerHTML = list.map((s) => `<div class="hs-skill" title="${(s.desc || s.name).replace(/"/g, '&quot;')}"><span class="ic">${s.icon}</span><span class="tx"><b>${s.name}</b><i>${ROLE[s.role] || s.role}</i></span></div>`).join('');
+    $('hs-special').innerHTML = sh.special ? `<span class="ic">${sh.special.icon || '✦'}</span><span class="tx"><i>HABILIDAD ESPECIAL</i><b>${sh.special.name}</b>${sh.special.cd ? `<em>Recarga ${String(sh.special.cd).replace('.', ',')} s</em>` : ''}</span>` : '';
+    const f1 = (v) => v.toFixed(1).replace('.', ',');
     const stats = [
-      ['Velocidad', (h.stats.speed - 5.5) / 2.4],
-      ['Salto', (h.stats.jump - 7.8) / 1.8],
-      ['Natación', (h.stats.swim - 3) / 2.4],
-      ['Carga', h.stats.carry / 3],
+      ['Velocidad', (h.stats.speed - 5.5) / 2.4, f1(h.stats.speed)],
+      ['Poder', sh.dmg / 24, String(sh.dmg)],
+      ['Defensa', sh.shieldT / 5, `${sh.shieldT} s`],
+      ['Salto', (h.stats.jump - 7.8) / 1.8, f1(h.stats.jump)],
+      ['Natación', (h.stats.swim - 3) / 2.4, f1(h.stats.swim)],
     ];
     $('sel-stats').innerHTML = stats
-      .map(([n, v]) => { const p = Math.round(Math.max(0.12, Math.min(1, v)) * 100); return `<div class="stat"><span>${n}</span><div class="bar"><i style="width:${p}%"></i></div><b>${Math.round(p / 10)}</b></div>`; })
+      .map(([n, v, txt]) => { const p = Math.round(Math.max(0.12, Math.min(1, v)) * 100); return `<div class="stat"><span>${n}</span><div class="bar"><i style="width:${p}%"></i></div><b>${txt}</b></div>`; })
       .join('');
-    // animación de entrada de la ficha
+    $('sel-stats').title = 'Poder: mayor daño de un golpe entre sus habilidades · Defensa: protección total de su botón Escudo';
+    // animación de entrada de la ficha y del nombre gigante
     const info = document.querySelector('#select .hs-info');
     if (info) { info.classList.remove('swap'); void info.offsetWidth; info.classList.add('swap'); }
+    const gh = $('hs-ghost'); gh.classList.remove('swap'); void gh.offsetWidth; gh.classList.add('swap');
   },
 
   /* ---------- preparación del jefe: selección y formación del equipo ---------- */

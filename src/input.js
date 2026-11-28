@@ -37,6 +37,7 @@ export class Input {
         if (e.code === 'ArrowLeft') this.emit('selectPrev');
         if (e.code === 'ArrowRight') this.emit('selectNext');
         if (e.code === 'Enter') this.emit('confirm');
+        if (e.code === 'Escape' || e.code === 'Backspace') this.emit('back');
         if (e.code === 'KeyM') this.emit('mute');
         return;
       }
@@ -216,6 +217,15 @@ export class Input {
       edge(3, () => this.emit('interact'));
       edge(9, () => this.emit('pause'));
       edge(4, () => this.emit('abilityNext')); // LB: siguiente habilidad (o siguiente clon en la selección de Bada)
+    } else {
+      // menús (selección de héroe): cruceta o palanca ← →, A confirma, B vuelve
+      const ax = gp.axes[0] || 0, st = ax < -0.6 ? -1 : ax > 0.6 ? 1 : 0;
+      if (st && st !== this.padStick) this.emit(st < 0 ? 'selectPrev' : 'selectNext');
+      this.padStick = st;
+      edge(14, () => this.emit('selectPrev'));
+      edge(15, () => this.emit('selectNext'));
+      edge(0, () => this.emit('confirm'));
+      edge(1, () => this.emit('back'));
     }
     for (let i = 0; i < gp.buttons.length; i++) prev[i] = b(i);
   }
