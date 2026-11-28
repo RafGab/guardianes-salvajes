@@ -8,7 +8,7 @@
   <meta name="theme-color" content="#0b1018" />
   <title>CATAC 7</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Orbitron:wght@500;700;900&family=Exo+2:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Orbitron:wght@500;700;900&family=Exo+2:wght@400;500;600;700&family=Teko:wght@400;500;600;700&family=Chakra+Petch:wght@500;600;700&display=swap" rel="stylesheet" />
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
@@ -305,20 +305,20 @@
       </div>
     </section>
 
-    <!-- Introducción cinematográfica de nivel -->
-    <section id="levelintro" class="screen">
-      <div class="li-bg" id="li-bg"></div>
+    <!-- Introducción cinematográfica de cada mundo: capturas del mundo (movimiento lento), su isla 3D y el título -->
+    <section id="levelintro" class="screen li2">
+      <div class="li-bg" id="li-bg"><img class="li-shot" alt="" /><img class="li-shot" alt="" /></div>
+      <div class="li-fx"><i></i><i></i><i></i></div>
+      <img id="li-art" class="li-art" alt="" />
       <div class="li-box">
-        <div id="li-kicker" class="li-kicker">NIVEL 2</div>
-        <div id="li-icon" class="li-icon">🔥</div>
+        <div class="li-top"><span id="li-icon" class="li-icon">🔥</span><span id="li-kicker" class="li-kicker">MUNDO 2</span></div>
         <h1 id="li-name">Volcano Fury</h1>
         <div id="li-place" class="li-place"></div>
+        <div class="li-rule"></div>
         <p id="li-desc" class="li-desc"></p>
-        <div id="li-mech" class="li-mech"></div>
-        <div id="li-diff" class="li-diff"></div>
-        <div class="li-bar"><i id="li-progress"></i></div>
-        <div id="li-msg" class="li-msg">Cargando el escenario 3D…</div>
+        <div class="li-chips"><div id="li-mech" class="li-mech"></div><div id="li-diff" class="li-diff"></div></div>
       </div>
+      <div class="li-load"><div id="li-msg" class="li-msg">Cargando el escenario 3D…</div><div class="li-bar"><i id="li-progress"></i></div></div>
     </section>
   </div>
   <script type="module" src="/src/main.js"></script>

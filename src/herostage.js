@@ -126,6 +126,50 @@ export class HeroStage {
     this.grid.rotation.x = -Math.PI / 2; this.grid.position.y = 0.004; this.grid.renderOrder = 2;
     S.add(this.grid);
 
+    // FONDO CON PROFUNDIDAD (discreto, para que el héroe destaque):
+    //  · semicírculo de columnas metálicas con una línea de luz del color del héroe, que se pierden en la niebla;
+    //  · gran halo doble detrás del héroe; · rayos de luz que caen desde arriba; · charco de luz suave en el suelo.
+    this.bgMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true, opacity: 0.55 });
+    const pillarMat = new THREE.MeshStandardMaterial({ color: 0x0d1119, metalness: 0.8, roughness: 0.45 });
+    const pillarG = new THREE.BoxGeometry(0.5, 9, 0.5), stripG = new THREE.BoxGeometry(0.05, 7.4, 0.05), capG = new THREE.BoxGeometry(0.9, 0.12, 0.9);
+    for (let i = 0; i < 13; i++) {
+      const a = -Math.PI / 2 + (i - 6) * 0.2, r = 10.5 + (i % 2) * 1.6;
+      const g = new THREE.Group();
+      g.position.set(Math.cos(a) * r, 0, Math.sin(a) * r);
+      g.rotation.y = -a - Math.PI / 2;
+      const p = new THREE.Mesh(pillarG, pillarMat); p.position.y = 4.5;
+      const st = new THREE.Mesh(stripG, this.bgMat); st.position.set(0, 4.2, 0.27);
+      const cap = new THREE.Mesh(capG, pillarMat); cap.position.y = 0.06;
+      g.add(p, st, cap);
+      S.add(g);
+    }
+    this.halo = new THREE.Group();
+    const haloMat = new THREE.MeshBasicMaterial({ color: 0xffffff, toneMapped: false, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false });
+    const h1 = new THREE.Mesh(new THREE.TorusGeometry(3.3, 0.012, 6, 160), haloMat);
+    const h2 = new THREE.Mesh(new THREE.RingGeometry(2.9, 2.96, 160, 1, 0, Math.PI * 1.4), haloMat);
+    const h3 = new THREE.Mesh(new THREE.RingGeometry(3.6, 3.64, 160, 1, Math.PI * 1.1, Math.PI * 0.6), haloMat);
+    this.halo.add(h1, h2, h3); this.halo.position.set(0, 2.1, -4.2); this.haloMat = haloMat; this.haloArcs = [h2, h3];
+    S.add(this.halo);
+    this.rays = [];
+    const rayMat = new THREE.ShaderMaterial({
+      uniforms: { uC: { value: new THREE.Color() }, uK: { value: 0.08 } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide, toneMapped: false,
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform vec3 uC; uniform float uK; varying vec2 vUv; void main(){ float a = smoothstep(0.0, 0.5, vUv.x) * smoothstep(1.0, 0.5, vUv.x) * smoothstep(0.0, 0.7, vUv.y) * uK; gl_FragColor = vec4(mix(uC, vec3(1.0), 0.4) * a, a); }',
+    });
+    this.rayMat = rayMat;
+    for (const [x, z, rz, w] of [[-3.2, -6, 0.32, 1.6], [3.6, -6.5, -0.28, 2.2], [0.6, -7.5, 0.06, 1.2]]) {
+      const m = new THREE.Mesh(new THREE.PlaneGeometry(w, 14), rayMat);
+      m.position.set(x, 6, z); m.rotation.z = rz; m.renderOrder = 1;
+      S.add(m); this.rays.push(m);
+    }
+    this.pool = new THREE.Mesh(new THREE.CircleGeometry(6, 48), new THREE.ShaderMaterial({
+      uniforms: { uC: { value: new THREE.Color() } }, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, toneMapped: false,
+      vertexShader: 'varying vec2 vP; void main(){ vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: 'uniform vec3 uC; varying vec2 vP; void main(){ float a = pow(max(0.0, 1.0 - length(vP) / 6.0), 2.2) * 0.22; gl_FragColor = vec4(uC * a, a); }',
+    }));
+    this.pool.rotation.x = -Math.PI / 2; this.pool.position.y = 0.003; this.pool.renderOrder = 1;
+    S.add(this.pool);
+
     // PLATAFORMA
     const plat = (this.plat = new THREE.Group());
     S.add(plat);
@@ -390,6 +434,11 @@ export class HeroStage {
     this.rimR.color.copy(c).lerp(WHITE, 0.8);
     this.under.color.copy(c).lerp(WHITE, 0.4);
     this.orbit.rotation.y = t * 0.12;
+    this.bgMat.color.copy(c).multiplyScalar(0.9);
+    this.haloMat.color.copy(c);
+    this.halo.rotation.z = t * 0.03; this.haloArcs[0].rotation.z = -t * 0.08; this.haloArcs[1].rotation.z = t * 0.05;
+    this.rayMat.uniforms.uC.value.copy(c); this.rayMat.uniforms.uK.value = 0.07 + 0.02 * Math.sin(t * 0.5);
+    this.pool.material.uniforms.uC.value.copy(c);
     // pulso al cambiar de héroe
     if (this.pulseK > 0) {
       this.pulseK = Math.max(0, this.pulseK - dt * 1.6);

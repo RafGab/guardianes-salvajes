@@ -12,9 +12,9 @@ import { hpTier } from './health.js';
 const $ = (id) => document.getElementById(id);
 export const HERO_ICON = { jago: '🐆', kairo: '🦎', lira: '🐈', halley: '🦊', nilo: '🦦', kyra: '❄️', ambar: '🦅', voya: '🦁' };
 const fmtH = (id) => `${HERO_SCALE[id].height.toFixed(2).replace('.', ',')} m`;
-export const HERO_ART = (id) => `/img/select/${id}.webp?v=s2`;
+export const HERO_ART = (id) => `/img/select/${id}.webp?v=s3`;
 // orden de la galería de selección (de izquierda a derecha y de arriba abajo)
-export const SELECT_ORDER = ['jago', 'lira', 'ambar', 'halley', 'kyra', 'kairo', 'nilo', 'voya'];
+export const SELECT_ORDER = ['jago', 'kairo', 'ambar', 'halley', 'kyra', 'lira', 'nilo', 'voya'];
 export const selectOrder = () => [...SELECT_ORDER.map((id) => HEROES.findIndex((h) => h.id === id)).filter((i) => i >= 0), ...HEROES.map((h, i) => i).filter((i) => !SELECT_ORDER.includes(HEROES[i].id))]; // ilustración de cuerpo entero para la galería de selección
 export const HERO_FACE = (id) => `/img/heroes/${id}.jpg?v=h30`; // ?v: los retratos nuevos sustituyen a los guardados en caché
 
@@ -201,6 +201,7 @@ export const ui = {
 
   showScreen(name) {
     for (const s of SCREENS) $(s).classList.toggle('show', s === name);
+    if (name !== 'levelintro' && this._liTimer) { clearInterval(this._liTimer); this._liTimer = null; }
   },
   showOverlay(name, on) {
     $(name).classList.toggle('show', on);
@@ -246,6 +247,7 @@ export const ui = {
     this.setElementColor(el.css);
     [...$('hero-cards').children].forEach((c) => c.classList.toggle('sel', Number(c.dataset.idx) === i));
     $('sel-name').textContent = h.name;
+    $('sel-name').dataset.name = h.name;
     $('sel-species').textContent = h.species;
     $('sel-element').textContent = `${el.icon} ${el.name}`;
     $('hs-class').textContent = (HERO_SCALE[h.id] && HERO_SCALE[h.id].tipo) || 'Héroe';
@@ -919,19 +921,39 @@ export const ui = {
     this.showOverlay('inventory', true);
   },
   showLevelIntro(level) {
-    $('li-kicker').textContent = level.kicker;
+    const [num, ...rest] = String(level.kicker || '').split(' · ');
+    $('li-kicker').textContent = rest.length ? num : level.kicker;
     $('li-icon').textContent = level.icon;
     $('li-name').textContent = level.name;
+    $('li-name').dataset.name = level.name;
     $('li-place').textContent = level.place;
     $('li-desc').textContent = level.desc;
-    $('li-mech').textContent = `⚠️ ${level.mechanic}`;
-    const rw = ITEMS[level.reward];
-    $('li-diff').innerHTML = `Dificultad ${'🔥'.repeat(Math.ceil((level.d ?? level.n) / 2))} · Premio del nivel: ${rw ? rw.icon + ' ' + rw.name : ''}`;
+    $('li-mech').innerHTML = `<b>PELIGRO</b>${level.mechanic}`;
+    const rw = ITEMS[level.reward], lvl = Math.ceil((level.d ?? level.n) / 2);
+    $('li-diff').innerHTML = `<b>DIFICULTAD</b><span class="li-pips">${[1, 2, 3, 4, 5].map((k) => `<i class="${k <= lvl ? 'on' : ''}"></i>`).join('')}</span>${rw ? `<b>PREMIO</b>${rw.icon} ${rw.name}` : ''}`;
     $('li-progress').style.width = '4%';
     $('li-msg').textContent = 'Cargando el escenario 3D…';
-    $('li-bg').className = 'li-bg ' + level.scenario;
-    // fondo con el color oficial del mundo
-    $('li-bg').style.background = level.color ? `radial-gradient(circle at 50% 30%, color-mix(in srgb, ${level.color} 62%, #000), #06060c)` : '';
+    const scr = $('levelintro');
+    // color oficial del mundo; si es casi negro (Apocalia), el acento se aclara mezclándolo con blanco para que se lea
+    const lc = new THREE.Color(level.color || '#ffb347'), lum = 0.2126 * lc.r + 0.7152 * lc.g + 0.0722 * lc.b;
+    if (lum < 0.12) lc.lerp(new THREE.Color(0xffffff), 0.55);
+    scr.style.setProperty('--lc', '#' + lc.getHexString());
+    // fondo: las capturas reales del mundo (img/worlds/<id>_1..3) se suceden con un movimiento lento de cámara
+    const bg = $('li-bg');
+    bg.className = 'li-bg ' + level.scenario;
+    const shots = [...bg.querySelectorAll('.li-shot')];
+    let k = 0;
+    const show = () => { const a = shots[k % 2], b = shots[(k + 1) % 2]; a.src = `/img/worlds/${level.id}_${(k % 3) + 1}.jpg`; a.classList.remove('on'); void a.offsetWidth; a.classList.add('on'); b.classList.remove('on'); k++; };
+    clearInterval(this._liTimer);
+    shots.forEach((im) => { im.classList.remove('on'); im.onerror = () => { im.style.visibility = 'hidden'; }; im.style.visibility = ''; });
+    show();
+    this._liTimer = setInterval(show, 3600);
+    // su isla en 3D, flotando
+    const art = $('li-art');
+    art.style.visibility = '';
+    art.onerror = () => { art.style.visibility = 'hidden'; };
+    art.src = `/img/islands/${level.id}.webp`;
+    scr.classList.remove('play'); void scr.offsetWidth; scr.classList.add('play');
     this.showScreen('levelintro');
   },
   levelIntroProgress(p, msg) {
